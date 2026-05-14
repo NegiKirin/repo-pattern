@@ -35,14 +35,15 @@ __pycache__/
 .venv/
 venv/
 
-# Claude
+# # Claude
 # .claude/
 # CLAUDE.md
 # .mcp.json
 
-# Agents
+# # Agents
 # AGENTS.md
 # .agents/
 
-# Spec-kit
+# # Spec-kit
 # .specify/
+# specs/

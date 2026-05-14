@@ -15,7 +15,6 @@ Tài liệu này tóm tắt nhanh chức năng của từng skill trong `.claude
 - **dockerfile-validator** — Kiểm tra Dockerfile về correctness, security, image size, cache, build efficiency.
 - **prompt-engineer** — Thiết kế và tinh chỉnh prompt cho task LLM, output format, evaluation, reliability.
 - **security-review** — Review code theo góc nhìn security: input handling, auth, secrets, OWASP-style issues.
-- **security-scan** — Quét cấu hình `.claude` để tìm misconfiguration, injection risk, hoặc setup thiếu an toàn.
 
 ## Frontend, UX, and presentation
 
@@ -29,7 +28,7 @@ Tài liệu này tóm tắt nhanh chức năng của từng skill trong `.claude
 ## Python and backend frameworks
 
 - **fastapi-expert** — Xây FastAPI production-ready với async, auth, validation, performance, OpenAPI.
-- **fastapi-project-structure** — Tổ chức project FastAPI: app layout, service layer, database layer, module boundary.
+- **fastapi-pattern** — Tổ chức project FastAPI: app layout, service layer, database layer, module boundary.
 - **postgres-pro** — Tối ưu PostgreSQL: query plan, indexing, schema decisions, concurrency, advanced features.
 - **python-pro** — Viết Python production: typing, async, packaging, architecture, code quality.
 - **python-testing** — Viết test Python/pytest theo TDD: fixture, mock, parametrization, coverage.
