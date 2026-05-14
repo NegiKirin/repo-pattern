@@ -1,112 +1,144 @@
 # repo-pattern
 
-A reusable starter pattern for repositories that want to work well with Claude Code, MCP servers, OpenSpec, and custom skill packs.
+![Claude Code](https://img.shields.io/badge/Claude%20Code-ready-6C47FF)
+![MCP](https://img.shields.io/badge/MCP-configured-0EA5E9)
+![Spec Kit](https://img.shields.io/badge/Spec%20Kit-included-10B981)
+![Template](https://img.shields.io/badge/repository-template-F59E0B)
+![Project Rules](https://img.shields.io/badge/project-rules%20%26%20skills-64748B)
 
-## Goal
+A polished starter repository for teams that want **Claude Code**, **MCP servers**, **Spec Kit workflows**, and **project-local rules/skills** ready from day one.
 
-This repository is a template you can copy when starting a new project.
-It already includes the basic structure and customizations needed to:
+This is a **repository pattern**, not an application scaffold. Copy it into a new project, then tailor the instructions, tools, and workflow to your real stack.
 
-- use Claude Code consistently across repos
-- register MCP servers through `.mcp.json`
-- work with OpenSpec without re-initializing it
-- keep pinned skill sources with `skills-lock.json`
-- carry project instructions through `.claude/CLAUDE.md`
+## What you get
 
-## What is already included
+- **Project-local Claude setup** in [`.claude/`](.claude/)
+- **MCP server configuration** in [`.mcp.json`](.mcp.json)
+- **Spec Kit workflow assets** in [`.specify/`](.specify/)
+- **Reusable rules and skill packs** versioned inside the repo
+- **Onboarding documentation** in [docs/](docs/)
 
-### Claude configuration
+## Core building blocks
 
-- [`.claude/`](.claude/) contains Claude-related project files
-- [`.claude/CLAUDE.md`](.claude/CLAUDE.md) is used for project instructions and, in this pattern, is tied to `andrej-karpathy-skills`
-- [`.claude/commands/`](.claude/commands/) contains custom command files
-- [`.claude/skills/`](.claude/skills/) contains locally available skill definitions
+### Claude workspace
 
-### MCP setup
+The [`.claude/`](.claude/) directory contains the collaboration layer for the repo:
 
-- [`.mcp.json`](.mcp.json) is the MCP server config entrypoint for the repo
-- the pattern is intended to work with MCP servers such as `context7`, `gitnexus`, and `web-tools`
+- [`.claude/CLAUDE.md`](.claude/CLAUDE.md) — project instructions
+- [`.claude/rules/`](.claude/rules/) — coding, testing, security, workflow, and web rules
+- [`.claude/skills/`](.claude/skills/) — local skill definitions
+- [`.claude/commands/`](.claude/commands/) — command content for the workspace
+- [`.claude/scripts/`](.claude/scripts/) — helper scripts
 
-### OpenSpec setup
+### MCP configuration
 
-- [`openspec/config.yaml`](openspec/config.yaml) is already present
-- OpenSpec in this pattern has already been customized for the skill setup used here
-- when using this pattern, you usually do **not** need to run `openspec init` again
+The root [`.mcp.json`](.mcp.json) is pre-wired for a practical MCP toolchain:
 
-### Skills setup
+- `context7` — live library and framework documentation
+- `gitnexus` — repository graph and impact analysis
+- `tavily` — web research and extraction
+- `sequential-thinking` — structured reasoning support
+- `playwright` — browser automation and E2E validation
 
-- [`skills-lock.json`](skills-lock.json) pins skill sources and hashes
-- this pattern includes skills sourced from `mattpocock/skills`
-- the repo also carries local Claude skills under [`.claude/skills/`](.claude/skills/)
+Keep only the servers your target repository actually needs.
 
-### Documentation
+### Spec Kit workflow
 
-- [`docs/claude-code-mcp-setup-vi.md`](docs/claude-code-mcp-setup-vi.md) explains how this overall setup works
+This repo includes [`.specify/`](.specify/) out of the box, including:
 
-## Important customizations in this pattern
+- [`.specify/workflows/speckit/workflow.yml`](.specify/workflows/speckit/workflow.yml) — full specify → plan → tasks → implement flow
+- [`.specify/extensions/git/`](.specify/extensions/git/) — optional Git-aware Spec Kit extension
 
-### 1. OpenSpec is pre-customized
+This means the template is meant to be **adapted**, not initialized again from scratch.
 
-This pattern is not a raw OpenSpec setup.
-It already includes an `openspec/config.yaml` template and is meant to work with the existing skill layout.
+### Rules and conventions
 
-If you create a new repo from this pattern:
+The rules system under [`.claude/rules/`](.claude/rules/) is layered:
 
-- update `openspec/config.yaml`
-- keep the existing OpenSpec structure unless you intentionally want a different setup
-- avoid running `openspec init` unless you want to reset the structure to OpenSpec defaults
+- `common/` for cross-project defaults
+- language/domain-specific rule sets such as `typescript/` and `web/`
 
-### 2. `mattpocock/skills` is already part of the pattern
+See [`.claude/rules/README.md`](.claude/rules/README.md) for the full model.
 
-`skills-lock.json` already pins skills from `mattpocock/skills`.
-That means the pattern is designed around those skills being part of the workflow.
-
-### 3. `.claude/CLAUDE.md` is part of the pattern contract
-
-This file is not just a note file.
-In this pattern it is part of the intended Claude setup and should be reviewed whenever you adapt the template for a new repo.
-
-## Suggested setup flow for a new repo
-
-1. Copy this pattern into a new repository.
-2. Update [`.claude/CLAUDE.md`](.claude/CLAUDE.md) for the new project.
-3. Update [`openspec/config.yaml`](openspec/config.yaml) with real project context.
-4. Review [`.mcp.json`](.mcp.json) and keep only the MCP servers you actually use.
-5. Review [`skills-lock.json`](skills-lock.json) only if you want to change skill sources.
-6. Read [`docs/claude-code-mcp-setup-vi.md`](docs/claude-code-mcp-setup-vi.md) for the full setup guide.
-
-## Notes about `web-tools`
-
-If you want to use `web-tools`, the referenced repository is:
+## Repository map
 
 ```text
-https://github.com/huynhkhan123/mcp-web-tools
+repo-pattern/
+├── .claude/
+│   ├── CLAUDE.md
+│   ├── commands/
+│   ├── rules/
+│   ├── scripts/
+│   └── skills/
+├── .specify/
+│   ├── extensions/
+│   └── workflows/
+├── docs/
+├── .mcp.json
+├── CLAUDE.md
+└── README.md
 ```
 
-That repository already includes setup instructions.
-Use its documented setup first, then update [`.mcp.json`](.mcp.json) with the correct command for your environment.
+## When to use this template
 
-## What to customize first
+Use this repository when you want to:
 
-When turning this pattern into a real project, the first files you should review are:
+- bootstrap a new repo with Claude Code conventions already in place
+- standardize AI-assisted workflow across multiple repositories
+- keep repo-specific rules and skills under version control
+- adopt MCP tooling without rebuilding the same setup every time
+- start with a Spec Kit-friendly planning and execution flow
+
+## Recommended adoption flow
+
+1. Copy this repository into your new project.
+2. Rewrite [`.claude/CLAUDE.md`](.claude/CLAUDE.md) for the actual project.
+3. Review [`.mcp.json`](.mcp.json) and remove unused servers.
+4. Trim or extend [`.claude/rules/`](.claude/rules/) to match the stack.
+5. Review [`.specify/`](.specify/) and keep it only if Spec Kit fits your process.
+6. Replace or extend the docs in [docs/](docs/).
+
+## Customize first
+
+Start with these files:
 
 - [`.claude/CLAUDE.md`](.claude/CLAUDE.md)
 - [`.mcp.json`](.mcp.json)
-- [`openspec/config.yaml`](openspec/config.yaml)
-- [`skills-lock.json`](skills-lock.json)
-- [`docs/claude-code-mcp-setup-vi.md`](docs/claude-code-mcp-setup-vi.md)
+- [`.claude/rules/README.md`](.claude/rules/README.md)
+- [`.specify/workflows/speckit/workflow.yml`](.specify/workflows/speckit/workflow.yml)
+- [`.specify/extensions/git/README.md`](.specify/extensions/git/README.md)
+- [docs/claude-code-mcp-setup-vi.md](docs/claude-code-mcp-setup-vi.md)
 
-## Keep vs change
+## Keep vs customize
 
-Usually keep:
+### Usually keep
 
-- the overall `.claude/` structure
-- the OpenSpec layout
-- the locked skills setup
+- the overall [`.claude/`](.claude/) structure
+- the layered rules model in [`.claude/rules/`](.claude/rules/)
+- the general shape of [`.mcp.json`](.mcp.json)
+- [`.specify/`](.specify/) if your team uses Spec Kit
 
-Usually change:
+### Usually customize
 
-- project instructions
-- MCP server commands and API keys
-- project context in OpenSpec
-- any repo-specific docs
+- project instructions in [`.claude/CLAUDE.md`](.claude/CLAUDE.md)
+- enabled MCP servers and environment variables in [`.mcp.json`](.mcp.json)
+- local rule sets and skill packs
+- onboarding docs in [docs/](docs/)
+
+## Notes
+
+- This repository uses [`.specify/`](.specify/), not `openspec/`.
+- Some MCP servers require environment variables such as `CONTEXT7_API_KEY` and `TAVILY_API_KEY`.
+- Audit every enabled tool before using this template in production work.
+
+## Related docs
+
+- [docs/claude-code-mcp-setup-vi.md](docs/claude-code-mcp-setup-vi.md)
+- [`.claude/rules/README.md`](.claude/rules/README.md)
+- [`.specify/extensions/git/README.md`](.specify/extensions/git/README.md)
+
+## Summary
+
+`repo-pattern` gives you a clean, opinionated baseline for repositories that want Claude Code, MCP tooling, and Spec Kit workflow support from the start.
+
+Copy it, trim it, and make it specific to the project that will actually use it.

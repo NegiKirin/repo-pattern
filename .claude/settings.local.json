@@ -1,6 +1,13 @@
 {
   "permissions": {
-    "allow": [
-    ]
-  }
+    "allow": []
+  },
+  "disabledMcpjsonServers": [
+    "web-tools",
+    "context7",
+    "gitnexus",
+    "tavily",
+    "sequential-thinking",
+    "playwright"
+  ]
 }

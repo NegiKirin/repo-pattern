@@ -1,24 +1,40 @@
 {
   "mcpServers": {
     "context7": {
-      "type": "stdio",
       "command": "npx",
-      "args": [
-        "-y",
-        "@upstash/context7-mcp"
-      ],
+      "args": ["-y", "@upstash/context7-mcp"],
       "env": {
-        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
-      }
+        "CONTEXT7_API_KEY": "CONTEXT7_API_KEY"
+      },
+      "description": "Live documentation lookup for libraries, frameworks, SDKs, and APIs"
     },
     "gitnexus": {
-      "type": "stdio",
       "command": "npx",
-      "args": [
-        "-y",
-        "@duytransipher/gitnexus",
-        "mcp"
-      ]
+      "args": ["-y", "@duytransipher/gitnexus", "mcp"],
+      "description": "Code knowledge graph, impact analysis, and repository flow exploration"
+    },
+    "tavily": {
+      "command": "npx",
+      "args": ["-y", "tavily-mcp@latest"],
+      "env": {
+        "TAVILY_API_KEY": "TAVILY_API_KEY"
+      },
+      "description": "Web search and content extraction via Tavily"
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "description": "Step-by-step reasoning support for multi-stage analysis"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp", "--browser", "chrome"],
+      "description": "Browser automation and end-to-end testing via Playwright"
     }
+  },
+  "_comments": {
+    "usage": "Project MCP configuration. Keep only the servers this repo actively needs.",
+    "env_vars": "Set CONTEXT7_API_KEY and TAVILY_API_KEY in your environment before using those servers.",
+    "context_warning": "Too many enabled MCP servers increase context usage and tool noise."
   }
 }
