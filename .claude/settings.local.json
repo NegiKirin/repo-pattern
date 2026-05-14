@@ -2,7 +2,7 @@
   "permissions": {
     "allow": []
   },
-  "disabledMcpjsonServers": [
+  "enabledMcpjsonServers": [
     "context7",
     "gitnexus",
     "tavily",
