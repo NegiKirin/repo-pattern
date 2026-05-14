@@ -61,11 +61,6 @@ Tạo file [`.mcp.json`](../.mcp.json) ở root repo:
       "type": "stdio",
       "command": "npx",
       "args": ["-y", "gitnexus", "mcp"]
-    },
-    "web-tools": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "<ten-package-web-tools>"]
     }
   }
 }
@@ -104,19 +99,7 @@ gitnexus setup
 gitnexus mcp
 ```
 
-## 7. Cài `web-tools`
-
-Điền đúng command/package bạn đang dùng vào [`.mcp.json`](../.mcp.json).
-
-Nếu dùng repo này:
-
-```text
-https://github.com/huynhkhan123/mcp-web-tools
-```
-
-thì đọc setup của repo đó rồi thay `<ten-package-web-tools>` bằng tên thật.
-
-## 8. Cài Spec Kit vào project hiện tại
+## 7. Cài Spec Kit vào project hiện tại
 
 Dùng Bash script:
 
@@ -143,11 +126,11 @@ Nếu cần git extension sau này:
 specify extension add git
 ```
 
-## 9. Lưu ý với `.claude/`
+## 8. Lưu ý với `.claude/`
 
 Cân nhắc thêm `.claude/` hoặc các phần nhạy cảm của nó vào `.gitignore` để tránh lộ credentials hoặc token.
 
-## 10. Các lệnh Spec Kit sẽ dùng trong Claude Code
+## 9. Các lệnh Spec Kit sẽ dùng trong Claude Code
 
 ```text
 /speckit-constitution
@@ -160,7 +143,7 @@ Cân nhắc thêm `.claude/` hoặc các phần nhạy cảm của nó vào `.gi
 /speckit-implement
 ```
 
-## 11. Kiểm tra nhanh sau khi cài
+## 10. Kiểm tra nhanh sau khi cài
 
 Kiểm tra Claude Code:
 
@@ -188,7 +171,7 @@ Kiểm tra skill chung:
 /tdd
 ```
 
-## 12. Lỗi thường gặp
+## 11. Lỗi thường gặp
 
 ### `claude: command not found`
 
