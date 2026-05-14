@@ -26,7 +26,9 @@
       "Skill(code-reviewer)",
       "Skill(code-reviewer:*)",
       "Bash(rm \"d:/Code/repo-pattern/.claude/scripts/hooks/post-edit-typecheck.js\" \"d:/Code/repo-pattern/.claude/scripts/hooks/pre-bash-dev-server-block.js\")",
-      "Bash(git switch *)"
+      "Bash(git switch *)",
+      "Bash(git rm *)",
+      "Bash(git push *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\hoduy",
