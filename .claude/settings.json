@@ -1,40 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(ls -la \"/d/Code/everything-claude-code/hooks\")",
-      "Read(//d/Code/everything-claude-code/hooks/**)",
-      "Bash(cp \"/d/Code/everything-claude-code/hooks/README.md\" \"/d/Code/repo-pattern/.claude/README.md\")",
-      "Bash(cp \"/d/Code/everything-claude-code/hooks/hooks.json\" \"/d/Code/repo-pattern/.claude/hooks.json\")",
-      "Bash(mkdir -p \"/d/Code/repo-pattern/.claude/hooks\")",
-      "Bash(mv \"/d/Code/repo-pattern/.claude/README.md\" \"/d/Code/repo-pattern/.claude/hooks/README.md\")",
-      "Bash(mv \"/d/Code/repo-pattern/.claude/hooks.json\" \"/d/Code/repo-pattern/.claude/hooks/hooks.json\")",
-      "mcp__context7__resolve-library-id",
-      "Read(//d/Code/pick-skills/dart-flutter-patterns/**)",
-      "Read(//d/Code/pick-skills/defi-amm-security/**)",
-      "Read(//d/Code/everything-claude-code/mcp-configs/**)",
-      "Read(//d/Code/everything-claude-code/**)",
-      "Read(//c/Users/hoduy/.claude/**)",
-      "Skill(update-config)",
-      "Skill(update-config:*)",
-      "Read(//c//**)",
-      "mcp__sequential-thinking__sequentialthinking",
-      "Skill(document-specialist)",
-      "Skill(document-specialist:*)",
-      "Edit(/.claude/skills/fastapi-project-structure/**)",
-      "Bash(mv \"d:/Code/repo-pattern/.claude/skills/fastapi-project-structure\" \"d:/Code/repo-pattern/.claude/skills/fastapi-pattern\")",
-      "Edit(/.claude/skills/fastapi-pattern/**)",
-      "Skill(code-reviewer)",
-      "Skill(code-reviewer:*)",
-      "Bash(rm \"d:/Code/repo-pattern/.claude/scripts/hooks/post-edit-typecheck.js\" \"d:/Code/repo-pattern/.claude/scripts/hooks/pre-bash-dev-server-block.js\")",
-      "Bash(git switch *)",
-      "Bash(git rm *)",
-      "Bash(git push *)"
     ],
-    "additionalDirectories": [
-      "C:\\Users\\hoduy",
-      "d:\\Code\\repo-pattern\\.claude\\skills\\fastapi-project-structure",
-      "d:\\Code\\repo-pattern\\.claude\\scripts\\hooks"
-    ]
+    "additionalDirectories": []
   },
   "hooks": {
     "PreToolUse": [

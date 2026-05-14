@@ -3,7 +3,6 @@
     "allow": []
   },
   "disabledMcpjsonServers": [
-    "web-tools",
     "context7",
     "gitnexus",
     "tavily",

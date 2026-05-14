@@ -1,6 +1,6 @@
 ---
 name: fastapi-pattern
-description: Use when creating, restructuring, or extending a FastAPI backend and the main question is how to organize routers, services, repositories, schemas, dependencies, config, migrations, and tests into a maintainable project layout.
+description: Use when creating, restructuring, or extending a FastAPI backend and the main question is how to organize routers, services, repositories, schemas, dependencies, config, Alembic migrations, and tests into a maintainable project layout.
 ---
 
 # FastAPI Project Structure
@@ -8,6 +8,8 @@ description: Use when creating, restructuring, or extending a FastAPI backend an
 ## Overview
 
 Use this skill to keep a FastAPI codebase structurally consistent as it grows.
+
+This structure assumes FastAPI with SQLAlchemy and Alembic.
 
 Core principle: HTTP concerns stay in routers, business rules stay in services, persistence stays in repositories, and framework wiring stays in dependencies and startup code.
 
@@ -28,62 +30,64 @@ Do not use when:
 ## Recommended Structure
 
 ```text
-app/
-├── main.py
-├── core/
-│   ├── config.py
-│   ├── security.py
-│   ├── constants.py
-│   └── logging.py
-├── api/
-│   ├── deps.py
-│   └── v1/
-│       ├── router.py
-│       └── endpoints/
-│           ├── users.py
-│           ├── auth.py
-│           └── health.py
-├── schemas/
-│   ├── base.py
-│   ├── user.py
-│   └── auth.py
-├── models/
-│   ├── base.py
-│   └── user.py
-├── services/
-│   ├── auth/
-│   │   ├── __init__.py
-│   │   └── auth_service.py
-│   ├── cache/
-│   │   ├── __init__.py
-│   │   └── redis_service.py
-│   └── users/
-│       ├── __init__.py
-│       └── user_service.py
-├── repositories/
-│   ├── base.py
-│   └── user_repository.py
-├── integrations/
-│   ├── redis_client.py
-│   ├── s3_client.py
-│   └── external_api_client.py
-├── db/
-│   ├── session.py
-│   └── base.py
-├── exceptions/
-│   ├── base.py
-│   └── handlers.py
-├── middleware/
-│   └── request_logging.py
-├── migrations/
+.
+├── alembic.ini
+├── alembic/
 │   ├── env.py
 │   ├── script.py.mako
 │   └── versions/
-└── tests/
-    ├── unit/
-    ├── integration/
-    └── conftest.py
-```
+└── app/
+    ├── main.py
+    ├── core/
+    │   ├── config.py
+    │   ├── security.py
+    │   ├── constants.py
+    │   └── logging.py
+    ├── api/
+    │   ├── deps.py
+    │   └── v1/
+    │       ├── router.py
+    │       └── endpoints/
+    │           ├── users.py
+    │           ├── auth.py
+    │           └── health.py
+    ├── schemas/
+    │   ├── base.py
+    │   ├── user.py
+    │   └── auth.py
+    ├── models/
+    │   ├── base.py
+    │   └── user.py
+    ├── services/
+    │   ├── auth/
+    │   │   ├── __init__.py
+    │   │   └── auth_service.py
+    │   ├── cache/
+    │   │   ├── __init__.py
+    │   │   └── redis_service.py
+    │   └── users/
+    │       ├── __init__.py
+    │       └── user_service.py
+    ├── repositories/
+    │   ├── base.py
+    │   └── user_repository.py
+    ├── integrations/
+    │   ├── redis_client.py
+    │   ├── s3_client.py
+    │   └── external_api_client.py
+    ├── db/
+    │   ├── session.py
+    │   └── base.py
+    ├── exceptions/
+    │   ├── base.py
+    │   └── handlers.py
+    ├── middleware/
+    │   └── request_logging.py
+    └── tests/
+        ├── unit/
+        ├── integration/
+        └── conftest.py
+```\n\nAlembic note:\n- keep `alembic.ini` and `alembic/` at the repository root\n- have `alembic/env.py` load SQLAlchemy metadata from `app.db.base` or the module that exports your model base metadata\n- keep migration scripts in `alembic/versions/`, not inside `app/` for clearer separation between app code and schema history
 
 ## Layer Responsibilities
 
