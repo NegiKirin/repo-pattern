@@ -63,3 +63,45 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+<!-- USE MCP START -->
+## MCP filesystem
+
+Use the MCP filesystem server for file and directory operations when it is available.
+Prefer read-only MCP filesystem tools over shell commands for inspection tasks.
+Use destructive MCP filesystem tools only when the change is intentional and scoped to the user's request.
+
+### Read-only tools
+- `read_file`
+- `read_text_file`
+- `read_media_file`
+- `read_multiple_files`
+- `list_directory`
+- `list_directory_with_sizes`
+- `directory_tree`
+- `search_files`
+- `get_file_info`
+- `list_allowed_directories`
+
+### Destructive tools
+- `write_file`
+- `edit_file`
+- `create_directory`
+- `move_file`
+
+### Usage guidance
+- Use `read_text_file` for normal text files.
+- Use `read_file` only when needed for broad compatibility with existing MCP workflows.
+- Use `read_media_file` for images or audio.
+- Use `read_multiple_files` when comparing or reviewing several files at once.
+- Use `list_directory`, `list_directory_with_sizes`, or `directory_tree` to inspect structure before editing.
+- Use `search_files` to find files by name or glob pattern.
+- Use `get_file_info` when metadata matters more than content.
+- Use `list_allowed_directories` before accessing unfamiliar paths.
+- Prefer `edit_file` over `write_file` when updating an existing file.
+- Use `write_file` for new files or full rewrites only.
+- Use `create_directory` before writing into a missing folder.
+- Use `move_file` for renames or relocations instead of copy-delete patterns.
+- Confirm intent before destructive operations that may overwrite or relocate user work.
+
+<!-- USE MCP END -->

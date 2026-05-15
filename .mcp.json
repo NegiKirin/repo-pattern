@@ -30,6 +30,11 @@
       "command": "npx",
       "args": ["-y", "@playwright/mcp", "--browser", "chrome"],
       "description": "Browser automation and end-to-end testing via Playwright"
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/osboxes/Code/repo-pattern"],
+      "description": "Filesystem operations for the current workspace"
     }
   },
   "_comments": {
