@@ -7,6 +7,7 @@
     "gitnexus",
     "tavily",
     "sequential-thinking",
-    "playwright"
+    "playwright",
+    "filesystem"
   ]
 }
