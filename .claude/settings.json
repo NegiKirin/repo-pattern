@@ -1,8 +1,6 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git switch *)",
-      "Bash(git push *)"
     ],
     "additionalDirectories": []
   },
