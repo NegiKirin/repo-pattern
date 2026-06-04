@@ -43,6 +43,7 @@ venv/
 # # Agents
 # AGENTS.md
 # .agents/
+# skills-lock.json
 
 # # Spec-kit
 # .specify/
