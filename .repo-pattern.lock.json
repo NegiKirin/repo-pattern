@@ -8,9 +8,15 @@
     "setupOnInit": true,
     "installMode": "plugin",
     "status": "not-run",
-    "rulesSyncedBy": "setup-function",
+    "rulesSyncedBy": "repo-pattern-auto-cache",
     "hooks": "plugin-managed",
-    "syncedAt": null
+    "syncedAt": null,
+    "rulesScope": "project",
+    "rulesApplyOnInit": true,
+    "recommendedRules": [],
+    "appliedRules": [],
+    "detectedStack": null,
+    "rulesAppliedAt": null
   },
   "mcp": {
     "profile": "web",

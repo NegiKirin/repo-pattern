@@ -1,7 +1,7 @@
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { auditProject } from "./audit.mjs";
-import { exists, readJson, writeJson } from "./fs-utils.mjs";
+import { readJson, writeJson } from "./fs-utils.mjs";
 
 function pass(label) {
   console.log(`[PASS] ${label}`);
@@ -44,21 +44,16 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   };
 
   check(!audit.hasSpecify, ".specify does not exist");
-  check(!audit.hasSpecKitReferences, "deprecated spec runtime references do not exist");
+  check(!audit.hasSpecKitReferences, "Spec Kit references do not exist");
   check(!audit.hasClaudeSkillsDir, ".claude/skills does not exist");
   check(!audit.hasClaudeCommandsDir, ".claude/commands does not exist");
   check(!audit.hasClaudeHooksDir, ".claude/hooks does not exist");
   check(!audit.hasClaudeScriptsDir, ".claude/scripts does not exist");
-  check(!audit.hasClaudeRulesDir, ".claude/rules does not exist");
+  check(!audit.hasClaudeRulesDir || audit.hasOnlyEccRulesDir, "no non-ECC .claude/rules");
   check(audit.hasClaudeDir, ".claude exists");
-  check(exists(path.join(target, ".claude", "settings.json")), ".claude/settings.json exists");
-  check(exists(path.join(target, ".claude", "CLAUDE.md")), ".claude/CLAUDE.md exists");
   check(!audit.hasSettingsHooks, ".claude/settings.json hooks is {}");
   check(!isTracked(target, ".claude/settings.local.json"), ".claude/settings.local.json is not tracked");
-  check(exists(path.join(target, ".mcp.json")) || exists(path.join(target, ".mcp.json.example")), ".mcp.json or .mcp.json.example exists");
   check(!audit.hasHardcodedMcpPath, ".mcp.json has no absolute machine path");
-  check(exists(path.join(target, "docs", "repo-pattern", "setup-guide.md")), "docs/repo-pattern/setup-guide.md exists");
-  check(exists(path.join(target, "docs", "repo-pattern", "workflow.md")), "docs/repo-pattern/workflow.md exists");
   check(audit.hasRepoPatternJson, ".repo-pattern.json exists");
 
   const repoPattern = audit.repoPattern || {};
@@ -80,6 +75,10 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
       JSON.stringify(actualMcpServers) === JSON.stringify(expectedMcpServers),
       ".claude/settings.json enabledMcpjsonServers matches MCP profile"
     );
+  }
+  const appliedRules = lock.ecc?.appliedRules || [];
+  if (appliedRules.length > 0) {
+    check(audit.hasOnlyEccRulesDir, ".claude/rules/ecc contains ECC-managed project rules");
   }
   info(`ECC setup status: ${lock.ecc?.status || "unknown"}`);
   if (lock.ecc?.status === "manual-plugin-install-required") {

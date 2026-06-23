@@ -6,7 +6,6 @@
       "@duytransipher/gitnexus",
       "mcp"
     ],
-    "description": "Code knowledge graph, impact analysis, and repository flow exploration",
-    "timeout": 120000
+    "description": "Code knowledge graph, impact analysis, and repository flow exploration"
   }
 }

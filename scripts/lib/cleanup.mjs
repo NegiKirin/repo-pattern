@@ -1,8 +1,60 @@
 import path from "node:path";
 import fs from "node:fs/promises";
-import { backupPaths, exists, removePath, writeJson, ensureDir } from "./fs-utils.mjs";
-import { cloneDefaultSettings, cloneLocalSettingsExample } from "./settings-defaults.mjs";
+import { backupPaths, exists, removePath, replaceFile, writeJson, ensureDir } from "./fs-utils.mjs";
 
+const MINIMAL_SETTINGS = {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [],
+    "ask": [
+      "Bash(git push *)",
+      "Bash(git reset *)",
+      "Bash(git clean *)",
+      "Bash(rm *)",
+      "Bash(sudo *)",
+      "Bash(chmod *)",
+      "Bash(chown *)"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(secrets/**)",
+      "Read(private/**)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/id_rsa)",
+      "Read(**/id_ed25519)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.config/gcloud/**)",
+      "Bash(rm -rf /)",
+      "Bash(rm -rf ~)"
+    ],
+    "additionalDirectories": [],
+    "defaultMode": "default",
+    "disableBypassPermissionsMode": "disable"
+  },
+  "enabledMcpjsonServers": [],
+  "hooks": {},
+  "autoCompactEnabled": true,
+    "showClearContextOnPlanAccept": true,
+    "env": {
+      "ENABLE_TOOL_SEARCH": "auto:5"},
+  "fileCheckpointingEnabled": true,
+  "respectGitignore": true
+};
+
+const LOCAL_EXAMPLE = {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "preferredNotifChannel": "terminal_bell",
+  "showTurnDuration": true,
+  "spinnerTipsEnabled": true,
+  "permissions": {
+    "allow": []
+  }
+};
 
 export async function cleanupProject({ target, dryRun = false }) {
   console.log(`Cleaning target: ${target}`);
@@ -33,7 +85,7 @@ export async function cleanupProject({ target, dryRun = false }) {
   }
 
   await ensureDir(path.join(target, ".claude"), { dryRun });
-  await writeJson(path.join(target, ".claude", "settings.json"), cloneDefaultSettings(), { dryRun });
+  await writeJson(path.join(target, ".claude", "settings.json"), MINIMAL_SETTINGS, { dryRun });
 
   const local = path.join(target, ".claude", "settings.local.json");
   const example = path.join(target, ".claude", "settings.local.example.json");
@@ -49,7 +101,7 @@ export async function cleanupProject({ target, dryRun = false }) {
     }
   }
 
-  await writeJson(example, cloneLocalSettingsExample(), { dryRun });
+  await writeJson(example, LOCAL_EXAMPLE, { dryRun });
 
   console.log("Cleanup complete.");
 }

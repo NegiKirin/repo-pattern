@@ -5,16 +5,21 @@ import { auditProject, printAudit } from "./lib/audit.mjs";
 import { initProject } from "./lib/init.mjs";
 import { migrateProject } from "./lib/migrate.mjs";
 import { cleanupProject } from "./lib/cleanup.mjs";
-import { copyMcpSystem, generateMcp } from "./lib/mcp.mjs";
+import { generateMcp } from "./lib/mcp.mjs";
 import { setupEcc } from "./lib/ecc.mjs";
 import { doctorProject } from "./lib/doctor.mjs";
+import { applyEccRules } from "./lib/rules.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const sourceRoot = path.resolve(__dirname, "..");
 
 function parseArgs(argv) {
-  const [command, ...rest] = argv;
+  let [command, ...rest] = argv;
+  if (command === "-h" || command === "--help") {
+    command = "help";
+    rest = [];
+  }
   const options = {
     command: command || "help",
     target: ".",
@@ -53,6 +58,7 @@ Usage:
   node scripts/repo-pattern.mjs mcp     --target . --profile web
   node scripts/repo-pattern.mjs ecc     --target .
   node scripts/repo-pattern.mjs doctor  --target .
+  node scripts/repo-pattern.mjs rules   --target .
 
 Options:
   --target <path>   Target project path. Default: .
@@ -86,11 +92,13 @@ async function main() {
         await cleanupProject({ sourceRoot, ...options });
         break;
       case "mcp":
-        await copyMcpSystem({ sourceRoot, target: options.target, dryRun: options.dryRun });
         await generateMcp({ sourceRoot, target: options.target, profile: options.profile, dryRun: options.dryRun });
         break;
       case "ecc":
         await setupEcc({ sourceRoot, target: options.target, dryRun: options.dryRun });
+        break;
+      case "rules":
+        await applyEccRules({ target: options.target, dryRun: options.dryRun });
         break;
       case "doctor":
         await doctorProject(options.target);

@@ -1,6 +1,5 @@
 import path from "node:path";
 import { copyRecursive, ensureDir, exists, readJson, writeJson } from "./fs-utils.mjs";
-import { cloneDefaultSettings } from "./settings-defaults.mjs";
 
 export async function copyMcpSystem({ sourceRoot, target, dryRun = false }) {
   await copyRecursive(path.join(sourceRoot, "mcp"), path.join(target, "mcp"), { dryRun });
@@ -8,7 +7,18 @@ export async function copyMcpSystem({ sourceRoot, target, dryRun = false }) {
 
 async function syncEnabledMcpServers(target, servers, { dryRun = false } = {}) {
   const settingsPath = path.join(target, ".claude", "settings.json");
-  const settings = await readJson(settingsPath, cloneDefaultSettings());
+  const settings = await readJson(settingsPath, {
+    "$schema": "https://json.schemastore.org/claude-code-settings.json",
+    "permissions": {
+      "allow": [],
+      "ask": [],
+      "deny": [],
+      "additionalDirectories": [],
+      "defaultMode": "default",
+      "disableBypassPermissionsMode": "disable"
+    },
+    "hooks": {}
+  });
 
   settings.enabledMcpjsonServers = servers;
   settings.hooks = settings.hooks || {};

@@ -37,5 +37,9 @@
   "autoCompactEnabled": true,
   "fileCheckpointingEnabled": true,
   "respectGitignore": true,
+  "showClearContextOnPlanAccept": true,
+  "env": {
+    "ENABLE_TOOL_SEARCH": "auto:5"
+  },
   "autoUpdatesChannel": "stable"
 }

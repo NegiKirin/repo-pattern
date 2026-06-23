@@ -310,6 +310,28 @@ Not recommended as the default for normal projects.
 
 ## 9. Claude Code settings
 
+
+## Context and token guards
+
+Claude Code currently exposes `autoCompactEnabled`, but not a documented project setting for a custom auto-compact token threshold. `repo-pattern` therefore uses official context/token guards instead of adding fake settings:
+
+```json
+{
+  "autoCompactEnabled": true,
+  "showClearContextOnPlanAccept": true,
+  "env": {
+    "ENABLE_TOOL_SEARCH": "auto:5"}
+}
+```
+
+Meaning:
+
+- skill listing and skill description limits are intentionally left at Claude Code defaults
+- keep auto-compact enabled
+- show the clear-context option after accepting a plan
+- defer MCP tool loading unless tools fit within 5% of context
+
+
 `repo-pattern init` writes a shared project settings file:
 
 ```text
@@ -353,22 +375,6 @@ Do not commit that file. Commit only:
 ```text
 .claude/settings.local.example.json
 ```
-
-
-### Stability defaults
-
-`repo-pattern` enables a few shared Claude Code defaults to reduce interrupted sessions:
-
-```json
-{
-  "autoCompactEnabled": true,
-  "autoUpdatesChannel": "stable",
-  "fileCheckpointingEnabled": true,
-  "respectGitignore": true
-}
-```
-
-MCP server definitions also include timeouts so a stuck MCP tool fails clearly instead of making the conversation appear frozen.
 
 ## 10. Repo-pattern commands
 
@@ -561,3 +567,49 @@ backend  → backend/codebase analysis
 research → docs/search/reasoning-heavy work
 full     → local testing only
 ```
+
+
+## ECC rules auto-cache
+
+`repo-pattern` automatically selects ECC rule packs from the target project's stack and applies them to project scope.
+
+No extra mode or scope arguments are needed:
+
+```bash
+node scripts/repo-pattern.mjs rules --target /path/to/project
+```
+
+Rules are always installed under:
+
+```text
+.claude/rules/ecc/
+```
+
+`repo-pattern` does not flatten rules and does not touch custom rules outside the `ecc/` namespace.
+
+The ECC repository is cloned and cached automatically inside the target project:
+
+```text
+.repo-pattern/cache/ECC/
+```
+
+The first run needs network access. Later runs reuse the cache.
+
+Recommended rules are selected from the official ECC rule packs:
+
+```text
+common
+typescript
+angular
+vue
+nuxt
+python
+golang
+web
+swift
+php
+ruby
+arkts
+```
+
+`init` runs this rules step automatically after ECC setup and before doctor.

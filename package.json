@@ -13,11 +13,9 @@
   },
   "license": "MIT",
   "keywords": [
-    "repo-pattern",
     "claude-code",
     "everything-claude-code",
     "ecc",
-    "ecc-first",
     "mcp",
     "mcp-server",
     "mcp-profiles",
