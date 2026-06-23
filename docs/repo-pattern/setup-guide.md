@@ -20,6 +20,59 @@ minimal Claude Code setup
 
 ---
 
+
+## GitHub Packages publishing
+
+The repository includes:
+
+```text
+.github/workflows/nodejs-package.yml
+```
+
+Create a GitHub Release to trigger publishing.
+
+The workflow publishes to GitHub Packages with:
+
+```text
+registry-url: https://npm.pkg.github.com/
+NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+Because GitHub Packages only supports scoped npm package names, the workflow temporarily changes the package name during CI to:
+
+```text
+@<github-owner>/repo-pattern
+```
+
+The source `package.json` remains:
+
+```json
+{
+  "name": "repo-pattern"
+}
+```
+
+## NPX package usage
+
+When published to npm, `repo-pattern` can be used without cloning the repository:
+
+```bash
+npx repo-pattern init --target . --profile web
+```
+
+The package exposes one CLI binary:
+
+```text
+repo-pattern
+```
+
+Local package test before publishing:
+
+```bash
+npm pack
+npm exec --yes --package ./repo-pattern-0.0.2.tgz -- repo-pattern --help
+```
+
 ## 1. One-step setup for a new project
 
 Run from the `repo-pattern` repository:

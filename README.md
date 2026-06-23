@@ -86,6 +86,63 @@ Meaning:
 - show the clear-context option after accepting a plan
 - defer MCP tool loading unless tools fit within 5% of context
 
+
+## GitHub Packages release workflow
+
+This repo includes a GitHub Actions workflow at:
+
+```text
+.github/workflows/nodejs-package.yml
+```
+
+It runs on GitHub Release creation:
+
+```text
+release.created
+```
+
+The workflow:
+
+```text
+1. checks out the repo
+2. installs dependencies with npm ci
+3. runs npm test
+4. verifies package contents with npm pack --dry-run
+5. publishes to GitHub Packages
+```
+
+GitHub Packages for npm requires a scoped package name, so the workflow keeps the source package as `repo-pattern` but temporarily publishes it as:
+
+```text
+@<github-owner>/repo-pattern
+```
+
+The publish job uses `GITHUB_TOKEN` with `packages: write`.
+
+## NPX usage
+
+After publishing to npm:
+
+```bash
+npx repo-pattern init --target . --profile web
+```
+
+Other commands:
+
+```bash
+npx repo-pattern doctor --target .
+npx repo-pattern audit --target .
+npx repo-pattern mcp --target . --profile research
+npx repo-pattern rules --target .
+```
+
+Package-local development test:
+
+```bash
+npm pack
+npm exec --yes --package ./repo-pattern-0.0.2.tgz -- repo-pattern --help
+```
+
 ## Setup guide
 
 The main setup instructions are consolidated in:

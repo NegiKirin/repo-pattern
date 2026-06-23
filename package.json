@@ -1,21 +1,26 @@
 {
   "name": "repo-pattern",
-  "version": "2.0.0",
+  "version": "0.0.2",
   "description": "Minimal ECC-first Claude Code project initializer and migrator",
   "type": "module",
   "bin": {
     "repo-pattern": "scripts/repo-pattern.mjs"
   },
   "scripts": {
-    "doctor": "node scripts/repo-pattern.mjs doctor --target .",
     "audit": "node scripts/repo-pattern.mjs audit --target .",
-    "mcp:web": "node scripts/repo-pattern.mjs mcp --target . --profile web"
+    "doctor": "node scripts/repo-pattern.mjs doctor --target .",
+    "mcp:web": "node scripts/repo-pattern.mjs mcp --target . --profile web",
+    "test": "node scripts/repo-pattern.mjs doctor --target .",
+    "pack:dry": "npm pack --dry-run",
+    "prepublishOnly": "npm test && npm run pack:dry"
   },
   "license": "MIT",
   "keywords": [
+    "repo-pattern",
     "claude-code",
     "everything-claude-code",
     "ecc",
+    "ecc-first",
     "mcp",
     "mcp-server",
     "mcp-profiles",
@@ -29,5 +34,21 @@
     "automation",
     "nodejs",
     "javascript"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "scripts/",
+    ".claude/",
+    "docs/",
+    "mcp/",
+    ".mcp.json.example",
+    ".repo-pattern.json",
+    ".repo-pattern.lock.json",
+    "CLAUDE.md",
+    "README.md",
+    "LICENSE",
+    ".github/workflows/"
   ]
 }
