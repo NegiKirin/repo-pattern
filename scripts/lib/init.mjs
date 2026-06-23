@@ -4,7 +4,8 @@ import { cleanupProject } from "./cleanup.mjs";
 import { copyMcpSystem, generateMcp } from "./mcp.mjs";
 import { setupEcc } from "./ecc.mjs";
 import { doctorProject } from "./doctor.mjs";
-import { backupPaths, copyFileIfMissing, copyRecursive, ensureDir, writeJson, writeIfMissing } from "./fs-utils.mjs";
+import { applyEccRules } from "./rules.mjs";
+import { backupPaths, copyRecursive, ensureDir, readJson, writeJson, writeIfMissing } from "./fs-utils.mjs";
 
 const TARGET_CLAUDE_MD = "";
 
@@ -24,7 +25,13 @@ function repoPatternJson(profile) {
     ecc: {
       setupOnInit: true,
       installMode: "plugin",
-      rulesSync: "setup-function",
+      rulesSync: "repo-pattern-auto-cache",
+      rulesProfile: "auto",
+      rulesScope: "project",
+      rulesApplyOnInit: true,
+      rulesProfile: "auto",
+      rulesScope: "project",
+      rulesApplyOnInit: true,
       hooks: "plugin-managed",
       copyRuntimeSurfaces: false
     },
@@ -46,7 +53,19 @@ function lockJson(profile) {
       setupOnInit: true,
       installMode: "plugin",
       status: "not-run",
-      rulesSyncedBy: "setup-function",
+      rulesSyncedBy: "repo-pattern-auto-cache",
+      rulesScope: "project",
+      rulesApplyOnInit: true,
+      recommendedRules: [],
+      appliedRules: [],
+      detectedStack: null,
+      rulesAppliedAt: null,
+      rulesScope: "project",
+      rulesApplyOnInit: true,
+      recommendedRules: [],
+      appliedRules: [],
+      detectedStack: null,
+      rulesAppliedAt: null,
       hooks: "plugin-managed",
       syncedAt: null
     },
@@ -78,22 +97,22 @@ export async function initProject({ sourceRoot, target, profile = "web", dryRun 
   // - sourceRoot/.claude/*
   // - sourceRoot/docs/*
   // - sourceRoot/mcp/*
-  // Target CLAUDE.md is created empty when missing. Existing target CLAUDE.md is preserved. Existing .claude project files are also preserved to avoid conflicts.
+  // Target CLAUDE.md is created empty when missing so project-specific instructions can be added later. Existing target CLAUDE.md is preserved.
   await writeIfMissing(path.join(target, "CLAUDE.md"), TARGET_CLAUDE_MD, { dryRun });
 
-  await copyFileIfMissing(
+  await copyRecursive(
     path.join(sourceRoot, ".claude", "CLAUDE.md"),
     path.join(target, ".claude", "CLAUDE.md"),
     { dryRun }
   );
 
-  await copyFileIfMissing(
+  await copyRecursive(
     path.join(sourceRoot, ".claude", "settings.json"),
     path.join(target, ".claude", "settings.json"),
     { dryRun }
   );
 
-  await copyFileIfMissing(
+  await copyRecursive(
     path.join(sourceRoot, ".claude", "settings.local.example.json"),
     path.join(target, ".claude", "settings.local.example.json"),
     { dryRun }
@@ -107,6 +126,7 @@ export async function initProject({ sourceRoot, target, profile = "web", dryRun 
 
   await generateMcp({ sourceRoot, target, profile, dryRun });
   await setupEcc({ sourceRoot, target, dryRun });
+  await applyEccRules({ target, dryRun });
 
   if (dryRun) {
     console.log("[dry-run] doctor skipped because no files were written.");

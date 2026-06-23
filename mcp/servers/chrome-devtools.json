@@ -5,7 +5,6 @@
       "-y",
       "chrome-devtools-mcp@latest"
     ],
-    "description": "Chrome DevTools debugging for frontend runtime, console, network, and performance inspection",
-    "timeout": 120000
+    "description": "Chrome DevTools debugging for frontend runtime, console, network, and performance inspection"
   }
 }

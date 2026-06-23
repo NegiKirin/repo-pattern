@@ -5,7 +5,6 @@
       "-y",
       "@modelcontextprotocol/server-sequential-thinking"
     ],
-    "description": "Structured reasoning support for multi-stage analysis",
-    "timeout": 60000
+    "description": "Structured reasoning support for multi-stage analysis"
   }
 }

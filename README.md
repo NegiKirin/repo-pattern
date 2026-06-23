@@ -2,32 +2,32 @@
 
 
 <p align="center">
-<img alt="Repo Pattern" src="https://img.shields.io/badge/repo--pattern-ECC--first-blue">
-<img alt="Claude Code" src="https://img.shields.io/badge/Claude%20Code-ready-black">
-<img alt="ECC" src="https://img.shields.io/badge/ECC-workflow-purple">
-<img alt="MCP" src="https://img.shields.io/badge/MCP-profile--based-green">
-<img alt="Node.js" src="https://img.shields.io/badge/Node.js-ESM-brightgreen">
-<img alt="No Runtime Vendor" src="https://img.shields.io/badge/no--runtime--vendor-safe-orange">
-<img alt="License" src="https://img.shields.io/badge/license-MIT-lightgrey">
+  <img alt="Repo Pattern" src="https://img.shields.io/badge/repo--pattern-ECC--first-blue">
+  <img alt="Claude Code" src="https://img.shields.io/badge/Claude%20Code-ready-black">
+  <img alt="ECC" src="https://img.shields.io/badge/ECC-workflow-purple">
+  <img alt="MCP Profiles" src="https://img.shields.io/badge/MCP-profiles-green">
+  <img alt="Node.js" src="https://img.shields.io/badge/Node.js-ESM-brightgreen">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-lightgrey">
 </p>
+
 A minimal **ECC-first Claude Code initializer and migrator**.
 
 `repo-pattern` initializes or migrates another project into a clean Claude Code setup with:
 
-* minimal `.claude` settings
-* MCP profiles
-* generated `.mcp.json`
-* ECC setup on `init`
-* cleanup, migration, audit, and doctor tools
+- minimal `.claude` settings
+- MCP profiles
+- generated `.mcp.json`
+- ECC setup on `init`
+- cleanup, migration, audit, and doctor tools
 
 `repo-pattern` does **not** vendor or install local Claude runtime surfaces into target projects:
 
-* no local `.claude/skills`
-* no local `.claude/commands`
-* no local `.claude/hooks`
-* no local `.claude/scripts`
-* no local `.claude/rules`
-* no deprecated spec runtime
+- no local `.claude/skills`
+- no local `.claude/commands`
+- no local `.claude/hooks`
+- no local `.claude/scripts`
+- no local `.claude/rules`
+- no deprecated spec runtime
 
 ECC is treated as the primary workflow layer and should be plugin-managed.
 
@@ -47,14 +47,44 @@ mcp/
 The target project's root `CLAUDE.md` is created empty when missing. Existing target `CLAUDE.md` files are preserved.
 
 
-## Stability defaults
+## ECC rules auto-cache
 
-`repo-pattern` uses conservative Claude Code defaults to reduce interrupted sessions:
+`repo-pattern init` auto-detects the target stack, clones/caches ECC, and applies selected rule packs to project scope:
 
-* `autoCompactEnabled: true`
-* `autoUpdatesChannel: "stable"`
-* `fileCheckpointingEnabled: true`
-* MCP server timeouts in `mcp/servers/*.json`
+```text
+.claude/rules/ecc/
+```
+
+Manual command:
+
+```bash
+node scripts/repo-pattern.mjs rules --target /path/to/project
+```
+
+There is no `--mode` or `--scope`: rules always use auto clone/cache and project scope.
+
+The first rules run needs network access to clone ECC into `.repo-pattern/cache/ECC/`. Later runs reuse the cache.
+
+
+## Context and token guards
+
+Claude Code currently exposes `autoCompactEnabled`, but not a documented project setting for a custom auto-compact token threshold. `repo-pattern` therefore uses official context/token guards instead of adding fake settings:
+
+```json
+{
+  "autoCompactEnabled": true,
+  "showClearContextOnPlanAccept": true,
+  "env": {
+    "ENABLE_TOOL_SEARCH": "auto:5"}
+}
+```
+
+Meaning:
+
+- skill listing and skill description limits are intentionally left at Claude Code defaults
+- keep auto-compact enabled
+- show the clear-context option after accepting a plan
+- defer MCP tool loading unless tools fit within 5% of context
 
 ## Setup guide
 
@@ -101,14 +131,14 @@ node scripts/repo-pattern.mjs cleanup --target /path/to/project
 
 Cleanup removes or archives:
 
-* `.specify`
-* `.claude/skills`
-* `.claude/commands`
-* `.claude/hooks`
-* `.claude/scripts`
-* `.claude/rules`
-* non-empty hooks in `.claude/settings.json`
-* machine-local `.claude/settings.local.json`
+- `.specify`
+- `.claude/skills`
+- `.claude/commands`
+- `.claude/hooks`
+- `.claude/scripts`
+- `.claude/rules`
+- non-empty hooks in `.claude/settings.json`
+- machine-local `.claude/settings.local.json`
 
 
 ## Claude Code settings policy
@@ -121,12 +151,12 @@ Cleanup removes or archives:
 
 Default policy:
 
-* `permissions.allow` starts empty
-* dangerous shell commands are placed in `permissions.ask`
-* common secrets are blocked in `permissions.deny`
-* `hooks` stays `{}`
-* `enabledMcpjsonServers` is synced from the selected MCP profile
-* personal preferences stay in `.claude/settings.local.json`
+- `permissions.allow` starts empty
+- dangerous shell commands are placed in `permissions.ask`
+- common secrets are blocked in `permissions.deny`
+- `hooks` stays `{}`
+- `enabledMcpjsonServers` is synced from the selected MCP profile
+- personal preferences stay in `.claude/settings.local.json`
 
 `repo-pattern mcp` regenerates `.mcp.json` and updates `.claude/settings.json` so `enabledMcpjsonServers` matches the active profile.
 
@@ -138,11 +168,11 @@ node scripts/repo-pattern.mjs mcp --target /path/to/project --profile web
 
 Available profiles:
 
-* `minimal`
-* `web`
-* `backend`
-* `research`
-* `full.local.example`
+- `minimal`
+- `web`
+- `backend`
+- `research`
+- `full.local.example`
 
 The default profile is `web`.
 

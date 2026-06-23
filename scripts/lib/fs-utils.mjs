@@ -29,17 +29,6 @@ export async function writeJson(file, data, { dryRun = false } = {}) {
   await fs.writeFile(file, `${JSON.stringify(data, null, 2)}\n`, "utf8");
 }
 
-export async function copyFileIfMissing(src, dest, { dryRun = false } = {}) {
-  if (!exists(src) || exists(dest)) return false;
-  if (dryRun) {
-    console.log(`[dry-run] copy if missing ${src} -> ${dest}`);
-    return true;
-  }
-  await ensureDir(path.dirname(dest));
-  await fs.copyFile(src, dest);
-  return true;
-}
-
 export async function copyRecursive(src, dest, { dryRun = false } = {}) {
   if (!exists(src)) return;
   if (dryRun) {

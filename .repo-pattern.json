@@ -13,9 +13,12 @@
   "ecc": {
     "setupOnInit": true,
     "installMode": "plugin",
-    "rulesSync": "setup-function",
+    "rulesSync": "repo-pattern-auto-cache",
     "hooks": "plugin-managed",
-    "copyRuntimeSurfaces": false
+    "copyRuntimeSurfaces": false,
+    "rulesProfile": "auto",
+    "rulesScope": "project",
+    "rulesApplyOnInit": true
   },
   "mcp": {
     "profile": "web",
