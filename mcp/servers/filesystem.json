@@ -1,0 +1,12 @@
+{
+  "filesystem": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-filesystem",
+      "${CLAUDE_PROJECT_DIR:-.}"
+    ],
+    "description": "Filesystem operations for the current workspace",
+    "timeout": 60000
+  }
+}

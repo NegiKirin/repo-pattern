@@ -1,0 +1,19 @@
+{
+  "repoPattern": {
+    "version": "2.0.0",
+    "lastInitRun": null,
+    "lastDoctorRun": null
+  },
+  "ecc": {
+    "setupOnInit": true,
+    "installMode": "plugin",
+    "status": "not-run",
+    "rulesSyncedBy": "setup-function",
+    "hooks": "plugin-managed",
+    "syncedAt": null
+  },
+  "mcp": {
+    "profile": "web",
+    "generatedAt": "2026-06-23T01:58:20.499Z"
+  }
+}

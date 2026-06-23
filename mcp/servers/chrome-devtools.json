@@ -1,0 +1,11 @@
+{
+  "chrome-devtools": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "chrome-devtools-mcp@latest"
+    ],
+    "description": "Chrome DevTools debugging for frontend runtime, console, network, and performance inspection",
+    "timeout": 120000
+  }
+}

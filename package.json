@@ -1,0 +1,35 @@
+{
+  "name": "repo-pattern",
+  "version": "2.0.0",
+  "description": "Minimal ECC-first Claude Code project initializer and migrator",
+  "type": "module",
+  "bin": {
+    "repo-pattern": "scripts/repo-pattern.mjs"
+  },
+  "scripts": {
+    "doctor": "node scripts/repo-pattern.mjs doctor --target .",
+    "audit": "node scripts/repo-pattern.mjs audit --target .",
+    "mcp:web": "node scripts/repo-pattern.mjs mcp --target . --profile web"
+  },
+  "license": "MIT",
+  "keywords": [
+    "repo-pattern",
+    "claude-code",
+    "everything-claude-code",
+    "ecc",
+    "ecc-first",
+    "mcp",
+    "mcp-server",
+    "mcp-profiles",
+    "agentic-engineering",
+    "ai-engineering",
+    "developer-tools",
+    "project-template",
+    "project-scaffold",
+    "initializer",
+    "migrator",
+    "automation",
+    "nodejs",
+    "javascript"
+  ]
+}

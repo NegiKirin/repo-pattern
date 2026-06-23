@@ -1,144 +1,224 @@
 # repo-pattern
 
-![Claude Code](https://img.shields.io/badge/Claude%20Code-ready-6C47FF)
-![MCP](https://img.shields.io/badge/MCP-configured-0EA5E9)
-![Spec Kit](https://img.shields.io/badge/Spec%20Kit-included-10B981)
-![Template](https://img.shields.io/badge/repository-template-F59E0B)
-![Project Rules](https://img.shields.io/badge/project-rules%20%26%20skills-64748B)
 
-A polished starter repository for teams that want **Claude Code**, **MCP servers**, **Spec Kit workflows**, and **project-local rules/skills** ready from day one.
+<p align="center">
+<img alt="Repo Pattern" src="https://img.shields.io/badge/repo--pattern-ECC--first-blue">
+<img alt="Claude Code" src="https://img.shields.io/badge/Claude%20Code-ready-black">
+<img alt="ECC" src="https://img.shields.io/badge/ECC-workflow-purple">
+<img alt="MCP" src="https://img.shields.io/badge/MCP-profile--based-green">
+<img alt="Node.js" src="https://img.shields.io/badge/Node.js-ESM-brightgreen">
+<img alt="No Runtime Vendor" src="https://img.shields.io/badge/no--runtime--vendor-safe-orange">
+<img alt="License" src="https://img.shields.io/badge/license-MIT-lightgrey">
+</p>
+A minimal **ECC-first Claude Code initializer and migrator**.
 
-This is a **repository pattern**, not an application scaffold. Copy it into a new project, then tailor the instructions, tools, and workflow to your real stack.
+`repo-pattern` initializes or migrates another project into a clean Claude Code setup with:
 
-## What you get
+* minimal `.claude` settings
+* MCP profiles
+* generated `.mcp.json`
+* ECC setup on `init`
+* cleanup, migration, audit, and doctor tools
 
-- **Project-local Claude setup** in [`.claude/`](.claude/)
-- **MCP server configuration** in [`.mcp.json`](.mcp.json)
-- **Spec Kit workflow assets** in [`.specify/`](.specify/)
-- **Reusable rules and skill packs** versioned inside the repo
-- **Onboarding documentation** in [docs/](docs/)
+`repo-pattern` does **not** vendor or install local Claude runtime surfaces into target projects:
 
-## Core building blocks
+* no local `.claude/skills`
+* no local `.claude/commands`
+* no local `.claude/hooks`
+* no local `.claude/scripts`
+* no local `.claude/rules`
+* no deprecated spec runtime
 
-### Claude workspace
+ECC is treated as the primary workflow layer and should be plugin-managed.
 
-The [`.claude/`](.claude/) directory contains the collaboration layer for the repo:
 
-- [`.claude/CLAUDE.md`](.claude/CLAUDE.md) — project instructions
-- [`.claude/rules/`](.claude/rules/) — coding, testing, security, workflow, and web rules
-- [`.claude/skills/`](.claude/skills/) — local skill definitions
-- [`.claude/commands/`](.claude/commands/) — command content for the workspace
-- [`.claude/scripts/`](.claude/scripts/) — helper scripts
+## Template policy
 
-### MCP configuration
+This repo no longer uses a separate `templates/` folder.
 
-The root [`.mcp.json`](.mcp.json) is pre-wired for a practical MCP toolchain:
-
-- `context7` — live library and framework documentation
-- `gitnexus` — repository graph and impact analysis
-- `tavily` — web research and extraction
-- `sequential-thinking` — structured reasoning support
-- `playwright` — browser automation and E2E validation
-
-Keep only the servers your target repository actually needs.
-
-### Spec Kit workflow
-
-This repo includes [`.specify/`](.specify/) out of the box, including:
-
-- [`.specify/workflows/speckit/workflow.yml`](.specify/workflows/speckit/workflow.yml) — full specify → plan → tasks → implement flow
-- [`.specify/extensions/git/`](.specify/extensions/git/) — optional Git-aware Spec Kit extension
-
-This means the template is meant to be **adapted**, not initialized again from scratch.
-
-### Rules and conventions
-
-The rules system under [`.claude/rules/`](.claude/rules/) is layered:
-
-- `common/` for cross-project defaults
-- language/domain-specific rule sets such as `typescript/` and `web/`
-
-See [`.claude/rules/README.md`](.claude/rules/README.md) for the full model.
-
-## Repository map
+`repo-pattern init` copies canonical files directly from:
 
 ```text
-repo-pattern/
-├── .claude/
-│   ├── CLAUDE.md
-│   ├── commands/
-│   ├── rules/
-│   ├── scripts/
-│   └── skills/
-├── .specify/
-│   ├── extensions/
-│   └── workflows/
-├── docs/
-├── .mcp.json
-├── CLAUDE.md
-└── README.md
+.claude/
+docs/
+mcp/
 ```
 
-## When to use this template
+The target project's root `CLAUDE.md` is created empty when missing. Existing target `CLAUDE.md` files are preserved.
 
-Use this repository when you want to:
 
-- bootstrap a new repo with Claude Code conventions already in place
-- standardize AI-assisted workflow across multiple repositories
-- keep repo-specific rules and skills under version control
-- adopt MCP tooling without rebuilding the same setup every time
-- start with a Spec Kit-friendly planning and execution flow
+## Stability defaults
 
-## Recommended adoption flow
+`repo-pattern` uses conservative Claude Code defaults to reduce interrupted sessions:
 
-1. Copy this repository into your new project.
-2. Rewrite [`.claude/CLAUDE.md`](.claude/CLAUDE.md) for the actual project.
-3. Review [`.mcp.json`](.mcp.json) and remove unused servers.
-4. Trim or extend [`.claude/rules/`](.claude/rules/) to match the stack.
-5. Review [`.specify/`](.specify/) and keep it only if Spec Kit fits your process.
-6. Replace or extend the docs in [docs/](docs/).
+* `autoCompactEnabled: true`
+* `autoUpdatesChannel: "stable"`
+* `fileCheckpointingEnabled: true`
+* MCP server timeouts in `mcp/servers/*.json`
 
-## Customize first
+## Setup guide
 
-Start with these files:
+The main setup instructions are consolidated in:
 
-- [`.claude/CLAUDE.md`](.claude/CLAUDE.md)
-- [`.mcp.json`](.mcp.json)
-- [`.claude/rules/README.md`](.claude/rules/README.md)
-- [`.specify/workflows/speckit/workflow.yml`](.specify/workflows/speckit/workflow.yml)
-- [`.specify/extensions/git/README.md`](.specify/extensions/git/README.md)
-- [docs/claude-code-mcp-setup-vi.md](docs/claude-code-mcp-setup-vi.md)
+```text
+docs/repo-pattern/setup-guide.md
+```
 
-## Keep vs customize
+The guide focuses on one-step new project setup, MCP profile selection, setup flow, and repo-pattern commands.
 
-### Usually keep
+## Normal usage
 
-- the overall [`.claude/`](.claude/) structure
-- the layered rules model in [`.claude/rules/`](.claude/rules/)
-- the general shape of [`.mcp.json`](.mcp.json)
-- [`.specify/`](.specify/) if your team uses Spec Kit
+From this repo:
 
-### Usually customize
+```bash
+node scripts/repo-pattern.mjs init --target /path/to/project --profile web
+```
 
-- project instructions in [`.claude/CLAUDE.md`](.claude/CLAUDE.md)
-- enabled MCP servers and environment variables in [`.mcp.json`](.mcp.json)
-- local rule sets and skill packs
-- onboarding docs in [docs/](docs/)
+`init` creates minimal Claude setup, generates MCP config, runs the ECC setup flow, and runs doctor.
 
-## Notes
+If the ECC plugin cannot be verified or installed automatically, the CLI prints the manual Claude Code commands:
 
-- This repository uses [`.specify/`](.specify/), not `openspec/`.
-- Some MCP servers require environment variables such as `CONTEXT7_API_KEY` and `TAVILY_API_KEY`.
-- Audit every enabled tool before using this template in production work.
+```text
+/plugin marketplace add https://github.com/affaan-m/ECC
+/plugin install ecc@ecc
+```
 
-## Related docs
+## Existing project migration
 
-- [docs/claude-code-mcp-setup-vi.md](docs/claude-code-mcp-setup-vi.md)
-- [`.claude/rules/README.md`](.claude/rules/README.md)
-- [`.specify/extensions/git/README.md`](.specify/extensions/git/README.md)
+```bash
+node scripts/repo-pattern.mjs audit --target /path/to/project
+node scripts/repo-pattern.mjs migrate --target /path/to/project --profile web
+node scripts/repo-pattern.mjs doctor --target /path/to/project
+```
 
-## Summary
+Migration archives old local Claude runtime surfaces before writing the minimal setup.
 
-`repo-pattern` gives you a clean, opinionated baseline for repositories that want Claude Code, MCP tooling, and Spec Kit workflow support from the start.
+## Cleanup only
 
-Copy it, trim it, and make it specific to the project that will actually use it.
+```bash
+node scripts/repo-pattern.mjs cleanup --target /path/to/project
+```
+
+Cleanup removes or archives:
+
+* `.specify`
+* `.claude/skills`
+* `.claude/commands`
+* `.claude/hooks`
+* `.claude/scripts`
+* `.claude/rules`
+* non-empty hooks in `.claude/settings.json`
+* machine-local `.claude/settings.local.json`
+
+
+## Claude Code settings policy
+
+`repo-pattern` keeps shared Claude Code settings safe and minimal:
+
+```text
+.claude/settings.json
+```
+
+Default policy:
+
+* `permissions.allow` starts empty
+* dangerous shell commands are placed in `permissions.ask`
+* common secrets are blocked in `permissions.deny`
+* `hooks` stays `{}`
+* `enabledMcpjsonServers` is synced from the selected MCP profile
+* personal preferences stay in `.claude/settings.local.json`
+
+`repo-pattern mcp` regenerates `.mcp.json` and updates `.claude/settings.json` so `enabledMcpjsonServers` matches the active profile.
+
+## MCP profiles
+
+```bash
+node scripts/repo-pattern.mjs mcp --target /path/to/project --profile web
+```
+
+Available profiles:
+
+* `minimal`
+* `web`
+* `backend`
+* `research`
+* `full.local.example`
+
+The default profile is `web`.
+
+## ECC setup
+
+`init` runs ECC setup automatically.
+
+Advanced/manual command:
+
+```bash
+node scripts/repo-pattern.mjs ecc --target /path/to/project
+```
+
+If you already have your own ECC setup function, set:
+
+```bash
+export REPO_PATTERN_ECC_SETUP_CMD="your-ecc-setup-command"
+```
+
+The command receives the target project path via:
+
+```bash
+REPO_PATTERN_TARGET=/path/to/project
+```
+
+`repo-pattern` itself never copies ECC skills, commands, hooks, scripts, or rules into the target project.
+
+## Target structure after init
+
+```text
+target-project/
+├── CLAUDE.md
+├── .claude/
+│   ├── CLAUDE.md
+│   ├── settings.json
+│   └── settings.local.example.json
+├── mcp/
+│   ├── profiles/
+│   └── servers/
+├── docs/
+│   └── repo-pattern/
+│       ├── workflow.md
+│       └── setup-guide.md
+├── .mcp.json.example
+├── .repo-pattern.json
+└── .repo-pattern.lock.json
+```
+
+Generated local file:
+
+```text
+.mcp.json
+```
+
+`.mcp.json` is intentionally gitignored by default because it is generated from profiles.
+
+## Commands
+
+```bash
+node scripts/repo-pattern.mjs audit --target .
+node scripts/repo-pattern.mjs init --target . --profile web
+node scripts/repo-pattern.mjs migrate --target . --profile web
+node scripts/repo-pattern.mjs cleanup --target .
+node scripts/repo-pattern.mjs mcp --target . --profile web
+node scripts/repo-pattern.mjs ecc --target .
+node scripts/repo-pattern.mjs doctor --target .
+```
+
+All mutating commands support:
+
+```bash
+--dry-run
+```
+
+## Design rule
+
+`repo-pattern` is setup infrastructure only.
+
+After setup, use ECC as the workflow layer inside Claude Code.
