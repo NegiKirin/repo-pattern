@@ -1,0 +1,14 @@
+# Runtime/generated files
+.repo-pattern/cache/
+.repo-pattern/backups/
+.repo-pattern/tmp/
+.mcp.json
+
+# Local/dev artifacts
+node_modules/
+*.zip
+*.tgz
+.DS_Store
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
