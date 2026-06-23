@@ -1,0 +1,13 @@
+{
+  "playwright": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "@playwright/mcp",
+      "--browser",
+      "chrome"
+    ],
+    "description": "Browser automation and end-to-end testing via Playwright",
+    "timeout": 120000
+  }
+}

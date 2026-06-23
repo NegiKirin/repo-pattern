@@ -1,7 +1,0 @@
-# Ignore temporary validation output files
-*.tmp
-*.log
-validation_results.json
-
-# Ignore test build artifacts
-test_build/

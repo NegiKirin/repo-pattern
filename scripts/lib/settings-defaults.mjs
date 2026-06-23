@@ -1,4 +1,4 @@
-{
+export const DEFAULT_SETTINGS = {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [],
@@ -38,4 +38,22 @@
   "fileCheckpointingEnabled": true,
   "respectGitignore": true,
   "autoUpdatesChannel": "stable"
+};
+
+export const LOCAL_SETTINGS_EXAMPLE = {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "preferredNotifChannel": "terminal_bell",
+  "showTurnDuration": true,
+  "spinnerTipsEnabled": true,
+  "permissions": {
+    "allow": []
+  }
+};
+
+export function cloneDefaultSettings() {
+  return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+}
+
+export function cloneLocalSettingsExample() {
+  return JSON.parse(JSON.stringify(LOCAL_SETTINGS_EXAMPLE));
 }

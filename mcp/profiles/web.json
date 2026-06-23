@@ -1,0 +1,8 @@
+{
+  "servers": [
+    "context7",
+    "filesystem",
+    "playwright",
+    "chrome-devtools"
+  ]
+}

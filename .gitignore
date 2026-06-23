@@ -1,50 +1,24 @@
-# OS
-.DS_Store
-Thumbs.db
+# repo-pattern local runtime
+.repo-pattern/tmp/
+.repo-pattern/backups/
 
-# Editor
-.vscode/
-.idea/
+# Claude Code local state
+.claude/settings.local.json
+.claude/session-data/
+.claude/tmp/
+.claude/cache/
 
-# Logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
+# Generated MCP config
+.mcp.json
 
-# Environment files
+# Secrets
 .env
 .env.*
-!.env.example
-!.env.*.example
+secrets/
+private/
 
-# Dependencies
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
 node_modules/
-
-# Build output
-/dist/
-/build/
-/.next/
-/out/
-/coverage/
-
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-
-# # Claude
-# .claude/
-# CLAUDE.md
-# .mcp.json
-
-# # Agents
-# AGENTS.md
-# .agents/
-# skills-lock.json
-
-# # Spec-kit
-# .specify/
-# specs/
