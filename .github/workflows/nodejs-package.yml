@@ -1,0 +1,73 @@
+# This workflow runs tests and publishes this package to GitHub Packages
+# when a GitHub Release is created.
+#
+# GitHub Packages for npm only supports scoped package names.
+# The source package keeps "name": "repo-pattern" for npmjs/npx friendliness.
+# This workflow temporarily publishes it as "@<github-owner>/repo-pattern"
+# to GitHub Packages during CI.
+
+name: Node.js Package
+
+on:
+  release:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Verify package contents
+        run: npm pack --dry-run
+
+  publish-gpr:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js for GitHub Packages
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://npm.pkg.github.com/
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure scoped package name for GitHub Packages
+        shell: bash
+        run: |
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          npm pkg set name="@${OWNER}/repo-pattern"
+          npm pkg set publishConfig.registry="https://npm.pkg.github.com/"
+
+      - name: Verify package contents
+        run: npm pack --dry-run
+
+      - name: Publish to GitHub Packages
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
