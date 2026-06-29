@@ -9,6 +9,7 @@ import { generateMcp } from "./lib/mcp.mjs";
 import { setupEcc } from "./lib/ecc.mjs";
 import { doctorProject } from "./lib/doctor.mjs";
 import { applyEccRules } from "./lib/rules.mjs";
+import { setupProject } from "./lib/setup.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,7 +27,10 @@ function parseArgs(argv) {
     profile: "web",
     dryRun: false,
     force: false,
-    migrate: false
+    migrate: false,
+    extraSkills: [],
+    noExtraSkills: false,
+    yesExtraSkillLicenseRisk: false
   };
 
   for (let i = 0; i < rest.length; i++) {
@@ -36,6 +40,16 @@ function parseArgs(argv) {
     else if (arg === "--dry-run") options.dryRun = true;
     else if (arg === "--force") options.force = true;
     else if (arg === "--migrate") options.migrate = true;
+    else if (arg === "--extra-skill") {
+      const value = rest[++i];
+      if (!value || value.startsWith("--")) {
+        console.error("Missing value for --extra-skill");
+        process.exit(2);
+      }
+      options.extraSkills.push(value);
+    }
+    else if (arg === "--no-extra-skills") options.noExtraSkills = true;
+    else if (arg === "--yes-extra-skill-license-risk") options.yesExtraSkillLicenseRisk = true;
     else if (arg === "-h" || arg === "--help") options.command = "help";
     else {
       console.error(`Unknown argument: ${arg}`);
@@ -51,6 +65,7 @@ function help() {
   console.log(`repo-pattern — minimal ECC-first Claude Code initializer
 
 Usage:
+  node scripts/repo-pattern.mjs setup   --target .
   node scripts/repo-pattern.mjs audit   --target .
   node scripts/repo-pattern.mjs init    --target . --profile web
   node scripts/repo-pattern.mjs migrate --target . --profile web
@@ -62,10 +77,16 @@ Usage:
 
 Options:
   --target <path>   Target project path. Default: .
-  --profile <name>  MCP profile. Default: web
-  --dry-run         Print actions without writing
-  --force           Force init over legacy state
-  --migrate         Allow init to migrate legacy state
+  --profile <name>  MCP profile for scriptable commands. Default: web
+
+Setup UI:
+  setup uses ↑/↓ to move, Space to toggle skills, Enter to confirm, Esc/Ctrl+C to cancel
+  --dry-run                         Print actions without writing
+  --force                           Force init over legacy state
+  --migrate                         Allow init/setup to migrate legacy state
+  --extra-skill <id>                Install optional target-local skill; repeatable
+  --no-extra-skills                 Skip optional extra skill prompt during init
+  --yes-extra-skill-license-risk    Accept license-unclear extra skills non-interactively
 `);
 }
 
@@ -82,6 +103,9 @@ async function main() {
         printAudit(audit);
         break;
       }
+      case "setup":
+        await setupProject({ sourceRoot, ...options });
+        break;
       case "init":
         await initProject({ sourceRoot, ...options });
         break;

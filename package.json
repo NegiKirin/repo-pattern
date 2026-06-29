@@ -1,5 +1,5 @@
 {
-  "name": "repo-pattern",
+  "name": "@negikirin/repo-pattern",
   "version": "0.0.2",
   "description": "Minimal ECC-first Claude Code project initializer and migrator",
   "type": "module",
@@ -50,5 +50,11 @@
     "README.md",
     "LICENSE",
     ".github/workflows/"
-  ]
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com/"
+  },
+  "dependencies": {
+    "prompts": "^2.4.2"
+  }
 }

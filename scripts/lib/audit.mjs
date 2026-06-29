@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { exists, readJson } from "./fs-utils.mjs";
+import { unmanagedLocalSkillDirs } from "./extra-skills.mjs";
 
 const SPEC_RE = /Spec Kit|speckit/i;
 const HARDCODED_PATH_RE = /"\/home\/|"\/Users\/|"[A-Za-z]:\\\\/;
@@ -74,6 +75,8 @@ function hasNonEmptyObject(value) {
 export async function auditProject(target) {
   const settings = await readJson(path.join(target, ".claude", "settings.json"), {});
   const repoPattern = await readJson(path.join(target, ".repo-pattern.json"), null);
+  const lock = await readJson(path.join(target, ".repo-pattern.lock.json"), {});
+  const unmanagedSkillDirs = await unmanagedLocalSkillDirs(target, lock);
 
   const hasMcpJson = exists(path.join(target, ".mcp.json"));
   const hasHardcodedMcpPath = hasMcpJson
@@ -90,6 +93,7 @@ export async function auditProject(target) {
     hasSettingsLocalTracked: isTracked(target, ".claude/settings.local.json"),
     hasSettingsHooks: hasNonEmptyObject(settings.hooks),
     hasClaudeSkillsDir: exists(path.join(target, ".claude", "skills")),
+    unmanagedSkillDirs,
     hasClaudeCommandsDir: exists(path.join(target, ".claude", "commands")),
     hasClaudeHooksDir: exists(path.join(target, ".claude", "hooks")),
     hasClaudeScriptsDir: exists(path.join(target, ".claude", "scripts")),
@@ -103,7 +107,7 @@ export async function auditProject(target) {
     result.hasSpecify ||
     result.hasSpecKitReferences ||
     result.hasSettingsHooks ||
-    result.hasClaudeSkillsDir ||
+    result.unmanagedSkillDirs.length > 0 ||
     result.hasClaudeCommandsDir ||
     result.hasClaudeHooksDir ||
     result.hasClaudeScriptsDir ||
@@ -142,7 +146,7 @@ export function printAudit(audit) {
   console.log(`${clean(audit.hasSpecKitReferences)} Spec Kit references absent`);
   console.log(`${clean(audit.hasSettingsLocalTracked)} .claude/settings.local.json not tracked`);
   console.log(`${clean(audit.hasSettingsHooks)} .claude/settings.json hooks empty`);
-  console.log(`${clean(audit.hasClaudeSkillsDir)} .claude/skills absent`);
+  console.log(`${clean(audit.unmanagedSkillDirs.length > 0)} no unmanaged .claude/skills`);
   console.log(`${clean(audit.hasClaudeCommandsDir)} .claude/commands absent`);
   console.log(`${clean(audit.hasClaudeHooksDir)} .claude/hooks absent`);
   console.log(`${clean(audit.hasClaudeScriptsDir)} .claude/scripts absent`);

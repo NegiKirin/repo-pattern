@@ -20,13 +20,13 @@ A minimal **ECC-first Claude Code initializer and migrator**.
 - ECC setup on `init`
 - cleanup, migration, audit, and doctor tools
 
-`repo-pattern` does **not** vendor or install local Claude runtime surfaces into target projects:
+`repo-pattern` does **not** vendor or install local Claude runtime surfaces into target projects by default:
 
-- no local `.claude/skills`
+- no local `.claude/skills` unless explicitly selected during `init`
 - no local `.claude/commands`
 - no local `.claude/hooks`
 - no local `.claude/scripts`
-- no local `.claude/rules`
+- no local `.claude/rules` except ECC project rules under `.claude/rules/ecc/`
 - no deprecated spec runtime
 
 ECC is treated as the primary workflow layer and should be plugin-managed.
@@ -155,13 +155,36 @@ The guide focuses on one-step new project setup, MCP profile selection, setup fl
 
 ## Normal usage
 
-From this repo:
+Guided terminal setup:
+
+```bash
+node scripts/repo-pattern.mjs setup --target /path/to/project
+```
+
+Scriptable one-shot setup:
 
 ```bash
 node scripts/repo-pattern.mjs init --target /path/to/project --profile web
 ```
 
-`init` creates minimal Claude setup, generates MCP config, runs the ECC setup flow, and runs doctor.
+`setup` first checks `claude --version`, then opens a library-backed interactive terminal UI: use ↑/↓ to move, Space to toggle extra skills, Enter to confirm, Esc/Ctrl+C to cancel. It also asks for Anthropic provider/model values and writes the target's gitignored `.claude/settings.local.json`. It requires a TTY; use `init` for CI/scripts.
+
+`init` creates minimal Claude setup, generates MCP config, runs the ECC setup flow, offers optional extra skills, and runs doctor. It copies `.claude/settings.example.json` to the target as `.claude/settings.json`.
+
+In a TTY, `init` shows a small selector for explicitly target-local skills:
+
+- `taste-skill` — MIT, frontend/UI taste rules
+- `documentation-specialist` — docs generation skill; no visible upstream license, so confirmation is required
+
+Scripted usage:
+
+```bash
+node scripts/repo-pattern.mjs init --target . --profile web --no-extra-skills
+node scripts/repo-pattern.mjs init --target . --profile web --extra-skill taste-skill
+node scripts/repo-pattern.mjs init --target . --profile web --extra-skill documentation-specialist --yes-extra-skill-license-risk
+```
+
+Selected extras are cloned into `.claude/skills/<id>` and recorded in `.repo-pattern.lock.json`; unrecorded local skills still fail doctor.
 
 If the ECC plugin cannot be verified or installed automatically, the CLI prints the manual Claude Code commands:
 
@@ -189,7 +212,7 @@ node scripts/repo-pattern.mjs cleanup --target /path/to/project
 Cleanup removes or archives:
 
 - `.specify`
-- `.claude/skills`
+- unmanaged `.claude/skills`
 - `.claude/commands`
 - `.claude/hooks`
 - `.claude/scripts`
@@ -200,7 +223,13 @@ Cleanup removes or archives:
 
 ## Claude Code settings policy
 
-`repo-pattern` keeps shared Claude Code settings safe and minimal:
+`repo-pattern` keeps shared Claude Code settings safe and minimal. The source template is:
+
+```text
+.claude/settings.example.json
+```
+
+It is written to the target as:
 
 ```text
 .claude/settings.json
@@ -278,17 +307,19 @@ target-project/
 └── .repo-pattern.lock.json
 ```
 
-Generated local file:
+Generated local files:
 
 ```text
 .mcp.json
+.claude/settings.local.json  # setup only
 ```
 
-`.mcp.json` is intentionally gitignored by default because it is generated from profiles.
+`.mcp.json` is intentionally gitignored by default because it is generated from profiles. `setup` writes `.claude/settings.local.json` from your prompted provider/model values and adds it to the target `.gitignore`.
 
 ## Commands
 
 ```bash
+node scripts/repo-pattern.mjs setup --target .
 node scripts/repo-pattern.mjs audit --target .
 node scripts/repo-pattern.mjs init --target . --profile web
 node scripts/repo-pattern.mjs migrate --target . --profile web
@@ -296,6 +327,14 @@ node scripts/repo-pattern.mjs cleanup --target .
 node scripts/repo-pattern.mjs mcp --target . --profile web
 node scripts/repo-pattern.mjs ecc --target .
 node scripts/repo-pattern.mjs doctor --target .
+```
+
+Optional skill flags for `init`:
+
+```bash
+--extra-skill <id>
+--no-extra-skills
+--yes-extra-skill-license-risk
 ```
 
 All mutating commands support:

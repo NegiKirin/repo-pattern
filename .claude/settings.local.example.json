@@ -1,9 +1,27 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "model": "opus",
+  "fallbackModel": ["sonnet", "haiku"],
+  "effortLevel": "xhigh",
+  "alwaysThinkingEnabled": true,
+  "autoCompactEnabled": true,
+  "autoCompactWindow": 1000000,
+  "editorMode": "vim",
+  "language": "english",
   "preferredNotifChannel": "terminal_bell",
   "showTurnDuration": true,
   "spinnerTipsEnabled": true,
-  "permissions": {
-    "allow": []
+  "fileCheckpointingEnabled": true,
+  "env": {
+    "ENABLE_TOOL_SEARCH": "auto:5",
+    "ANTHROPIC_BASE_URL": "https://example.com/v1",
+    "ANTHROPIC_AUTH_TOKEN": "replace-with-your-token-in-settings.local.json",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-5",
+    "ANTHROPIC_DEFAULT_FABLE_MODEL": "replace-with-your-fable-model-id",
+    "API_TIMEOUT_MS": "300000",
+    "BASH_DEFAULT_TIMEOUT_MS": "300000",
+    "MCP_TOOL_TIMEOUT": "600000"
   }
 }

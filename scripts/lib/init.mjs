@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import { auditProject, printAudit } from "./audit.mjs";
 import { cleanupProject } from "./cleanup.mjs";
@@ -5,6 +6,7 @@ import { copyMcpSystem, generateMcp } from "./mcp.mjs";
 import { setupEcc } from "./ecc.mjs";
 import { doctorProject } from "./doctor.mjs";
 import { applyEccRules } from "./rules.mjs";
+import { installExtraSkills } from "./extra-skills.mjs";
 import { backupPaths, copyRecursive, ensureDir, readJson, writeJson, writeIfMissing } from "./fs-utils.mjs";
 
 const TARGET_CLAUDE_MD = "";
@@ -76,7 +78,37 @@ function lockJson(profile) {
   };
 }
 
-export async function initProject({ sourceRoot, target, profile = "web", dryRun = false, force = false, migrate = false }) {
+async function appendGitignoreLine(target, line, { dryRun = false } = {}) {
+  const file = path.join(target, ".gitignore");
+  let content = "";
+  try {
+    content = await fs.readFile(file, "utf8");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  if (content.split(/\r?\n/).includes(line)) return;
+  const next = `${content}${content && !content.endsWith("\n") ? "\n" : ""}${line}\n`;
+  if (dryRun) {
+    console.log(`[dry-run] append ${line} to ${file}`);
+    return;
+  }
+  await fs.writeFile(file, next, "utf8");
+}
+
+async function writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun }) {
+  if (!localSettingsEnv) return;
+  const template = await readJson(path.join(sourceRoot, ".claude", "settings.local.example.json"), {});
+  await writeJson(path.join(target, ".claude", "settings.local.json"), {
+    ...template,
+    env: {
+      ...(template.env || {}),
+      ...localSettingsEnv
+    }
+  }, { dryRun });
+  await appendGitignoreLine(target, ".claude/settings.local.json", { dryRun });
+}
+
+export async function initProject({ sourceRoot, target, profile = "web", dryRun = false, force = false, migrate = false, extraSkills = [], noExtraSkills = false, yesExtraSkillLicenseRisk = false, localSettingsEnv = null }) {
   console.log(`Initializing target: ${target}`);
   const audit = await auditProject(target);
   printAudit(audit);
@@ -107,7 +139,7 @@ export async function initProject({ sourceRoot, target, profile = "web", dryRun 
   );
 
   await copyRecursive(
-    path.join(sourceRoot, ".claude", "settings.json"),
+    path.join(sourceRoot, ".claude", "settings.example.json"),
     path.join(target, ".claude", "settings.json"),
     { dryRun }
   );
@@ -117,6 +149,7 @@ export async function initProject({ sourceRoot, target, profile = "web", dryRun 
     path.join(target, ".claude", "settings.local.example.json"),
     { dryRun }
   );
+  await writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun });
 
   await copyRecursive(path.join(sourceRoot, "docs"), path.join(target, "docs"), { dryRun });
   await copyMcpSystem({ sourceRoot, target, dryRun });
@@ -127,6 +160,7 @@ export async function initProject({ sourceRoot, target, profile = "web", dryRun 
   await generateMcp({ sourceRoot, target, profile, dryRun });
   await setupEcc({ sourceRoot, target, dryRun });
   await applyEccRules({ target, dryRun });
+  await installExtraSkills({ target, extraSkills, noExtraSkills, yesExtraSkillLicenseRisk, dryRun });
 
   if (dryRun) {
     console.log("[dry-run] doctor skipped because no files were written.");

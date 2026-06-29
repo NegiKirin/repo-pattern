@@ -2,12 +2,22 @@ import { execSync } from "node:child_process";
 import path from "node:path";
 import { readJson, writeJson } from "./fs-utils.mjs";
 
+function hasEccPlugin() {
+  try {
+    return execSync("claude plugin list", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).includes("ecc@ecc");
+  } catch {
+    return false;
+  }
+}
+
 export async function setupEcc({ target, dryRun = false }) {
   console.log("ECC setup flow");
 
-  let status = "manual-plugin-install-required";
+  let status = hasEccPlugin() ? "installed" : "manual-plugin-install-required";
 
-  if (process.env.REPO_PATTERN_ECC_SETUP_CMD) {
+  if (status === "installed") {
+    console.log("ECC plugin detected in Claude Code.");
+  } else if (process.env.REPO_PATTERN_ECC_SETUP_CMD) {
     console.log("Using REPO_PATTERN_ECC_SETUP_CMD for ECC setup.");
     if (dryRun) {
       console.log(`[dry-run] REPO_PATTERN_TARGET=${target} ${process.env.REPO_PATTERN_ECC_SETUP_CMD}`);

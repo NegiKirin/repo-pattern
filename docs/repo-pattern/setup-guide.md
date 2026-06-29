@@ -1,6 +1,14 @@
 # Repo Pattern Setup Guide
 
-This guide focuses on the normal path:
+This guide focuses on the guided terminal path:
+
+```bash
+node scripts/repo-pattern.mjs setup --target /path/to/project
+```
+
+Use `setup` when you want an arrow-key UI for profile choice, optional extra skills, migration safety, and confirmation.
+
+Use scriptable `init` when you already know the exact options:
 
 ```bash
 node scripts/repo-pattern.mjs init --target /path/to/project --profile web
@@ -16,7 +24,7 @@ minimal Claude Code setup
 + repo-pattern metadata
 ```
 
-`repo-pattern` is intentionally not a Claude runtime pack. It does not install local Claude skills, commands, hooks, scripts, or rules into the target project. ECC provides the workflow surface through plugin-managed runtime.
+`repo-pattern` is intentionally not a Claude runtime pack. It does not install local Claude skills, commands, hooks, scripts, or rules by default. Explicitly selected extra skills are the only exception. ECC provides the workflow surface through plugin-managed runtime.
 
 ---
 
@@ -78,16 +86,33 @@ npm exec --yes --package ./repo-pattern-0.0.2.tgz -- repo-pattern --help
 Run from the `repo-pattern` repository:
 
 ```bash
-node scripts/repo-pattern.mjs init --target /path/to/project --profile web
+node scripts/repo-pattern.mjs setup --target /path/to/project
 ```
 
 Example:
 
 ```bash
-node scripts/repo-pattern.mjs init --target ~/Code/my-app --profile web
+node scripts/repo-pattern.mjs setup --target ~/Code/my-app
 ```
 
-For most projects, this is the only command you need.
+For scripts or CI, use the non-interactive path:
+
+```bash
+node scripts/repo-pattern.mjs init --target ~/Code/my-app --profile web --no-extra-skills
+```
+
+Setup first checks `claude --version`, then uses a library-backed terminal wizard. It asks for Anthropic provider/model values and writes them to the target's gitignored `.claude/settings.local.json`.
+
+Keys:
+
+```text
+↑ / ↓       move
+Space       toggle optional skills
+Enter       confirm current step
+Esc/Ctrl+C  cancel
+```
+
+For non-interactive scripts, use `init` instead of `setup`.
 
 ---
 
@@ -100,15 +125,18 @@ For most projects, this is the only command you need.
 2. Create minimal `.claude/` setup.
 3. Create empty root `CLAUDE.md` if missing. If it already exists, keep it unchanged.
 4. Write `.claude/CLAUDE.md` if missing.
-5. Write `.claude/settings.json`.
+5. Write `.claude/settings.json` from `.claude/settings.example.json`.
 6. Write `.claude/settings.local.example.json`.
-7. Copy MCP profiles and server definitions.
-8. Generate `.mcp.json` from the selected profile.
-9. Write `.mcp.json.example`.
-10. Write `.repo-pattern.json`.
-11. Write `.repo-pattern.lock.json`.
-12. Run or attempt ECC setup flow.
-13. Run doctor.
+7. During `setup`, write gitignored `.claude/settings.local.json` from prompted provider/model values.
+8. Copy MCP profiles and server definitions.
+9. Generate `.mcp.json` from the selected profile.
+10. Write `.mcp.json.example`.
+11. Write `.repo-pattern.json`.
+12. Write `.repo-pattern.lock.json`.
+13. Run or attempt ECC setup flow.
+14. Apply ECC rules.
+15. Offer optional extra skills.
+16. Run doctor.
 ```
 
 After setup, the target project should contain:
@@ -119,7 +147,8 @@ target-project/
 ├── .claude/
 │   ├── CLAUDE.md
 │   ├── settings.json
-│   └── settings.local.example.json
+│   ├── settings.local.example.json
+│   └── settings.local.json  # setup only, gitignored
 ├── mcp/
 │   ├── profiles/
 │   └── servers/
@@ -151,6 +180,8 @@ The target project should not contain these by default:
 .claude/scripts/
 .claude/rules/
 ```
+
+Exception: `init` may create `.claude/skills/<id>` only when the user explicitly selects a known extra skill.
 
 ---
 
@@ -385,7 +416,7 @@ Meaning:
 - defer MCP tool loading unless tools fit within 5% of context
 
 
-`repo-pattern init` writes a shared project settings file:
+`repo-pattern init` writes a shared project settings file from `.claude/settings.example.json`:
 
 ```text
 .claude/settings.json
@@ -417,10 +448,21 @@ For example, profile `web` sets:
 ]
 ```
 
-Local preferences should go in:
+Local preferences and Anthropic provider/model values should go in:
 
 ```text
 .claude/settings.local.json
+```
+
+`setup` asks for these values and writes the file for you:
+
+```text
+ANTHROPIC_BASE_URL
+ANTHROPIC_AUTH_TOKEN
+ANTHROPIC_DEFAULT_OPUS_MODEL
+ANTHROPIC_DEFAULT_SONNET_MODEL
+ANTHROPIC_DEFAULT_HAIKU_MODEL
+ANTHROPIC_DEFAULT_FABLE_MODEL
 ```
 
 Do not commit that file. Commit only:
@@ -429,7 +471,56 @@ Do not commit that file. Commit only:
 .claude/settings.local.example.json
 ```
 
-## 10. Repo-pattern commands
+## 10. Optional extra skills
+
+During `setup`, repo-pattern shows a checkbox selector for optional target-local skills. Use Space to toggle and Enter to continue. Scriptable `init` can still use `--extra-skill` or `--no-extra-skills`.
+
+Available extras:
+
+```text
+taste-skill                MIT      frontend/UI taste rules
+documentation-specialist   unknown  documentation generation; requires license-risk confirmation
+```
+
+Non-interactive examples:
+
+```bash
+node scripts/repo-pattern.mjs init --target . --profile web --no-extra-skills
+node scripts/repo-pattern.mjs init --target . --profile web --extra-skill taste-skill
+node scripts/repo-pattern.mjs init --target . --profile web --extra-skill documentation-specialist --yes-extra-skill-license-risk
+```
+
+Selected extras are cloned into:
+
+```text
+.claude/skills/<id>/
+```
+
+They are recorded in `.repo-pattern.lock.json`. Unknown or unrecorded local skills still fail `doctor`.
+
+---
+
+## 11. Repo-pattern commands
+
+### `setup`
+
+Guided terminal setup.
+
+```bash
+node scripts/repo-pattern.mjs setup --target /path/to/project
+```
+
+Behavior:
+
+```text
+EMPTY/PARTIAL       → recommends init
+LEGACY_VENDOR       → recommends migrate and requires confirmation
+ECC_NATIVE_MINIMAL  → offers doctor, MCP regeneration, or exit
+```
+
+Requires an interactive terminal. Use ↑/↓ to move, Space to toggle skills, Enter to confirm. It writes `.claude/settings.local.json` and adds that path to the target `.gitignore`. Use `init` for CI/scripts.
+
+---
 
 ### `init`
 
@@ -447,6 +538,8 @@ It performs:
 minimal Claude setup
 MCP generation
 ECC setup flow
+ECC rules sync
+optional extra skill selection
 doctor check
 ```
 
@@ -502,7 +595,7 @@ node scripts/repo-pattern.mjs doctor --target /path/to/project
 Doctor checks that:
 
 ```text
-local Claude runtime surfaces are absent
+unmanaged local Claude runtime surfaces are absent
 settings hooks are empty
 .mcp.json has no hardcoded machine path
 .repo-pattern.json is valid
@@ -560,12 +653,12 @@ Usually not needed because `init` already runs ECC setup flow.
 
 ---
 
-## 11. Recommended flows
+## 12. Recommended flows
 
 ### New web/full-stack project
 
 ```bash
-node scripts/repo-pattern.mjs init --target ~/Code/my-app --profile web
+node scripts/repo-pattern.mjs setup --target ~/Code/my-app
 ```
 
 ### New backend project
@@ -603,12 +696,18 @@ node scripts/repo-pattern.mjs doctor --target ~/Code/my-app
 
 ---
 
-## 12. Summary
+## 13. Summary
 
 For normal usage:
 
 ```bash
-node scripts/repo-pattern.mjs init --target /path/to/project --profile web
+node scripts/repo-pattern.mjs setup --target /path/to/project
+```
+
+For scripted usage:
+
+```bash
+node scripts/repo-pattern.mjs init --target /path/to/project --profile web --no-extra-skills
 ```
 
 Use another profile only when the project clearly needs it:

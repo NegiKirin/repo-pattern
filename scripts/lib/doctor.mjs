@@ -2,6 +2,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { auditProject } from "./audit.mjs";
 import { readJson, writeJson } from "./fs-utils.mjs";
+import { unmanagedLocalSkillDirs } from "./extra-skills.mjs";
 
 function pass(label) {
   console.log(`[PASS] ${label}`);
@@ -35,17 +36,21 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   const audit = await auditProject(target);
   const failures = [];
 
-  const check = (condition, label) => {
-    if (condition) pass(label);
-    else {
+  const check = (condition, label, { silentPass = false } = {}) => {
+    if (condition) {
+      if (!silentPass) pass(label);
+    } else {
       fail(label);
       failures.push(label);
     }
   };
 
-  check(!audit.hasSpecify, ".specify does not exist");
-  check(!audit.hasSpecKitReferences, "Spec Kit references do not exist");
-  check(!audit.hasClaudeSkillsDir, ".claude/skills does not exist");
+  check(!audit.hasSpecify, ".specify does not exist", { silentPass: true });
+  check(!audit.hasSpecKitReferences, "Spec Kit references do not exist", { silentPass: true });
+  const lockPath = path.join(target, ".repo-pattern.lock.json");
+  const lock = await readJson(lockPath, {});
+  const unmanagedSkillDirs = await unmanagedLocalSkillDirs(target, lock);
+  check(unmanagedSkillDirs.length === 0, "no unmanaged .claude/skills");
   check(!audit.hasClaudeCommandsDir, ".claude/commands does not exist");
   check(!audit.hasClaudeHooksDir, ".claude/hooks does not exist");
   check(!audit.hasClaudeScriptsDir, ".claude/scripts does not exist");
@@ -59,14 +64,15 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   const repoPattern = audit.repoPattern || {};
   check(repoPattern.workflow === "ecc-native", ".repo-pattern.json workflow=ecc-native");
   check(repoPattern.ecc?.setupOnInit === true, ".repo-pattern.json ecc.setupOnInit=true");
-  check(repoPattern.runtime?.localSkills === false, ".repo-pattern.json runtime.localSkills=false");
+  check(
+    repoPattern.runtime?.localSkills === false || repoPattern.runtime?.localSkills === "explicit-extra-only",
+    ".repo-pattern.json runtime.localSkills=false or explicit-extra-only"
+  );
   check(repoPattern.runtime?.localCommands === false, ".repo-pattern.json runtime.localCommands=false");
   check(repoPattern.runtime?.localHooks === false, ".repo-pattern.json runtime.localHooks=false");
   check(repoPattern.runtime?.localScripts === false, ".repo-pattern.json runtime.localScripts=false");
   check(repoPattern.runtime?.localRules === false, ".repo-pattern.json runtime.localRules=false");
 
-  const lockPath = path.join(target, ".repo-pattern.lock.json");
-  const lock = await readJson(lockPath, {});
   const settings = await readJson(path.join(target, ".claude", "settings.json"), {});
   const expectedMcpServers = lock.mcp?.enabledServers || [];
   if (expectedMcpServers.length > 0) {
@@ -79,6 +85,12 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   const appliedRules = lock.ecc?.appliedRules || [];
   if (appliedRules.length > 0) {
     check(audit.hasOnlyEccRulesDir, ".claude/rules/ecc contains ECC-managed project rules");
+  }
+  if (lock.extraSkills?.selected?.length > 0) {
+    info(`Extra skills: ${lock.extraSkills.selected.join(", ")}`);
+    if (lock.extraSkills.licenseRiskAccepted?.length > 0) {
+      info(`License risk accepted for: ${lock.extraSkills.licenseRiskAccepted.join(", ")}`);
+    }
   }
   info(`ECC setup status: ${lock.ecc?.status || "unknown"}`);
   if (lock.ecc?.status === "manual-plugin-install-required") {
