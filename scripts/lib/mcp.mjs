@@ -1,8 +1,11 @@
+import fs from "node:fs/promises";
 import path from "node:path";
-import { copyRecursive, ensureDir, exists, readJson, writeJson } from "./fs-utils.mjs";
+import { ensureDir, exists, readJson, writeJson } from "./fs-utils.mjs";
 
-export async function copyMcpSystem({ sourceRoot, target, dryRun = false }) {
-  await copyRecursive(path.join(sourceRoot, "mcp"), path.join(target, "mcp"), { dryRun });
+export async function listAvailableMcpServers(sourceRoot) {
+  const serverDir = path.join(sourceRoot, "mcp", "servers");
+  const entries = await fs.readdir(serverDir);
+  return entries.filter((name) => name.endsWith(".json")).map((name) => path.basename(name, ".json")).sort();
 }
 
 async function syncEnabledMcpServers(target, servers, { dryRun = false } = {}) {
@@ -21,19 +24,16 @@ async function syncEnabledMcpServers(target, servers, { dryRun = false } = {}) {
   });
 
   settings.enabledMcpjsonServers = servers;
-  settings.hooks = settings.hooks || {};
 
   await writeJson(settingsPath, settings, { dryRun });
 }
 
-export async function generateMcp({ sourceRoot, target, profile = "web", dryRun = false }) {
-  const profilePath = path.join(sourceRoot, "mcp", "profiles", `${profile}.json`);
-  if (!exists(profilePath)) {
-    throw new Error(`MCP profile not found: ${profile}`);
-  }
+export async function generateMcp({ sourceRoot, target, profile = "web", mcpServers: selectedServers = null, dryRun = false }) {
+  const profileData = selectedServers ? null : await readJson(path.join(sourceRoot, "mcp", "profiles", `${profile}.json`));
+  const profileServers = selectedServers || profileData?.servers;
+  if (!profileServers) throw new Error(`MCP profile not found: ${profile}`);
+  if (profile === "custom" && profileServers.length === 0) throw new Error("Custom MCP profile requires at least one server.");
 
-  const profileData = await readJson(profilePath);
-  const profileServers = profileData.servers || [];
   const mcpServers = {};
 
   for (const name of profileServers) {
@@ -45,9 +45,6 @@ export async function generateMcp({ sourceRoot, target, profile = "web", dryRun 
 
   await ensureDir(target, { dryRun });
   await writeJson(path.join(target, ".mcp.json"), { mcpServers }, { dryRun });
-
-  const examplePath = path.join(target, ".mcp.json.example");
-  await writeJson(examplePath, { mcpServers }, { dryRun });
 
   await syncEnabledMcpServers(target, profileServers, { dryRun });
 

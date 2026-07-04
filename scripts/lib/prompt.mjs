@@ -82,10 +82,6 @@ export async function selectMany({ message, options, initialValues = [] }) {
   return result.value || [];
 }
 
-export async function askChoice(message, choices, defaultValue) {
-  return selectOne({ message, options: choices, initialValue: defaultValue });
-}
-
 export function printBox(title, lines = []) {
   console.log(`\n== ${title} ==`);
   for (const line of lines) console.log(line);

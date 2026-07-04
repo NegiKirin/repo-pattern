@@ -1,9 +1,23 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
 
 export function exists(p) {
   return fsSync.existsSync(p);
+}
+
+export function isTracked(root, relPath) {
+  try {
+    const output = execFileSync("git", ["ls-files", relPath], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+    return output.trim().length > 0;
+  } catch {
+    return false;
+  }
 }
 
 export async function ensureDir(dir, { dryRun = false } = {}) {
@@ -66,6 +80,23 @@ export async function replaceFile(file, content, { dryRun = false } = {}) {
   }
   await ensureDir(path.dirname(file));
   await fs.writeFile(file, content, "utf8");
+}
+
+export async function appendGitignoreLine(target, line, { dryRun = false } = {}) {
+  const file = path.join(target, ".gitignore");
+  let content = "";
+  try {
+    content = await fs.readFile(file, "utf8");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  if (content.split(/\r?\n/).includes(line)) return;
+  const next = `${content}${content && !content.endsWith("\n") ? "\n" : ""}${line}\n`;
+  if (dryRun) {
+    console.log(`[dry-run] append ${line} to ${file}`);
+    return;
+  }
+  await fs.writeFile(file, next, "utf8");
 }
 
 export function timestamp() {

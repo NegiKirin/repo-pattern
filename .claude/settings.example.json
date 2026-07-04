@@ -33,7 +33,5 @@
   },
   "enabledMcpjsonServers": [],
   "respectGitignore": true,
-  "autoUpdatesChannel": "stable",
-  "autoCompactEnabled": true,
-  "autoCompactWindow": 1000000
+  "autoUpdatesChannel": "stable"
 }

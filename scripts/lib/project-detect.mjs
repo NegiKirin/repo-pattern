@@ -47,6 +47,14 @@ export async function detectProject(target) {
 
   if (await hasAny(target, ["pyproject.toml", "requirements.txt", "setup.py", "setup.cfg", "uv.lock", "poetry.lock"])) languages.add("python");
   if (await hasAny(target, ["go.mod"])) languages.add("go");
+  if (await hasAny(target, ["pom.xml", "build.gradle", "build.gradle.kts", "gradlew"])) languages.add("java");
+  if (hasDep(deps, ["kotlin", "org.jetbrains.kotlin.jvm", "org.jetbrains.kotlin.android"])) languages.add("kotlin");
+  if (await hasAny(target, ["Cargo.toml"])) languages.add("rust");
+  if (await hasAny(target, ["pubspec.yaml"])) languages.add("dart");
+  if (await hasAny(target, ["CMakeLists.txt", "conanfile.txt", "conanfile.py", "vcpkg.json"]) || await findByExtension(target, ".cpp") || await findByExtension(target, ".cc") || await findByExtension(target, ".cxx")) languages.add("cpp");
+  if (await findByExtension(target, ".csproj") || await findByExtension(target, ".sln")) languages.add("csharp");
+  if (await findByExtension(target, ".fsproj") || await findByExtension(target, ".fs")) languages.add("fsharp");
+  if (await hasAny(target, ["cpanfile", "Makefile.PL", "Build.PL"]) || await findByExtension(target, ".pl") || await findByExtension(target, ".pm")) languages.add("perl");
   if (await hasAny(target, ["composer.json"])) languages.add("php");
   if (await hasAny(target, ["Gemfile"]) || await findByExtension(target, ".gemspec")) languages.add("ruby");
   if (await hasAny(target, ["Package.swift"]) || await findByExtension(target, ".xcodeproj") || await findByExtension(target, ".xcworkspace")) languages.add("swift");
@@ -58,6 +66,7 @@ export async function detectProject(target) {
   }
 
   if (hasDep(deps, ["react", "react-dom"])) frameworks.add("react");
+  if (hasDep(deps, ["react-native", "expo"])) frameworks.add("react-native");
   if (hasDep(deps, ["@angular/core"]) || await hasAny(target, ["angular.json"])) frameworks.add("angular");
   if (hasDep(deps, ["vue", "@vitejs/plugin-vue"])) frameworks.add("vue");
   if (hasDep(deps, ["nuxt"]) || await hasAny(target, ["nuxt.config.js", "nuxt.config.mjs", "nuxt.config.ts"])) {
@@ -76,9 +85,10 @@ export async function detectProject(target) {
   else if (await hasAny(target, ["bun.lockb", "bun.lock"])) packageManager = "bun";
   else if (await hasAny(target, ["package-lock.json"])) packageManager = "npm";
 
-  const frontendFrameworks = ["nextjs", "react", "angular", "vue", "nuxt"];
+  const frontendFrameworks = ["nextjs", "react", "react-native", "angular", "vue", "nuxt"];
+  const backendLanguages = ["python", "go", "java", "kotlin", "rust", "cpp", "csharp", "fsharp", "perl", "php", "ruby", "swift", "arkts"];
   const hasFrontend = [...frameworks].some((fw) => frontendFrameworks.includes(fw)) || tools.has("frontend-tooling");
-  const hasBackend = languages.has("python") || languages.has("go") || languages.has("php") || languages.has("ruby");
+  const hasBackend = backendLanguages.some((language) => languages.has(language));
 
   let repoType = "generic";
   if (hasFrontend && hasBackend) repoType = "fullstack";

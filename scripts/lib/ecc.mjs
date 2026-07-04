@@ -50,12 +50,11 @@ ECC runtime surfaces are plugin-managed.
   const lock = await readJson(lockPath, {});
   lock.ecc = {
     ...(lock.ecc || {}),
-    setupOnInit: true,
     installMode: "plugin",
     status,
-    rulesSyncedBy: "setup-function",
+    rulesSyncedBy: lock.ecc?.rulesSyncedBy || null,
     hooks: "plugin-managed",
-    syncedAt: status === "installed" ? new Date().toISOString() : null
+    syncedAt: status === "installed" ? new Date().toISOString() : lock.ecc?.syncedAt || null
   };
   await writeJson(lockPath, lock, { dryRun });
 

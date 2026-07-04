@@ -1,8 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
-import { exists, readJson } from "./fs-utils.mjs";
-import { unmanagedLocalSkillDirs } from "./extra-skills.mjs";
+import { exists, isTracked, readJson } from "./fs-utils.mjs";
 
 const SPEC_RE = /Spec Kit|speckit/i;
 const HARDCODED_PATH_RE = /"\/home\/|"\/Users\/|"[A-Za-z]:\\\\/;
@@ -43,20 +41,6 @@ async function scanForSpecRefs(root) {
   return false;
 }
 
-function isTracked(root, relPath) {
-  try {
-    const output = execFileSync("git", ["ls-files", relPath], {
-      cwd: root,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"]
-    });
-    return output.trim().length > 0;
-  } catch {
-    return false;
-  }
-}
-
-
 async function isOnlyEccRulesDir(target) {
   const rulesDir = path.join(target, ".claude", "rules");
   if (!exists(rulesDir)) return false;
@@ -75,8 +59,6 @@ function hasNonEmptyObject(value) {
 export async function auditProject(target) {
   const settings = await readJson(path.join(target, ".claude", "settings.json"), {});
   const repoPattern = await readJson(path.join(target, ".repo-pattern.json"), null);
-  const lock = await readJson(path.join(target, ".repo-pattern.lock.json"), {});
-  const unmanagedSkillDirs = await unmanagedLocalSkillDirs(target, lock);
 
   const hasMcpJson = exists(path.join(target, ".mcp.json"));
   const hasHardcodedMcpPath = hasMcpJson
@@ -93,7 +75,6 @@ export async function auditProject(target) {
     hasSettingsLocalTracked: isTracked(target, ".claude/settings.local.json"),
     hasSettingsHooks: hasNonEmptyObject(settings.hooks),
     hasClaudeSkillsDir: exists(path.join(target, ".claude", "skills")),
-    unmanagedSkillDirs,
     hasClaudeCommandsDir: exists(path.join(target, ".claude", "commands")),
     hasClaudeHooksDir: exists(path.join(target, ".claude", "hooks")),
     hasClaudeScriptsDir: exists(path.join(target, ".claude", "scripts")),
@@ -103,15 +84,16 @@ export async function auditProject(target) {
     repoPattern
   };
 
+  const allowSourceSkills = repoPattern?.mode === "template";
   const legacy = (
     result.hasSpecify ||
     result.hasSpecKitReferences ||
     result.hasSettingsHooks ||
-    result.unmanagedSkillDirs.length > 0 ||
+    (result.hasClaudeSkillsDir && !allowSourceSkills) ||
     result.hasClaudeCommandsDir ||
     result.hasClaudeHooksDir ||
     result.hasClaudeScriptsDir ||
-    result.hasClaudeRulesDir
+    (result.hasClaudeRulesDir && !result.hasOnlyEccRulesDir)
   );
 
   if (!result.hasClaudeDir && !result.hasMcpJson && !result.hasRepoPatternJson) {
@@ -146,7 +128,7 @@ export function printAudit(audit) {
   console.log(`${clean(audit.hasSpecKitReferences)} Spec Kit references absent`);
   console.log(`${clean(audit.hasSettingsLocalTracked)} .claude/settings.local.json not tracked`);
   console.log(`${clean(audit.hasSettingsHooks)} .claude/settings.json hooks empty`);
-  console.log(`${clean(audit.unmanagedSkillDirs.length > 0)} no unmanaged .claude/skills`);
+  console.log(`${clean(audit.hasClaudeSkillsDir)} .claude/skills absent`);
   console.log(`${clean(audit.hasClaudeCommandsDir)} .claude/commands absent`);
   console.log(`${clean(audit.hasClaudeHooksDir)} .claude/hooks absent`);
   console.log(`${clean(audit.hasClaudeScriptsDir)} .claude/scripts absent`);

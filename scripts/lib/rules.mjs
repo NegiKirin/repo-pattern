@@ -1,8 +1,8 @@
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { backupPaths, copyRecursive, ensureDir, exists, readJson, removePath, writeJson } from "./fs-utils.mjs";
+import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, exists, readJson, removePath, writeJson } from "./fs-utils.mjs";
 import { detectProject } from "./project-detect.mjs";
-import { selectEccRules, explainRules } from "./ecc-rules.mjs";
+import { selectEccRules, explainRules, normalizeEccRules, invalidEccRules } from "./ecc-rules.mjs";
 
 const ECC_REPO_URL = "https://github.com/affaan-m/ECC.git";
 
@@ -40,14 +40,18 @@ async function ensureEccCache(target, { dryRun = false } = {}) {
   return eccCache;
 }
 
-export async function applyEccRules({ target, dryRun = false }) {
+export async function applyEccRules({ target, dryRun = false, ruleMode = "auto", rules = null }) {
   const detection = await detectProject(target);
-  const selectedRules = selectEccRules(detection);
+  const invalidRules = ruleMode === "manual" ? invalidEccRules(rules) : [];
+  if (invalidRules.length > 0) throw new Error(`Unknown ECC rule pack(s): ${invalidRules.join(", ")}`);
+
+  const selectedRules = ruleMode === "manual" ? normalizeEccRules(rules) : selectEccRules(detection);
 
   console.log(explainRules(detection, selectedRules));
   console.log("");
 
   const eccCache = await ensureEccCache(target, { dryRun });
+  await appendGitignoreLine(target, ".repo-pattern/cache/", { dryRun });
   const sourceRulesRoot = path.join(eccCache, "rules");
   const destRoot = path.join(target, ".claude", "rules", "ecc");
 
@@ -71,9 +75,8 @@ export async function applyEccRules({ target, dryRun = false }) {
   repoConfig.ecc = {
     ...(repoConfig.ecc || {}),
     rulesSync: "repo-pattern-auto-cache",
-    rulesProfile: "auto",
+    rulesProfile: ruleMode,
     rulesScope: "project",
-    rulesApplyOnInit: true,
     copyRuntimeSurfaces: false
   };
   await writeJson(repoConfigPath, repoConfig, { dryRun });
@@ -83,8 +86,8 @@ export async function applyEccRules({ target, dryRun = false }) {
   lock.ecc = {
     ...(lock.ecc || {}),
     rulesSyncedBy: "repo-pattern-auto-cache",
+    rulesProfile: ruleMode,
     rulesScope: "project",
-    rulesApplyOnInit: true,
     recommendedRules: selectedRules,
     appliedRules: selectedRules,
     detectedStack: detection,

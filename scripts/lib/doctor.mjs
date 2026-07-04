@@ -1,73 +1,52 @@
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import { auditProject } from "./audit.mjs";
-import { readJson, writeJson } from "./fs-utils.mjs";
-import { unmanagedLocalSkillDirs } from "./extra-skills.mjs";
+import { isTracked, readJson, writeJson } from "./fs-utils.mjs";
 
-function pass(label) {
-  console.log(`[PASS] ${label}`);
-}
+function renderDoctor(target, checks, infoRows) {
+  const failed = checks.filter((row) => !row.ok);
+  const visibleChecks = checks.filter((row) => !row.silent);
 
-function fail(label) {
-  console.log(`[FAIL] ${label}`);
-}
+  console.log("Repo Pattern Doctor");
+  console.log(`Target: ${target}`);
+  console.log(`Checks: ${checks.length - failed.length}/${checks.length} passed${failed.length ? `, ${failed.length} failed` : ""}\n`);
 
-function info(label) {
-  console.log(`[INFO] ${label}`);
-}
-
-function isTracked(root, relPath) {
-  try {
-    const output = execFileSync("git", ["ls-files", relPath], {
-      cwd: root,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"]
-    });
-    return output.trim().length > 0;
-  } catch {
-    return false;
+  for (const row of visibleChecks) {
+    console.log(`${row.ok ? "✓" : "✗"} ${row.label}`);
+  }
+  for (const row of infoRows) {
+    console.log(`i ${row}`);
   }
 }
 
 export async function doctorProject(target, { updateLock = false, dryRun = false } = {}) {
-  console.log(`Repo Pattern Doctor`);
-  console.log(`Target: ${target}\n`);
-
   const audit = await auditProject(target);
-  const failures = [];
+  const checks = [];
+  const infoRows = [];
 
   const check = (condition, label, { silentPass = false } = {}) => {
-    if (condition) {
-      if (!silentPass) pass(label);
-    } else {
-      fail(label);
-      failures.push(label);
-    }
+    checks.push({ ok: Boolean(condition), label, silent: Boolean(condition && silentPass) });
   };
 
   check(!audit.hasSpecify, ".specify does not exist", { silentPass: true });
   check(!audit.hasSpecKitReferences, "Spec Kit references do not exist", { silentPass: true });
   const lockPath = path.join(target, ".repo-pattern.lock.json");
   const lock = await readJson(lockPath, {});
-  const unmanagedSkillDirs = await unmanagedLocalSkillDirs(target, lock);
-  check(unmanagedSkillDirs.length === 0, "no unmanaged .claude/skills");
+  const allowSourceSkills = audit.repoPattern?.mode === "template";
+  check(!audit.hasClaudeSkillsDir || allowSourceSkills, ".claude/skills does not exist outside source template repos");
   check(!audit.hasClaudeCommandsDir, ".claude/commands does not exist");
   check(!audit.hasClaudeHooksDir, ".claude/hooks does not exist");
   check(!audit.hasClaudeScriptsDir, ".claude/scripts does not exist");
   check(!audit.hasClaudeRulesDir || audit.hasOnlyEccRulesDir, "no non-ECC .claude/rules");
   check(audit.hasClaudeDir, ".claude exists");
   check(!audit.hasSettingsHooks, ".claude/settings.json hooks is {}");
+  check(!isTracked(target, ".claude/settings.json"), ".claude/settings.json is not tracked");
   check(!isTracked(target, ".claude/settings.local.json"), ".claude/settings.local.json is not tracked");
   check(!audit.hasHardcodedMcpPath, ".mcp.json has no absolute machine path");
   check(audit.hasRepoPatternJson, ".repo-pattern.json exists");
 
   const repoPattern = audit.repoPattern || {};
   check(repoPattern.workflow === "ecc-native", ".repo-pattern.json workflow=ecc-native");
-  check(repoPattern.ecc?.setupOnInit === true, ".repo-pattern.json ecc.setupOnInit=true");
-  check(
-    repoPattern.runtime?.localSkills === false || repoPattern.runtime?.localSkills === "explicit-extra-only",
-    ".repo-pattern.json runtime.localSkills=false or explicit-extra-only"
-  );
+  check(repoPattern.runtime?.localSkills === false, ".repo-pattern.json runtime.localSkills=false");
   check(repoPattern.runtime?.localCommands === false, ".repo-pattern.json runtime.localCommands=false");
   check(repoPattern.runtime?.localHooks === false, ".repo-pattern.json runtime.localHooks=false");
   check(repoPattern.runtime?.localScripts === false, ".repo-pattern.json runtime.localScripts=false");
@@ -86,17 +65,11 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   if (appliedRules.length > 0) {
     check(audit.hasOnlyEccRulesDir, ".claude/rules/ecc contains ECC-managed project rules");
   }
-  if (lock.extraSkills?.selected?.length > 0) {
-    info(`Extra skills: ${lock.extraSkills.selected.join(", ")}`);
-    if (lock.extraSkills.licenseRiskAccepted?.length > 0) {
-      info(`License risk accepted for: ${lock.extraSkills.licenseRiskAccepted.join(", ")}`);
-    }
-  }
-  info(`ECC setup status: ${lock.ecc?.status || "unknown"}`);
+  infoRows.push(`ECC setup status: ${lock.ecc?.status || "unknown"}`);
   if (lock.ecc?.status === "manual-plugin-install-required") {
-    info("Open Claude Code and run:");
-    info("/plugin marketplace add https://github.com/affaan-m/ECC");
-    info("/plugin install ecc@ecc");
+    infoRows.push("Open Claude Code and run:");
+    infoRows.push("/plugin marketplace add https://github.com/affaan-m/ECC");
+    infoRows.push("/plugin install ecc@ecc");
   }
 
   if (updateLock) {
@@ -105,6 +78,9 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
     await writeJson(lockPath, lock, { dryRun });
   }
 
+  renderDoctor(target, checks, infoRows);
+
+  const failures = checks.filter((row) => !row.ok);
   if (failures.length > 0) {
     throw new Error(`Doctor failed with ${failures.length} failure(s).`);
   }

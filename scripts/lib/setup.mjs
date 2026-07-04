@@ -2,12 +2,11 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { auditProject, printAudit } from "./audit.mjs";
 import { detectProject } from "./project-detect.mjs";
-import { initProject } from "./init.mjs";
-import { migrateProject } from "./migrate.mjs";
+import { provisionProject } from "./provision.mjs";
 import { doctorProject } from "./doctor.mjs";
-import { generateMcp } from "./mcp.mjs";
+import { generateMcp, listAvailableMcpServers } from "./mcp.mjs";
 import { askConfirm, askPassword, askText, isInteractive, printBox, selectMany, selectOne } from "./prompt.mjs";
-import { extraSkillOptions, licenseRiskSkillIds } from "./extra-skills.mjs";
+import { ECC_RULE_PACKS, selectEccRules } from "./ecc-rules.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -16,7 +15,8 @@ const PROFILES = [
   { value: "minimal", label: "minimal", description: "smallest setup" },
   { value: "backend", label: "backend", description: "backend/API/codebase analysis" },
   { value: "research", label: "research", description: "docs/search/reasoning-heavy work" },
-  { value: "full.local.example", label: "full.local.example", description: "all included example MCP servers" }
+  { value: "full", label: "full", description: "all included MCP servers" },
+  { value: "custom", label: "custom", description: "choose exact MCP servers" }
 ];
 
 const LOCAL_SETTINGS_FIELDS = [
@@ -33,10 +33,6 @@ function suggestedProfile(detection, fallback) {
   if (["frontend", "fullstack", "node"].includes(detection.repoType)) return "web";
   if (detection.repoType === "backend") return "backend";
   return "minimal";
-}
-
-function selectedExtraSkillsLabel(extraSkills) {
-  return extraSkills.length > 0 ? extraSkills.join(", ") : "none";
 }
 
 async function checkClaudeCode() {
@@ -56,12 +52,41 @@ async function chooseProfile(profile, detection) {
   });
 }
 
-async function chooseExtraSkills(initialValues) {
-  return selectMany({
-    message: "Step 2/3 — Choose optional extra skills",
-    options: extraSkillOptions(),
-    initialValues
+async function chooseMcpConfig(sourceRoot, profile) {
+  if (profile !== "custom") return { profile, mcpServers: null };
+  const mcpServers = await selectMany({
+    message: "Choose MCP servers",
+    options: await listAvailableMcpServers(sourceRoot),
+    initialValues: ["context7", "filesystem"]
   });
+  if (mcpServers.length === 0) throw new Error("Custom MCP profile requires at least one server.");
+  return { profile, mcpServers };
+}
+
+async function chooseRuleConfig(detection) {
+  const autoRules = selectEccRules(detection);
+  const ruleMode = await selectOne({
+    message: "Step 2/3 — Choose ECC rule detection mode",
+    options: [
+      { value: "auto", label: "auto", description: `detect from project (${autoRules.join(", ")})` },
+      { value: "manual", label: "manual", description: "choose rule packs by type" },
+      { value: "none", label: "none", description: "do not install project-local ECC rules" }
+    ],
+    initialValue: "auto"
+  });
+
+  if (ruleMode === "none") return { applyRules: false, ruleMode: "auto", rules: [] };
+  if (ruleMode !== "manual") return { applyRules: true, ruleMode, rules: autoRules };
+
+  return {
+    applyRules: true,
+    ruleMode,
+    rules: await selectMany({
+      message: "Choose ECC rule packs",
+      options: ECC_RULE_PACKS,
+      initialValues: autoRules
+    })
+  };
 }
 
 async function chooseLocalSettingsEnv() {
@@ -73,12 +98,13 @@ async function chooseLocalSettingsEnv() {
   return env;
 }
 
-async function confirmSummary({ action, target, profile, extraSkills, localSettingsEnv, dryRun }) {
+async function confirmSummary({ action, target, mcpConfig, ruleConfig, localSettingsEnv, dryRun }) {
   printBox("Setup summary", [
     `action: ${action}`,
     `target: ${target}`,
-    `profile: ${profile}`,
-    `extra skills: ${selectedExtraSkillsLabel(extraSkills)}`,
+    `profile: ${mcpConfig.profile}`,
+    `mcp servers: ${mcpConfig.mcpServers?.join(", ") || "from profile"}`,
+    `rules: ${ruleConfig.applyRules ? ruleConfig.rules.join(", ") : "none"}`,
     `local settings: .claude/settings.local.json`,
     `base url: ${localSettingsEnv.ANTHROPIC_BASE_URL}`,
     `opus: ${localSettingsEnv.ANTHROPIC_DEFAULT_OPUS_MODEL}`,
@@ -117,13 +143,24 @@ async function handleInitialized({ sourceRoot, target, profile, dryRun }) {
   if (action === "mcp") {
     const detection = await detectProject(target);
     const chosenProfile = await chooseProfile(profile, detection);
-    await generateMcp({ sourceRoot, target, profile: chosenProfile, dryRun });
+    const mcpConfig = await chooseMcpConfig(sourceRoot, chosenProfile);
+    await generateMcp({ sourceRoot, target, profile: mcpConfig.profile, mcpServers: mcpConfig.mcpServers, dryRun });
   }
 }
 
-export async function setupProject({ sourceRoot, target, profile = "web", dryRun = false, migrate = false, extraSkills = [], yesExtraSkillLicenseRisk = false }) {
+export async function setupProject({ sourceRoot, target, profile = "web", dryRun = false, force = false, migrate = false, yes = false, applyRules = false }) {
   if (!isInteractive()) {
-    throw new Error("setup requires an interactive terminal; use init --target ... --profile ... for scripts.");
+    if (!yes) throw new Error("setup requires an interactive terminal, or pass --yes for scriptable mode.");
+    if (profile === "custom") throw new Error("setup --yes cannot use the custom profile; choose a named profile.");
+
+    const audit = await auditProject(target);
+    if (audit.state === "ECC_NATIVE_MINIMAL" && !force) {
+      await doctorProject(target, { dryRun });
+      return;
+    }
+
+    await provisionProject({ sourceRoot, target, profile, dryRun, force, migrate, applyRules });
+    return;
   }
 
   printBox("repo-pattern setup", ["Guided terminal setup for Claude Code + ECC."]);
@@ -131,22 +168,22 @@ export async function setupProject({ sourceRoot, target, profile = "web", dryRun
 
   const detection = await detectProject(target);
   const chosenProfile = await chooseProfile(profile, detection);
-  const chosenExtraSkills = await chooseExtraSkills(extraSkills);
-  const licenseRiskIds = licenseRiskSkillIds(chosenExtraSkills);
-  const licenseRiskAccepted = yesExtraSkillLicenseRisk || (
-    licenseRiskIds.length > 0 && await askConfirm(`Selected skill(s) need license review: ${licenseRiskIds.join(", ")}. Continue?`, false)
-  );
-  if (licenseRiskIds.length > 0 && !licenseRiskAccepted) throw new Error("Setup cancelled.");
+  const mcpConfig = await chooseMcpConfig(sourceRoot, chosenProfile);
+  const ruleConfig = await chooseRuleConfig(detection);
 
   const audit = await auditProject(target);
   printAudit(audit);
+
+  if (audit.state === "LEGACY_VENDOR" && force && !migrate) {
+    throw new Error("Target has legacy/local Claude runtime surfaces. Re-run setup with --migrate, not --force.");
+  }
 
   if (audit.state === "ECC_NATIVE_MINIMAL") {
     await handleInitialized({ sourceRoot, target, profile: chosenProfile, dryRun });
     return;
   }
 
-  const action = audit.state === "LEGACY_VENDOR" ? "migrate" : "init";
+  const action = audit.state === "LEGACY_VENDOR" ? "migrate" : "setup";
   if (action === "migrate" && !migrate) {
     printBox("Migration required", ["Legacy/local Claude runtime surfaces detected.", "Recommended action: migrate, with backups."]);
     const confirmed = await askConfirm("Run migrate?", false);
@@ -155,21 +192,21 @@ export async function setupProject({ sourceRoot, target, profile = "web", dryRun
 
   const localSettingsEnv = await chooseLocalSettingsEnv();
 
-  if (!await confirmSummary({ action, target, profile: chosenProfile, extraSkills: chosenExtraSkills, localSettingsEnv, dryRun })) {
+  if (!await confirmSummary({ action, target, mcpConfig, ruleConfig, localSettingsEnv, dryRun })) {
     throw new Error("Setup cancelled.");
   }
 
-  const args = {
+  await provisionProject({
     sourceRoot,
     target,
-    profile: chosenProfile,
+    profile: mcpConfig.profile,
+    mcpServers: mcpConfig.mcpServers,
     dryRun,
-    extraSkills: chosenExtraSkills,
-    noExtraSkills: chosenExtraSkills.length === 0,
-    yesExtraSkillLicenseRisk: yesExtraSkillLicenseRisk || licenseRiskAccepted,
+    force: false,
+    migrate: action === "migrate",
+    ruleMode: ruleConfig.ruleMode,
+    rules: ruleConfig.rules,
+    applyRules: ruleConfig.applyRules,
     localSettingsEnv
-  };
-
-  if (action === "migrate") await migrateProject(args);
-  else await initProject(args);
+  });
 }
