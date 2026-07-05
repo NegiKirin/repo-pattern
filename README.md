@@ -193,7 +193,6 @@ node scripts/repo-pattern.mjs cleanup --target /path/to/project
 
 Cleanup is a low-level recovery command. It removes or archives:
 
-- `.specify`
 - unmanaged `.claude/skills`
 - `.claude/commands`
 - `.claude/hooks`
@@ -226,7 +225,7 @@ Default policy:
 - `enabledMcpjsonServers` is synced from the selected MCP profile
 - personal preferences stay in `.claude/settings.local.json`
 
-`repo-pattern mcp` regenerates `.mcp.json` and updates `.claude/settings.json` so `enabledMcpjsonServers` matches the active profile.
+`repo-pattern mcp` regenerates `.mcp.json` and updates `.claude/settings.json` so `enabledMcpjsonServers` matches the active profile. Interactive runs ask for selected MCP API keys and relative paths; `--yes` keeps placeholders and prints what to fill later.
 
 ## MCP profiles
 

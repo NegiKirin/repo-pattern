@@ -1,21 +1,19 @@
 import path from "node:path";
 import { auditProject } from "./audit.mjs";
 import { isTracked, readJson, writeJson } from "./fs-utils.mjs";
+import { printBox } from "./prompt.mjs";
 
 function renderDoctor(target, checks, infoRows) {
   const failed = checks.filter((row) => !row.ok);
   const visibleChecks = checks.filter((row) => !row.silent);
 
-  console.log("Repo Pattern Doctor");
-  console.log(`Target: ${target}`);
-  console.log(`Checks: ${checks.length - failed.length}/${checks.length} passed${failed.length ? `, ${failed.length} failed` : ""}\n`);
-
-  for (const row of visibleChecks) {
-    console.log(`${row.ok ? "✓" : "✗"} ${row.label}`);
-  }
-  for (const row of infoRows) {
-    console.log(`i ${row}`);
-  }
+  printBox("Doctor", [
+    `Target  ${target}`,
+    `Checks  ${checks.length - failed.length}/${checks.length} passed${failed.length ? `, ${failed.length} failed` : ""}`,
+    "",
+    ...visibleChecks.map((row) => `${row.ok ? "✓" : "✗"} ${row.label}`),
+    ...infoRows.map((row) => `i ${row}`)
+  ]);
 }
 
 export async function doctorProject(target, { updateLock = false, dryRun = false } = {}) {
@@ -27,8 +25,6 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
     checks.push({ ok: Boolean(condition), label, silent: Boolean(condition && silentPass) });
   };
 
-  check(!audit.hasSpecify, ".specify does not exist", { silentPass: true });
-  check(!audit.hasSpecKitReferences, "Spec Kit references do not exist", { silentPass: true });
   const lockPath = path.join(target, ".repo-pattern.lock.json");
   const lock = await readJson(lockPath, {});
   const allowSourceSkills = audit.repoPattern?.mode === "template";
@@ -41,6 +37,7 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   check(!audit.hasSettingsHooks, ".claude/settings.json hooks is {}");
   check(!isTracked(target, ".claude/settings.json"), ".claude/settings.json is not tracked");
   check(!isTracked(target, ".claude/settings.local.json"), ".claude/settings.local.json is not tracked");
+  check(!isTracked(target, ".mcp.json"), ".mcp.json is not tracked");
   check(!audit.hasHardcodedMcpPath, ".mcp.json has no absolute machine path");
   check(audit.hasRepoPatternJson, ".repo-pattern.json exists");
 
@@ -84,6 +81,4 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   if (failures.length > 0) {
     throw new Error(`Doctor failed with ${failures.length} failure(s).`);
   }
-
-  console.log("\nDoctor passed.");
 }

@@ -1,44 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { exists, isTracked, readJson } from "./fs-utils.mjs";
+import { printBox } from "./prompt.mjs";
 
-const SPEC_RE = /Spec Kit|speckit/i;
 const HARDCODED_PATH_RE = /"\/home\/|"\/Users\/|"[A-Za-z]:\\\\/;
 
 async function fileContains(file, regex) {
   if (!exists(file)) return false;
   const text = await fs.readFile(file, "utf8");
   return regex.test(text);
-}
-
-async function scanForSpecRefs(root) {
-  const candidates = [
-    "README.md",
-    "CLAUDE.md",
-    ".claude/CLAUDE.md",
-    "docs"
-  ];
-
-  async function scan(p) {
-    if (!exists(p)) return false;
-    const stat = await fs.stat(p);
-    if (stat.isDirectory()) {
-      const entries = await fs.readdir(p);
-      for (const entry of entries) {
-        if (entry === ".git" || entry === ".repo-pattern" || entry === "node_modules") continue;
-        if (await scan(path.join(p, entry))) return true;
-      }
-      return false;
-    }
-
-    if (!/\.(md|txt|json|yml|yaml)$/i.test(p)) return false;
-    return fileContains(p, SPEC_RE);
-  }
-
-  for (const rel of candidates) {
-    if (await scan(path.join(root, rel))) return true;
-  }
-  return false;
 }
 
 async function isOnlyEccRulesDir(target) {
@@ -70,8 +40,6 @@ export async function auditProject(target) {
     hasClaudeDir: exists(path.join(target, ".claude")),
     hasMcpJson,
     hasHardcodedMcpPath,
-    hasSpecify: exists(path.join(target, ".specify")),
-    hasSpecKitReferences: await scanForSpecRefs(target),
     hasSettingsLocalTracked: isTracked(target, ".claude/settings.local.json"),
     hasSettingsHooks: hasNonEmptyObject(settings.hooks),
     hasClaudeSkillsDir: exists(path.join(target, ".claude", "skills")),
@@ -86,8 +54,6 @@ export async function auditProject(target) {
 
   const allowSourceSkills = repoPattern?.mode === "template";
   const legacy = (
-    result.hasSpecify ||
-    result.hasSpecKitReferences ||
     result.hasSettingsHooks ||
     (result.hasClaudeSkillsDir && !allowSourceSkills) ||
     result.hasClaudeCommandsDir ||
@@ -117,21 +83,20 @@ export function printAudit(audit) {
   const present = (ok) => ok ? "✓" : "·";
   const clean = (bad) => bad ? "⚠" : "✓";
 
-  console.log(`Repo Pattern Audit`);
-  console.log(`Target: ${audit.target}`);
-  console.log(`State: ${audit.state}\n`);
-
-  console.log(`${present(audit.hasClaudeDir)} .claude present`);
-  console.log(`${present(audit.hasMcpJson)} .mcp.json present`);
-  console.log(`${clean(audit.hasHardcodedMcpPath)} no hardcoded machine path in .mcp.json`);
-  console.log(`${clean(audit.hasSpecify)} .specify absent`);
-  console.log(`${clean(audit.hasSpecKitReferences)} Spec Kit references absent`);
-  console.log(`${clean(audit.hasSettingsLocalTracked)} .claude/settings.local.json not tracked`);
-  console.log(`${clean(audit.hasSettingsHooks)} .claude/settings.json hooks empty`);
-  console.log(`${clean(audit.hasClaudeSkillsDir)} .claude/skills absent`);
-  console.log(`${clean(audit.hasClaudeCommandsDir)} .claude/commands absent`);
-  console.log(`${clean(audit.hasClaudeHooksDir)} .claude/hooks absent`);
-  console.log(`${clean(audit.hasClaudeScriptsDir)} .claude/scripts absent`);
-  console.log(`${clean(audit.hasClaudeRulesDir && !audit.hasOnlyEccRulesDir)} no non-ECC .claude/rules`);
-  console.log(`${present(audit.hasRepoPatternJson)} .repo-pattern.json present`);
+  printBox("Audit", [
+    `Target  ${audit.target}`,
+    `State   ${audit.state}`,
+    "",
+    `${present(audit.hasClaudeDir)} .claude present`,
+    `${present(audit.hasMcpJson)} .mcp.json present`,
+    `${clean(audit.hasHardcodedMcpPath)} no hardcoded machine path in .mcp.json`,
+    `${clean(audit.hasSettingsLocalTracked)} .claude/settings.local.json not tracked`,
+    `${clean(audit.hasSettingsHooks)} .claude/settings.json hooks empty`,
+    `${clean(audit.hasClaudeSkillsDir)} .claude/skills absent`,
+    `${clean(audit.hasClaudeCommandsDir)} .claude/commands absent`,
+    `${clean(audit.hasClaudeHooksDir)} .claude/hooks absent`,
+    `${clean(audit.hasClaudeScriptsDir)} .claude/scripts absent`,
+    `${clean(audit.hasClaudeRulesDir && !audit.hasOnlyEccRulesDir)} no non-ECC .claude/rules`,
+    `${present(audit.hasRepoPatternJson)} .repo-pattern.json present`
+  ]);
 }

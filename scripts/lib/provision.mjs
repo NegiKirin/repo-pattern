@@ -5,7 +5,8 @@ import { generateMcp } from "./mcp.mjs";
 import { setupEcc } from "./ecc.mjs";
 import { doctorProject } from "./doctor.mjs";
 import { applyEccRules } from "./rules.mjs";
-import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, readJson, writeJson, writeIfMissing } from "./fs-utils.mjs";
+import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, isTracked, readJson, writeJson, writeIfMissing } from "./fs-utils.mjs";
+import { printSummary } from "./prompt.mjs";
 
 const TARGET_CLAUDE_MD = "";
 
@@ -65,6 +66,7 @@ function lockConfig(profile) {
 
 async function writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun }) {
   if (!localSettingsEnv) return;
+  if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local provider settings.");
   const template = await readJson(path.join(sourceRoot, ".claude", "settings.local.example.json"), {});
   await writeJson(path.join(target, ".claude", "settings.local.json"), {
     ...template,
@@ -76,8 +78,8 @@ async function writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun
   await appendGitignoreLine(target, ".claude/settings.local.json", { dryRun });
 }
 
-export async function provisionProject({ sourceRoot, target, profile = "web", mcpServers = null, dryRun = false, force = false, migrate = false, localSettingsEnv = null, ruleMode = "auto", rules = null, applyRules = false }) {
-  console.log(`Provisioning target: ${target}`);
+export async function provisionProject({ sourceRoot, target, profile = "web", mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, ruleMode = "auto", rules = null, applyRules = false }) {
+  printSummary("Provisioning target", [["Target", target]]);
   const audit = await auditProject(target);
   printAudit(audit);
 
@@ -91,6 +93,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", mc
     await backupPaths(target, ["CLAUDE.md", ".claude", ".mcp.json", ".repo-pattern.json", ".repo-pattern.lock.json"], { dryRun });
   }
 
+  if (isTracked(target, ".claude/settings.json")) throw new Error(".claude/settings.json is tracked. Untrack it before writing Claude Code settings.");
   await ensureDir(path.join(target, ".claude"), { dryRun });
 
   // No templates directory is used. repo-pattern keeps canonical project files in:
@@ -117,8 +120,8 @@ export async function provisionProject({ sourceRoot, target, profile = "web", mc
   await writeJson(path.join(target, ".repo-pattern.json"), repoPatternConfig(profile), { dryRun });
   await writeJson(path.join(target, ".repo-pattern.lock.json"), lockConfig(profile), { dryRun });
 
-  await generateMcp({ sourceRoot, target, profile, mcpServers, dryRun });
-  await setupEcc({ sourceRoot, target, dryRun });
+  const mcpResult = await generateMcp({ sourceRoot, target, profile, mcpServers, mcpValues, dryRun });
+  const eccStatus = await setupEcc({ sourceRoot, target, dryRun });
   if (applyRules) await applyEccRules({ target, dryRun, ruleMode, rules });
 
   if (dryRun) {
@@ -127,5 +130,16 @@ export async function provisionProject({ sourceRoot, target, profile = "web", mc
     await doctorProject(target, { updateLock: true, dryRun });
   }
 
-  console.log("\nrepo-pattern setup completed.");
+  const pending = [
+    ...(eccStatus === "manual-plugin-install-required" ? ["ECC plugin"] : []),
+    ...(mcpResult.missingValues.length > 0 ? ["MCP values"] : [])
+  ];
+  const pendingText = pending.length ? `${pending.join(", ")} pending` : "ready";
+  printSummary("Setup complete", [
+    ["Status", dryRun ? `preview only; ${pendingText}` : pendingText],
+    ["Target", target],
+    ["Profile", profile],
+    ["Doctor", dryRun ? "skipped (dry-run)" : "passed"],
+    ["Next", dryRun ? "review output, then rerun without --dry-run" : pending.length ? `resolve ${pending.join(" and ")}, then run claude` : "open target and run claude"]
+  ]);
 }

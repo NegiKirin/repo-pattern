@@ -114,7 +114,7 @@ async function main() {
         await cleanupProject({ sourceRoot, ...options });
         break;
       case "mcp":
-        await generateMcp({ sourceRoot, target: options.target, profile: options.profile, dryRun: options.dryRun });
+        await generateMcp({ sourceRoot, target: options.target, profile: options.profile, yes: options.yes, dryRun: options.dryRun });
         break;
       case "ecc":
         await setupEcc({ sourceRoot, target: options.target, dryRun: options.dryRun });

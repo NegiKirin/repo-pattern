@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { readJson, writeJson } from "./fs-utils.mjs";
+import { printSummary } from "./prompt.mjs";
 
 function hasEccPlugin() {
   try {
@@ -11,14 +12,12 @@ function hasEccPlugin() {
 }
 
 export async function setupEcc({ target, dryRun = false }) {
-  console.log("ECC setup flow");
-
   let status = hasEccPlugin() ? "installed" : "manual-plugin-install-required";
 
   if (status === "installed") {
-    console.log("ECC plugin detected in Claude Code.");
+    printSummary("ECC", [["Status", "plugin detected in Claude Code"]]);
   } else if (process.env.REPO_PATTERN_ECC_SETUP_CMD) {
-    console.log("Using REPO_PATTERN_ECC_SETUP_CMD for ECC setup.");
+    printSummary("ECC", [["Status", "using REPO_PATTERN_ECC_SETUP_CMD"]]);
     if (dryRun) {
       console.log(`[dry-run] REPO_PATTERN_TARGET=${target} ${process.env.REPO_PATTERN_ECC_SETUP_CMD}`);
       status = "dry-run";

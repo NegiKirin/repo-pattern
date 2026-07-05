@@ -101,7 +101,7 @@ For scripts or CI, use the non-interactive path:
 node scripts/repo-pattern.mjs setup --target ~/Code/my-app --profile web --yes
 ```
 
-Setup first checks `claude --version`, then uses a library-backed terminal wizard. It can auto-detect ECC rules or let you choose rule packs by type, then asks for Anthropic provider/model values and writes them to the target's gitignored `.claude/settings.local.json`.
+Setup first checks `claude --version`, then uses a library-backed terminal wizard. It can auto-detect ECC rules or let you choose rule packs by type, asks for selected MCP API keys/relative paths when needed, then asks for Anthropic provider/model values and writes them to the target's gitignored `.claude/settings.local.json`.
 
 Keys:
 
@@ -128,12 +128,13 @@ For non-interactive scripts, use `setup --yes`.
 5. Write `.claude/settings.json` from `.claude/settings.example.json`.
 6. During `setup`, write gitignored `.claude/settings.local.json` from prompted provider/model values.
 7. Read MCP profiles and server definitions from `repo-pattern`.
-8. Generate `.mcp.json` from the selected profile.
-9. Write `.repo-pattern.json`.
-10. Write `.repo-pattern.lock.json`.
-11. Run or attempt ECC setup flow.
-12. During `setup` with rules enabled, apply ECC rules.
-13. Run doctor.
+8. In interactive mode, ask for selected MCP API keys and relative paths when placeholders require them.
+9. Generate `.mcp.json` from the selected profile.
+10. Write `.repo-pattern.json`.
+11. Write `.repo-pattern.lock.json`.
+12. Run or attempt ECC setup flow.
+13. During `setup` with rules enabled, apply ECC rules.
+14. Run doctor.
 ```
 
 After setup, the target project should contain:
@@ -161,7 +162,6 @@ This keeps root `CLAUDE.md` reserved for project-specific instructions instead o
 The target project should not contain these unmanaged runtime surfaces by default:
 
 ```text
-.specify/
 .claude/skills/
 .claude/commands/
 .claude/hooks/
@@ -193,6 +193,8 @@ or regenerate later:
 ```bash
 node scripts/repo-pattern.mjs mcp --target /path/to/project --profile <profile>
 ```
+
+Interactive `setup` and `mcp` ask for selected MCP placeholders such as `CONTEXT7_API_KEY`, `TAVILY_API_KEY`, and `CLAUDE_PROJECT_DIR`. MCP paths must be relative (`.`, `src`, `packages/api`); absolute machine paths and `..` are rejected. With `--yes` or non-TTY runs, placeholders stay in `.mcp.json` and the CLI prints the values to fill later.
 
 ---
 
@@ -457,7 +459,6 @@ ANTHROPIC_AUTH_TOKEN
 ANTHROPIC_DEFAULT_OPUS_MODEL
 ANTHROPIC_DEFAULT_SONNET_MODEL
 ANTHROPIC_DEFAULT_HAIKU_MODEL
-ANTHROPIC_DEFAULT_FABLE_MODEL
 ```
 
 Do not commit that file; `setup` adds it to `.gitignore`.

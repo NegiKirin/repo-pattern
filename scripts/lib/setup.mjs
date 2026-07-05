@@ -4,8 +4,8 @@ import { auditProject, printAudit } from "./audit.mjs";
 import { detectProject } from "./project-detect.mjs";
 import { provisionProject } from "./provision.mjs";
 import { doctorProject } from "./doctor.mjs";
-import { generateMcp, listAvailableMcpServers } from "./mcp.mjs";
-import { askConfirm, askPassword, askText, isInteractive, printBox, selectMany, selectOne } from "./prompt.mjs";
+import { collectMcpValues, generateMcp, listAvailableMcpServers, readMcpConfig } from "./mcp.mjs";
+import { askConfirm, askPassword, askText, isInteractive, printBox, printLogo, printSummary, selectMany, selectOne } from "./prompt.mjs";
 import { ECC_RULE_PACKS, selectEccRules } from "./ecc-rules.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -24,8 +24,7 @@ const LOCAL_SETTINGS_FIELDS = [
   ["ANTHROPIC_AUTH_TOKEN", "", askPassword],
   ["ANTHROPIC_DEFAULT_OPUS_MODEL", "claude-opus-4-8", askText],
   ["ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-sonnet-4-6", askText],
-  ["ANTHROPIC_DEFAULT_HAIKU_MODEL", "claude-haiku-4-5", askText],
-  ["ANTHROPIC_DEFAULT_FABLE_MODEL", "replace-with-your-fable-model-id", askText]
+  ["ANTHROPIC_DEFAULT_HAIKU_MODEL", "claude-haiku-4-5", askText]
 ];
 
 function suggestedProfile(detection, fallback) {
@@ -63,6 +62,11 @@ async function chooseMcpConfig(sourceRoot, profile) {
   return { profile, mcpServers };
 }
 
+async function chooseMcpValues(sourceRoot, mcpConfig) {
+  const { mcpServers } = await readMcpConfig({ sourceRoot, profile: mcpConfig.profile, mcpServers: mcpConfig.mcpServers });
+  return collectMcpValues(mcpServers);
+}
+
 async function chooseRuleConfig(detection) {
   const autoRules = selectEccRules(detection);
   const ruleMode = await selectOne({
@@ -98,21 +102,21 @@ async function chooseLocalSettingsEnv() {
   return env;
 }
 
-async function confirmSummary({ action, target, mcpConfig, ruleConfig, localSettingsEnv, dryRun }) {
-  printBox("Setup summary", [
-    `action: ${action}`,
-    `target: ${target}`,
-    `profile: ${mcpConfig.profile}`,
-    `mcp servers: ${mcpConfig.mcpServers?.join(", ") || "from profile"}`,
-    `rules: ${ruleConfig.applyRules ? ruleConfig.rules.join(", ") : "none"}`,
-    `local settings: .claude/settings.local.json`,
-    `base url: ${localSettingsEnv.ANTHROPIC_BASE_URL}`,
-    `opus: ${localSettingsEnv.ANTHROPIC_DEFAULT_OPUS_MODEL}`,
-    `sonnet: ${localSettingsEnv.ANTHROPIC_DEFAULT_SONNET_MODEL}`,
-    `haiku: ${localSettingsEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL}`,
-    `fable: ${localSettingsEnv.ANTHROPIC_DEFAULT_FABLE_MODEL}`,
-    "auth token: [hidden]",
-    `dry-run: ${dryRun ? "yes" : "no"}`
+async function confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig, localSettingsEnv, dryRun }) {
+  printSummary("Setup summary", [
+    ["Action", action],
+    ["Target", target],
+    ["Profile", mcpConfig.profile],
+    ["MCP servers", mcpConfig.mcpServers?.join(", ") || "from profile"],
+    ["MCP values", Object.keys(mcpValues).length ? Object.keys(mcpValues).join(", ") : "none"],
+    ["Rules", ruleConfig.applyRules ? ruleConfig.rules.join(", ") : "none"],
+    ["Local settings", ".claude/settings.local.json"],
+    ["Base URL", localSettingsEnv.ANTHROPIC_BASE_URL],
+    ["Opus", localSettingsEnv.ANTHROPIC_DEFAULT_OPUS_MODEL],
+    ["Sonnet", localSettingsEnv.ANTHROPIC_DEFAULT_SONNET_MODEL],
+    ["Haiku", localSettingsEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL],
+    ["Auth token", "[hidden]"],
+    ["Dry-run", dryRun ? "yes" : "no"]
   ]);
 
   const answer = await selectOne({
@@ -144,7 +148,8 @@ async function handleInitialized({ sourceRoot, target, profile, dryRun }) {
     const detection = await detectProject(target);
     const chosenProfile = await chooseProfile(profile, detection);
     const mcpConfig = await chooseMcpConfig(sourceRoot, chosenProfile);
-    await generateMcp({ sourceRoot, target, profile: mcpConfig.profile, mcpServers: mcpConfig.mcpServers, dryRun });
+    const mcpValues = await chooseMcpValues(sourceRoot, mcpConfig);
+    await generateMcp({ sourceRoot, target, profile: mcpConfig.profile, mcpServers: mcpConfig.mcpServers, mcpValues, dryRun });
   }
 }
 
@@ -163,7 +168,7 @@ export async function setupProject({ sourceRoot, target, profile = "web", dryRun
     return;
   }
 
-  printBox("repo-pattern setup", ["Guided terminal setup for Claude Code + ECC."]);
+  printLogo();
   await checkClaudeCode();
 
   const detection = await detectProject(target);
@@ -190,9 +195,10 @@ export async function setupProject({ sourceRoot, target, profile = "web", dryRun
     if (!confirmed) throw new Error("Setup cancelled.");
   }
 
+  const mcpValues = await chooseMcpValues(sourceRoot, mcpConfig);
   const localSettingsEnv = await chooseLocalSettingsEnv();
 
-  if (!await confirmSummary({ action, target, mcpConfig, ruleConfig, localSettingsEnv, dryRun })) {
+  if (!await confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig, localSettingsEnv, dryRun })) {
     throw new Error("Setup cancelled.");
   }
 
@@ -201,6 +207,7 @@ export async function setupProject({ sourceRoot, target, profile = "web", dryRun
     target,
     profile: mcpConfig.profile,
     mcpServers: mcpConfig.mcpServers,
+    mcpValues,
     dryRun,
     force: false,
     migrate: action === "migrate",

@@ -5,7 +5,6 @@ export async function cleanupProject({ sourceRoot, target, dryRun = false }) {
   console.log(`Cleaning target: ${target}`);
 
   await backupPaths(target, [
-    ".specify",
     ".claude/skills",
     ".claude/commands",
     ".claude/hooks",
@@ -17,7 +16,6 @@ export async function cleanupProject({ sourceRoot, target, dryRun = false }) {
   ], { dryRun });
 
   const removeList = [
-    ".specify",
     ".claude/skills",
     ".claude/commands",
     ".claude/hooks",
