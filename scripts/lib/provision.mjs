@@ -69,6 +69,37 @@ function lockConfig(profile) {
   };
 }
 
+export function applyAttributionSetting(settings, attributionConfig = { mode: "off" }) {
+  const next = { ...settings };
+  if (attributionConfig.mode === "on") {
+    if (!next.attribution) return next;
+    const { commit, ...rest } = next.attribution;
+    if (Object.keys(rest).length > 0) next.attribution = rest;
+    else delete next.attribution;
+    return next;
+  }
+
+  next.attribution = {
+    ...(next.attribution || {}),
+    commit: attributionConfig.mode === "custom" ? attributionConfig.commit : ""
+  };
+  return next;
+}
+
+async function writeClaudeSettings({ sourceRoot, target, attributionConfig, dryRun }) {
+  const template = await readJson(path.join(sourceRoot, ".claude", "settings.example.json"), {});
+  await writeJson(path.join(target, ".claude", "settings.json"), applyAttributionSetting(template, attributionConfig), { dryRun });
+}
+
+export async function updateClaudeAttribution({ sourceRoot, target, attributionConfig, dryRun }) {
+  if (isTracked(target, ".claude/settings.json")) throw new Error(".claude/settings.json is tracked. Untrack it before writing Claude Code settings.");
+  const file = path.join(target, ".claude", "settings.json");
+  const current = await readJson(file, null);
+  const template = await readJson(path.join(sourceRoot, ".claude", "settings.example.json"), {});
+  await writeJson(file, applyAttributionSetting(current || template, attributionConfig), { dryRun });
+  await appendGitignoreLine(target, ".claude/settings.json", { dryRun });
+}
+
 async function writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun }) {
   if (!localSettingsEnv) return;
   if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local provider settings.");
@@ -83,7 +114,7 @@ async function writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun
   await appendGitignoreLine(target, ".claude/settings.local.json", { dryRun });
 }
 
-export async function provisionProject({ sourceRoot, target, profile = "web", mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, ruleMode = "auto", rules = null, applyRules = false, optionalSkills = [] }) {
+export async function provisionProject({ sourceRoot, target, profile = "web", mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, attributionConfig = { mode: "off" }, ruleMode = "auto", rules = null, applyRules = false, optionalSkills = [] }) {
   printSummary("Provisioning target", [["Target", target]]);
   const audit = await auditProject(target);
   printAudit(audit);
@@ -113,11 +144,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", mc
     { dryRun }
   );
 
-  await copyRecursive(
-    path.join(sourceRoot, ".claude", "settings.example.json"),
-    path.join(target, ".claude", "settings.json"),
-    { dryRun }
-  );
+  await writeClaudeSettings({ sourceRoot, target, attributionConfig, dryRun });
   await appendGitignoreLine(target, ".claude/settings.json", { dryRun });
 
   await writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun });

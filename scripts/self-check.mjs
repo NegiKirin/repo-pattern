@@ -4,8 +4,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { printAudit } from "./lib/audit.mjs";
 import { applyMcpValues, mcpSecretPrompt, validateRelativeMcpPath } from "./lib/mcp.mjs";
+import { applyAttributionSetting } from "./lib/provision.mjs";
 import { printSummary, renderLogo, style } from "./lib/prompt.mjs";
-import { invalidOptionalSkills, normalizeOptionalSkills } from "./lib/skills.mjs";
+import { expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills } from "./lib/skills.mjs";
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
 const cliPath = path.join(cliDir, "repo-pattern.mjs");
@@ -53,8 +54,28 @@ assert.deepEqual(applyMcpValues(mcpServers, {
 });
 
 assert.equal(applyMcpValues(mcpServers).filesystem.args[2], ".");
-assert.deepEqual(normalizeOptionalSkills(["taste", "taste", "document-specialist"]), ["taste", "document-specialist"]);
-assert.deepEqual(invalidOptionalSkills(["taste", "nope"]), ["nope"]);
+assert.deepEqual(applyAttributionSetting({ hooks: {} }, { mode: "off" }), { hooks: {}, attribution: { commit: "" } });
+assert.deepEqual(applyAttributionSetting({ attribution: { commit: "" } }, { mode: "on" }), {});
+assert.deepEqual(applyAttributionSetting({ attribution: { pr: "PR" } }, { mode: "custom", commit: "Custom" }), { attribution: { pr: "PR", commit: "Custom" } });
+assert.deepEqual(normalizeOptionalSkills(["taste", "taste", "document-specialist", "ui-ux-pro-max", "impeccable", "huashu-design"]), ["taste", "document-specialist", "ui-ux-pro-max", "impeccable", "huashu-design"]);
+assert.deepEqual(invalidOptionalSkills(["taste", "ui-ux-pro-max", "impeccable", "huashu-design", "nope"]), ["nope"]);
+assert.deepEqual(expectedOptionalSkillDirs([
+  {
+    name: "ui-ux-pro-max",
+    source: "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill.git",
+    revision: "4baa399d00da806f83ed93652172f66943205153"
+  },
+  {
+    name: "impeccable",
+    source: "https://github.com/pbakaus/impeccable.git",
+    revision: "88f52ac4e6a5ce99d39a0f5d89e7ac3a168910f5"
+  },
+  {
+    name: "huashu-design",
+    source: "https://github.com/alchaincyf/huashu-design.git",
+    revision: "0e7ec8aca0058184c1a9e06e57697e84f68a3f0f"
+  }
+]), ["huashu-design", "impeccable", "ui-ux-pro-max"]);
 
 const auditLogs = [];
 const originalAuditLog = console.log;
@@ -133,6 +154,9 @@ assert.match(result.stderr, /Unknown optional skill\(s\): nope/);
 result = runCli(["help"]);
 assert.equal(result.status, 0);
 assert.match(result.stdout, /--with-skill <name>/);
+assert.match(result.stdout, /ui-ux-pro-max/);
+assert.match(result.stdout, /impeccable/);
+assert.match(result.stdout, /huashu-design/);
 
 result = runCli(["audit"]);
 assert.equal(result.status, 0);

@@ -27,6 +27,41 @@ export const OPTIONAL_SKILLS = [
     license: "NOASSERTION",
     installedDirs: ["document-specialist-skill"],
     destName: "document-specialist-skill"
+  },
+  {
+    value: "ui-ux-pro-max",
+    label: "ui-ux-pro-max",
+    description: "UI/UX design intelligence skill (MIT; requires Python 3.x)",
+    source: "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill.git",
+    revision: "4baa399d00da806f83ed93652172f66943205153",
+    license: "MIT",
+    installedDirs: ["ui-ux-pro-max"],
+    sourceSubdir: ".claude/skills/ui-ux-pro-max",
+    destName: "ui-ux-pro-max"
+  },
+  {
+    value: "impeccable",
+    label: "impeccable",
+    description: "visual design QA skill-only install (Apache-2.0; scripts require Node >=24)",
+    source: "https://github.com/pbakaus/impeccable.git",
+    revision: "88f52ac4e6a5ce99d39a0f5d89e7ac3a168910f5",
+    license: "Apache-2.0",
+    installedDirs: ["impeccable"],
+    sourceSubdir: ".claude/skills/impeccable",
+    destName: "impeccable",
+    partialClone: true
+  },
+  {
+    value: "huashu-design",
+    label: "huashu-design",
+    description: "multimedia design skill (MIT; may require Node, Playwright, Python, ffmpeg)",
+    source: "https://github.com/alchaincyf/huashu-design.git",
+    revision: "0e7ec8aca0058184c1a9e06e57697e84f68a3f0f",
+    license: "MIT",
+    installedDirs: ["huashu-design"],
+    includePaths: ["SKILL.md", "assets", "references", "scripts", "demos", "package.json", "package-lock.json", "README.md", "README.en.md", "LICENSE"],
+    destName: "huashu-design",
+    partialClone: true
   }
 ];
 
@@ -71,17 +106,20 @@ function verifyRevision(cacheDir, skill) {
 }
 
 async function rejectSymlinks(root) {
+  const stat = await fs.lstat(root);
+  if (stat.isSymbolicLink()) throw new Error(`Optional skill source contains symlink: ${root}`);
+  if (!stat.isDirectory()) return;
+
   const entries = await fs.readdir(root, { withFileTypes: true });
   for (const entry of entries) {
-    const fullPath = path.join(root, entry.name);
-    if (entry.isSymbolicLink()) throw new Error(`Optional skill source contains symlink: ${fullPath}`);
-    if (entry.isDirectory()) await rejectSymlinks(fullPath);
+    await rejectSymlinks(path.join(root, entry.name));
   }
 }
 
 async function syncSkillCache(target, skill, { dryRun = false } = {}) {
   const cacheRoot = path.join(target, ".repo-pattern", "cache", "skills");
   const cacheDir = path.join(cacheRoot, skill.value);
+  const cloneArgs = ["clone", ...(skill.partialClone ? ["--filter=blob:none"] : []), skill.source, cacheDir];
 
   if (exists(path.join(cacheDir, ".git"))) {
     if (!dryRun) {
@@ -93,7 +131,7 @@ async function syncSkillCache(target, skill, { dryRun = false } = {}) {
   }
 
   if (dryRun) {
-    console.log(`[dry-run] git clone ${skill.source} ${cacheDir}`);
+    console.log(`[dry-run] git ${cloneArgs.join(" ")}`);
     console.log(`[dry-run] git -C ${cacheDir} checkout ${skill.revision}`);
     return cacheDir;
   }
@@ -101,12 +139,12 @@ async function syncSkillCache(target, skill, { dryRun = false } = {}) {
   await ensureDir(cacheRoot);
   if (isInteractive()) {
     await withSpinner(`Syncing ${skill.value}`, async () => {
-      await runGitAsync(["clone", "--quiet", skill.source, cacheDir], target);
+      await runGitAsync(["clone", "--quiet", ...cloneArgs.slice(1)], target);
       await runGitAsync(["checkout", "--quiet", skill.revision], cacheDir);
     });
   } else {
     console.log(`Syncing ${skill.value} from ${skill.source}`);
-    runGit(["clone", skill.source, cacheDir], target);
+    runGit(cloneArgs, target);
     runGit(["checkout", "--quiet", skill.revision], cacheDir);
   }
   verifyRevision(cacheDir, skill);
@@ -114,6 +152,26 @@ async function syncSkillCache(target, skill, { dryRun = false } = {}) {
 }
 
 async function copySkill(skill, cacheDir, destRoot, { dryRun = false } = {}) {
+  if (skill.includePaths) {
+    const dest = path.join(destRoot, skill.destName);
+    for (const relPath of skill.includePaths) {
+      const sourcePath = path.join(cacheDir, relPath);
+      if (!dryRun && !exists(sourcePath)) throw new Error(`${skill.value} source path not found: ${relPath}`);
+      if (!dryRun) await rejectSymlinks(sourcePath);
+      await copyRecursive(sourcePath, path.join(dest, relPath), { dryRun });
+    }
+    return [skill.destName];
+  }
+
+  if (skill.sourceSubdir) {
+    const sourceDir = path.join(cacheDir, skill.sourceSubdir);
+    if (!dryRun && !exists(sourceDir)) throw new Error(`${skill.value} source dir not found: ${skill.sourceSubdir}`);
+    if (!dryRun) await rejectSymlinks(sourceDir);
+    const dest = path.join(destRoot, skill.destName);
+    await copyRecursive(sourceDir, dest, { dryRun });
+    return [skill.destName];
+  }
+
   if (skill.sourceDir) {
     const sourceDir = path.join(cacheDir, skill.sourceDir);
     if (!dryRun && !exists(sourceDir)) throw new Error(`${skill.value} source dir not found: ${skill.sourceDir}`);
@@ -158,8 +216,18 @@ export async function applyOptionalSkills({ target, skills = [], dryRun = false 
     appliedSkills.push({ name: skill.value, source: skill.source, revision: skill.revision, license: skill.license, installedDirs });
   }
 
-  if (dryRun) console.log(`[dry-run] rm -rf ${path.join(target, ".repo-pattern")}`);
-  else await removePath(path.join(target, ".repo-pattern"));
+  const repoPatternDir = path.join(target, ".repo-pattern");
+  if (dryRun) {
+    console.log(`[dry-run] rm -rf ${path.join(repoPatternDir, "cache")}`);
+    console.log(`[dry-run] rmdir ${repoPatternDir} if empty`);
+  } else {
+    await removePath(path.join(repoPatternDir, "cache"));
+    try {
+      await fs.rmdir(repoPatternDir);
+    } catch (error) {
+      if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error.code)) throw error;
+    }
+  }
 
   const repoConfigPath = path.join(target, ".repo-pattern.json");
   const repoConfig = await readJson(repoConfigPath, {});
