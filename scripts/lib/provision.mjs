@@ -177,7 +177,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", mc
     ["Status", dryRun ? `preview only; ${pendingText}` : pendingText],
     ["Target", target],
     ["Profile", profile],
-    [dryRun ? "Would write" : "Written", `CLAUDE.md (if missing), .claude/, .mcp.json, .repo-pattern.json, .repo-pattern.lock.json${optionalSkills.length ? ", .claude/skills" : ""}`],
+    [dryRun ? "Would write" : "Written", `CLAUDE.md (if missing), .claude/, .mcp.json, .repo-pattern.json, .repo-pattern.lock.json${optionalSkills.length ? ", optional skill/plugin config" : ""}`],
     ["Doctor", dryRun ? "skipped (dry-run)" : style("success", "passed")],
     ["Next", next]
   ]);

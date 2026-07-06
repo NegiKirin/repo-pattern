@@ -10,6 +10,17 @@
   "showTurnDuration": true,
   "spinnerTipsEnabled": true,
   "fileCheckpointingEnabled": true,
+  "enabledPlugins": {
+    "ecc@ecc": true
+  },
+  "extraKnownMarketplaces": {
+    "ecc": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/affaan-m/ECC.git"
+      }
+    }
+  },
   "env": {
     "ENABLE_TOOL_SEARCH": "auto:5",
     "ANTHROPIC_BASE_URL": "https://example.com/v1",

@@ -2,7 +2,7 @@ import { execFile, execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, exists, readJson, removePath, writeJson } from "./fs-utils.mjs";
+import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, exists, isTracked, readJson, removePath, writeJson } from "./fs-utils.mjs";
 import { isInteractive, printSummary, withSpinner } from "./prompt.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -15,6 +15,7 @@ export const OPTIONAL_SKILLS = [
     source: "https://github.com/Leonxlnx/taste-skill.git",
     revision: "b17742737e796305d829b3ad39eda3add0d79060",
     license: "MIT",
+    plugin: { marketplace: "taste-skill", name: "taste-skill" },
     installedDirs: ["brandkit", "brutalist-skill", "gpt-tasteskill", "imagegen-frontend-mobile", "imagegen-frontend-web", "image-to-code-skill", "minimalist-skill", "output-skill", "redesign-skill", "soft-skill", "stitch-skill", "taste-skill", "taste-skill-v1"],
     sourceDir: "skills"
   },
@@ -35,6 +36,7 @@ export const OPTIONAL_SKILLS = [
     source: "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill.git",
     revision: "4baa399d00da806f83ed93652172f66943205153",
     license: "MIT",
+    plugin: { marketplace: "ui-ux-pro-max-skill", name: "ui-ux-pro-max" },
     installedDirs: ["ui-ux-pro-max"],
     sourceSubdir: ".claude/skills/ui-ux-pro-max",
     destName: "ui-ux-pro-max"
@@ -42,10 +44,11 @@ export const OPTIONAL_SKILLS = [
   {
     value: "impeccable",
     label: "impeccable",
-    description: "visual design QA skill-only install (Apache-2.0; scripts require Node >=24)",
+    description: "visual design QA plugin (Apache-2.0)",
     source: "https://github.com/pbakaus/impeccable.git",
     revision: "88f52ac4e6a5ce99d39a0f5d89e7ac3a168910f5",
     license: "Apache-2.0",
+    plugin: { marketplace: "impeccable", name: "impeccable" },
     installedDirs: ["impeccable"],
     sourceSubdir: ".claude/skills/impeccable",
     destName: "impeccable",
@@ -80,9 +83,39 @@ export function invalidOptionalSkills(skills = []) {
 export function expectedOptionalSkillDirs(optionalSkills = []) {
   return [...new Set(optionalSkills.flatMap((entry) => {
     const skill = knownSkill(entry?.name);
-    if (!skill || skill.source !== entry?.source || skill.revision !== entry?.revision) return [];
+    if (!skill || skill.source !== entry?.source || skill.revision !== entry?.revision || skill.plugin) return [];
     return skill.installedDirs;
   }))].sort();
+}
+
+function pluginId(skill) {
+  return `${skill.plugin.name}@${skill.plugin.marketplace}`;
+}
+
+export function applyPluginSkillSettings(settings = {}, skills = []) {
+  const next = {
+    ...settings,
+    enabledPlugins: { ...(settings.enabledPlugins || {}) },
+    extraKnownMarketplaces: { ...(settings.extraKnownMarketplaces || {}) }
+  };
+  for (const skill of skills) {
+    next.enabledPlugins[pluginId(skill)] = true;
+    next.extraKnownMarketplaces[skill.plugin.marketplace] = {
+      source: {
+        source: "git",
+        url: skill.source
+      }
+    };
+  }
+  return next;
+}
+
+async function writePluginSkillSettings({ target, skills, dryRun }) {
+  if (skills.length === 0) return;
+  if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local plugin settings.");
+  const file = path.join(target, ".claude", "settings.local.json");
+  await writeJson(file, applyPluginSkillSettings(await readJson(file, {}), skills), { dryRun });
+  await appendGitignoreLine(target, ".claude/settings.local.json", { dryRun });
 }
 
 function runGit(args, cwd, { quiet = false } = {}) {
@@ -203,36 +236,53 @@ export async function applyOptionalSkills({ target, skills = [], dryRun = false 
   if (selected.length === 0) return { selectedSkills: [], appliedSkills: [] };
 
   const chosen = selected.map(knownSkill);
+  const repoConfigPath = path.join(target, ".repo-pattern.json");
+  const repoConfig = await readJson(repoConfigPath, {});
+  const desired = [...new Set([...(repoConfig.optionalSkills || []), ...chosen].map((entry) => entry.name || entry.value))]
+    .map(knownSkill)
+    .filter(Boolean);
+  const pluginSkills = desired.filter((skill) => skill.plugin);
+  const localSkills = desired.filter((skill) => !skill.plugin);
+  const shouldSyncLocalSkills = chosen.some((skill) => !skill.plugin);
   const destRoot = path.join(target, ".claude", "skills");
-  await backupPaths(target, [".claude/skills"], { dryRun });
-  await removePath(destRoot, { dryRun });
-  await ensureDir(destRoot, { dryRun });
-  await appendGitignoreLine(target, ".repo-pattern/", { dryRun });
+  await writePluginSkillSettings({ target, skills: pluginSkills, dryRun });
 
-  const appliedSkills = [];
-  for (const skill of chosen) {
-    const cacheDir = await syncSkillCache(target, skill, { dryRun });
-    const installedDirs = await copySkill(skill, cacheDir, destRoot, { dryRun });
-    appliedSkills.push({ name: skill.value, source: skill.source, revision: skill.revision, license: skill.license, installedDirs });
-  }
+  const appliedSkills = shouldSyncLocalSkills
+    ? []
+    : (repoConfig.optionalSkills || []).filter((entry) => {
+      const skill = knownSkill(entry.name);
+      return skill && !skill.plugin;
+    });
+  if (shouldSyncLocalSkills) {
+    await backupPaths(target, [".claude/skills"], { dryRun });
+    await removePath(destRoot, { dryRun });
+    await ensureDir(destRoot, { dryRun });
+    await appendGitignoreLine(target, ".repo-pattern/", { dryRun });
 
-  const repoPatternDir = path.join(target, ".repo-pattern");
-  if (dryRun) {
-    console.log(`[dry-run] rm -rf ${path.join(repoPatternDir, "cache")}`);
-    console.log(`[dry-run] rmdir ${repoPatternDir} if empty`);
-  } else {
-    await removePath(path.join(repoPatternDir, "cache"));
-    try {
-      await fs.rmdir(repoPatternDir);
-    } catch (error) {
-      if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error.code)) throw error;
+    for (const skill of localSkills) {
+      const cacheDir = await syncSkillCache(target, skill, { dryRun });
+      const installedDirs = await copySkill(skill, cacheDir, destRoot, { dryRun });
+      appliedSkills.push({ name: skill.value, source: skill.source, revision: skill.revision, license: skill.license, installedDirs });
+    }
+
+    const repoPatternDir = path.join(target, ".repo-pattern");
+    if (dryRun) {
+      console.log(`[dry-run] rm -rf ${path.join(repoPatternDir, "cache")}`);
+      console.log(`[dry-run] rmdir ${repoPatternDir} if empty`);
+    } else {
+      await removePath(path.join(repoPatternDir, "cache"));
+      try {
+        await fs.rmdir(repoPatternDir);
+      } catch (error) {
+        if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error.code)) throw error;
+      }
     }
   }
 
-  const repoConfigPath = path.join(target, ".repo-pattern.json");
-  const repoConfig = await readJson(repoConfigPath, {});
-  repoConfig.runtime = { ...(repoConfig.runtime || {}), localSkills: true };
-  repoConfig.optionalSkills = appliedSkills.map(({ name, source, revision, license, installedDirs }) => ({ name, source, revision, license, installedDirs }));
+  appliedSkills.push(...pluginSkills.map((skill) => ({ name: skill.value, source: skill.source, revision: skill.revision, license: skill.license, installedDirs: [], plugin: skill.plugin })));
+
+  repoConfig.runtime = { ...(repoConfig.runtime || {}), localSkills: localSkills.length > 0 };
+  repoConfig.optionalSkills = appliedSkills.map(({ name, source, revision, license, installedDirs, plugin }) => ({ name, source, revision, license, installedDirs, ...(plugin ? { plugin } : {}) }));
   await writeJson(repoConfigPath, repoConfig, { dryRun });
 
   const lockPath = path.join(target, ".repo-pattern.lock.json");
@@ -241,7 +291,8 @@ export async function applyOptionalSkills({ target, skills = [], dryRun = false 
   await writeJson(lockPath, lock, { dryRun });
 
   printSummary("Applied optional skills", [
-    ["Path", path.relative(target, destRoot)],
+    ["Plugin settings", pluginSkills.length ? ".claude/settings.local.json" : "none"],
+    ["Local skill path", localSkills.length ? path.relative(target, destRoot) : "none"],
     ["Skills", selected.join(", ")]
   ]);
 

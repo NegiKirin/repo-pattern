@@ -155,7 +155,7 @@ The target project should not contain these unmanaged runtime surfaces by defaul
 
 Project-local rules are opt-in and limited to repo-pattern-managed `.claude/rules/ecc/`.
 
-Optional external skills are also opt-in and limited to repo-pattern-managed `.claude/skills/`:
+Optional external skills are also opt-in. Plugin-ready skills are enabled in `.claude/settings.local.json`; non-plugin skills are copied to repo-pattern-managed `.claude/skills/`:
 
 ```bash
 repo-pattern setup --with-skill taste --yes
@@ -168,11 +168,11 @@ repo-pattern setup --with-skills taste,document-specialist,ui-ux-pro-max,impecca
 
 Available optional skills:
 
-- `taste` — UI taste/design skills from https://github.com/Leonxlnx/taste-skill/ (MIT).
-- `document-specialist` — documentation specialist from https://github.com/SpillwaveSolutions/document-specialist-skill/ (license not declared upstream; choose only when you accept that source).
-- `ui-ux-pro-max` — UI/UX design intelligence from https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/ (MIT; requires Python 3.x).
-- `impeccable` — visual design QA from https://github.com/pbakaus/impeccable/ (Apache-2.0; skill-only install, scripts require Node >=24).
-- `huashu-design` — multimedia design workflow from https://github.com/alchaincyf/huashu-design/ (MIT; scripts may need Playwright, Python, and ffmpeg).
+- `taste` — Claude Code plugin from https://github.com/Leonxlnx/taste-skill/ (MIT).
+- `document-specialist` — `.claude/skills/` copy from https://github.com/SpillwaveSolutions/document-specialist-skill/ (license not declared upstream; choose only when you accept that source).
+- `ui-ux-pro-max` — Claude Code plugin from https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/ (MIT).
+- `impeccable` — Claude Code plugin from https://github.com/pbakaus/impeccable/ (Apache-2.0).
+- `huashu-design` — `.claude/skills/` copy from https://github.com/alchaincyf/huashu-design/ (MIT; scripts may need Playwright, Python, and ffmpeg).
 
 ---
 
