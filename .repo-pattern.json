@@ -11,14 +11,12 @@
     "vendoredEccRules": false
   },
   "ecc": {
-    "setupOnInit": true,
     "installMode": "plugin",
     "rulesSync": "repo-pattern-auto-cache",
     "hooks": "plugin-managed",
     "copyRuntimeSurfaces": false,
     "rulesProfile": "auto",
-    "rulesScope": "project",
-    "rulesApplyOnInit": true
+    "rulesScope": "project"
   },
   "mcp": {
     "profile": "web",

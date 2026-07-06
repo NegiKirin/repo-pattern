@@ -1,7 +1,7 @@
 {
-  "name": "repo-pattern",
+  "name": "@negikirin/repo-pattern",
   "version": "0.0.2",
-  "description": "Minimal ECC-first Claude Code project initializer and migrator",
+  "description": "Minimal ECC-first Claude Code project setup and migrator",
   "type": "module",
   "bin": {
     "repo-pattern": "scripts/repo-pattern.mjs"
@@ -10,11 +10,20 @@
     "audit": "node scripts/repo-pattern.mjs audit --target .",
     "doctor": "node scripts/repo-pattern.mjs doctor --target .",
     "mcp:web": "node scripts/repo-pattern.mjs mcp --target . --profile web",
-    "test": "node scripts/repo-pattern.mjs doctor --target .",
+    "test": "node scripts/self-check.mjs && node scripts/repo-pattern.mjs doctor --target .",
     "pack:dry": "npm pack --dry-run",
     "prepublishOnly": "npm test && npm run pack:dry"
   },
   "license": "MIT",
+  "author": "NegiKirin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NegiKirin/repo-pattern.git"
+  },
+  "bugs": {
+    "url": "https://github.com/NegiKirin/repo-pattern/issues"
+  },
+  "homepage": "https://github.com/NegiKirin/repo-pattern#readme",
   "keywords": [
     "repo-pattern",
     "claude-code",
@@ -29,7 +38,7 @@
     "developer-tools",
     "project-template",
     "project-scaffold",
-    "initializer",
+    "setup",
     "migrator",
     "automation",
     "nodejs",
@@ -40,15 +49,23 @@
   },
   "files": [
     "scripts/",
-    ".claude/",
+    ".claude/CLAUDE.md",
+    ".claude/settings.example.json",
+    ".claude/settings.local.example.json",
     "docs/",
     "mcp/",
-    ".mcp.json.example",
     ".repo-pattern.json",
     ".repo-pattern.lock.json",
     "CLAUDE.md",
     "README.md",
     "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
     ".github/workflows/"
-  ]
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com/"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.11.0"
+  }
 }

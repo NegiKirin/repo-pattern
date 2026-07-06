@@ -3,7 +3,9 @@
 .repo-pattern/backups/
 
 # Claude Code local state
+CLAUDE.md
 .claude/settings.local.json
+.claude/settings.json
 .claude/session-data/
 .claude/tmp/
 .claude/cache/
@@ -22,3 +24,6 @@ private/
 .vscode/
 .idea/
 node_modules/
+
+.claude/skills/gitnexus
+AGENTS.md

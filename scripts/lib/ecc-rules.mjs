@@ -1,17 +1,37 @@
-const RULE_PACKS = new Set([
+export const ECC_RULE_PACKS = [
   "common",
-  "typescript",
   "angular",
-  "vue",
-  "nuxt",
-  "python",
+  "arkts",
+  "cpp",
+  "csharp",
+  "dart",
+  "fsharp",
   "golang",
-  "web",
-  "swift",
+  "java",
+  "kotlin",
+  "nuxt",
+  "perl",
   "php",
+  "python",
+  "react",
+  "react-native",
   "ruby",
-  "arkts"
-]);
+  "rust",
+  "swift",
+  "typescript",
+  "vue",
+  "web"
+];
+
+const RULE_PACKS = new Set(ECC_RULE_PACKS);
+
+export function normalizeEccRules(rules = []) {
+  return [...new Set(rules)].filter((name) => RULE_PACKS.has(name));
+}
+
+export function invalidEccRules(rules = []) {
+  return [...new Set(rules)].filter((name) => !RULE_PACKS.has(name));
+}
 
 export function selectEccRules(detection) {
   const languages = new Set(detection.languages || []);
@@ -23,6 +43,7 @@ export function selectEccRules(detection) {
   const hasFrontend = (
     frameworks.has("nextjs") ||
     frameworks.has("react") ||
+    frameworks.has("react-native") ||
     frameworks.has("angular") ||
     frameworks.has("vue") ||
     frameworks.has("nuxt") ||
@@ -34,6 +55,8 @@ export function selectEccRules(detection) {
   if (hasNode || hasFrontend) selected.add("typescript");
   if (hasFrontend) selected.add("web");
 
+  if (frameworks.has("react")) selected.add("react");
+  if (frameworks.has("react-native")) selected.add("react-native");
   if (frameworks.has("angular")) selected.add("angular");
   if (frameworks.has("vue")) selected.add("vue");
   if (frameworks.has("nuxt")) {
@@ -43,12 +66,20 @@ export function selectEccRules(detection) {
 
   if (languages.has("python")) selected.add("python");
   if (languages.has("go")) selected.add("golang");
+  if (languages.has("java")) selected.add("java");
+  if (languages.has("kotlin")) selected.add("kotlin");
+  if (languages.has("rust")) selected.add("rust");
+  if (languages.has("dart")) selected.add("dart");
+  if (languages.has("cpp")) selected.add("cpp");
+  if (languages.has("csharp")) selected.add("csharp");
+  if (languages.has("fsharp")) selected.add("fsharp");
+  if (languages.has("perl")) selected.add("perl");
   if (languages.has("php")) selected.add("php");
   if (languages.has("ruby")) selected.add("ruby");
   if (languages.has("swift")) selected.add("swift");
   if (languages.has("arkts")) selected.add("arkts");
 
-  return [...selected].filter((name) => RULE_PACKS.has(name));
+  return normalizeEccRules(selected);
 }
 
 export function explainRules(detection, rules) {

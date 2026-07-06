@@ -1,16 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {},
   "permissions": {
-    "allow": [],
-    "ask": [
-      "Bash(git push *)",
-      "Bash(git reset *)",
-      "Bash(git clean *)",
-      "Bash(rm *)",
-      "Bash(sudo *)",
-      "Bash(chmod *)",
-      "Bash(chown *)"
-    ],
     "deny": [
       "Read(.env)",
       "Read(.env.*)",
@@ -28,18 +19,19 @@
       "Bash(rm -rf /)",
       "Bash(rm -rf ~)"
     ],
-    "additionalDirectories": [],
+    "ask": [
+      "Bash(git push *)",
+      "Bash(git reset *)",
+      "Bash(git clean *)",
+      "Bash(rm *)",
+      "Bash(sudo *)",
+      "Bash(chmod *)",
+      "Bash(chown *)"
+    ],
     "defaultMode": "default",
     "disableBypassPermissionsMode": "disable"
   },
   "enabledMcpjsonServers": [],
-  "hooks": {},
-  "autoCompactEnabled": true,
-  "fileCheckpointingEnabled": true,
   "respectGitignore": true,
-  "showClearContextOnPlanAccept": true,
-  "env": {
-    "ENABLE_TOOL_SEARCH": "auto:5"
-  },
   "autoUpdatesChannel": "stable"
 }

@@ -1,311 +1,143 @@
 # repo-pattern
 
-
 <p align="center">
   <img alt="Repo Pattern" src="https://img.shields.io/badge/repo--pattern-ECC--first-blue">
   <img alt="Claude Code" src="https://img.shields.io/badge/Claude%20Code-ready-black">
-  <img alt="ECC" src="https://img.shields.io/badge/ECC-workflow-purple">
   <img alt="MCP Profiles" src="https://img.shields.io/badge/MCP-profiles-green">
-  <img alt="Node.js" src="https://img.shields.io/badge/Node.js-ESM-brightgreen">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-lightgrey">
 </p>
 
-A minimal **ECC-first Claude Code initializer and migrator**.
+**A clean Claude Code setup and migrator in one command.**
 
-`repo-pattern` initializes or migrates another project into a clean Claude Code setup with:
+`repo-pattern` initializes or migrates a project into an ECC-first (Everything Claude Code) workspace with safe defaults, MCP profiles, and zero vendored runtime clutter.
 
-- minimal `.claude` settings
-- MCP profiles
-- generated `.mcp.json`
-- ECC setup on `init`
-- cleanup, migration, audit, and doctor tools
+## Why use it?
 
-`repo-pattern` does **not** vendor or install local Claude runtime surfaces into target projects:
+- **Start fast** — generate `.claude/`, `.mcp.json`, and repo-pattern metadata.
+- **Stay clean** — no local skills, commands, hooks, scripts, or duplicated templates by default.
+- **Use MCP profiles** — choose `minimal`, `web`, `backend`, `research`, `full`, or `custom`.
+- **ECC-first** — `setup` runs or attempts Everything Claude Code setup automatically.
+- **Migrate safely** — audit, cleanup, doctor, and `setup --migrate` are built in.
 
-- no local `.claude/skills`
-- no local `.claude/commands`
-- no local `.claude/hooks`
-- no local `.claude/scripts`
-- no local `.claude/rules`
-- no deprecated spec runtime
+## Install
 
-ECC is treated as the primary workflow layer and should be plugin-managed.
-
-
-## Template policy
-
-This repo no longer uses a separate `templates/` folder.
-
-`repo-pattern init` copies canonical files directly from:
-
-```text
-.claude/
-docs/
-mcp/
-```
-
-The target project's root `CLAUDE.md` is created empty when missing. Existing target `CLAUDE.md` files are preserved.
-
-
-## ECC rules auto-cache
-
-`repo-pattern init` auto-detects the target stack, clones/caches ECC, and applies selected rule packs to project scope:
-
-```text
-.claude/rules/ecc/
-```
-
-Manual command:
+Configure GitHub Packages once for the `@negikirin` scope:
 
 ```bash
-node scripts/repo-pattern.mjs rules --target /path/to/project
+npm config set @negikirin:registry https://npm.pkg.github.com
 ```
 
-There is no `--mode` or `--scope`: rules always use auto clone/cache and project scope.
-
-The first rules run needs network access to clone ECC into `.repo-pattern/cache/ECC/`. Later runs reuse the cache.
-
-
-## Context and token guards
-
-Claude Code currently exposes `autoCompactEnabled`, but not a documented project setting for a custom auto-compact token threshold. `repo-pattern` therefore uses official context/token guards instead of adding fake settings:
-
-```json
-{
-  "autoCompactEnabled": true,
-  "showClearContextOnPlanAccept": true,
-  "env": {
-    "ENABLE_TOOL_SEARCH": "auto:5"}
-}
-```
-
-Meaning:
-
-- skill listing and skill description limits are intentionally left at Claude Code defaults
-- keep auto-compact enabled
-- show the clear-context option after accepting a plan
-- defer MCP tool loading unless tools fit within 5% of context
-
-
-## GitHub Packages release workflow
-
-This repo includes a GitHub Actions workflow at:
-
-```text
-.github/workflows/nodejs-package.yml
-```
-
-It runs on GitHub Release creation:
-
-```text
-release.created
-```
-
-The workflow:
-
-```text
-1. checks out the repo
-2. installs dependencies with npm ci
-3. runs npm test
-4. verifies package contents with npm pack --dry-run
-5. publishes to GitHub Packages
-```
-
-GitHub Packages for npm requires a scoped package name, so the workflow keeps the source package as `repo-pattern` but temporarily publishes it as:
-
-```text
-@<github-owner>/repo-pattern
-```
-
-The publish job uses `GITHUB_TOKEN` with `packages: write`.
-
-## NPX usage
-
-After publishing to npm:
+If GitHub Packages requires auth, login with a GitHub token that has `read:packages`:
 
 ```bash
-npx repo-pattern init --target . --profile web
+npm login --scope=@negikirin --auth-type=legacy --registry=https://npm.pkg.github.com
 ```
 
-Other commands:
+Use directly with `npx`:
 
 ```bash
-npx repo-pattern doctor --target .
-npx repo-pattern audit --target .
-npx repo-pattern mcp --target . --profile research
-npx repo-pattern rules --target .
+npx @negikirin/repo-pattern setup --profile web --yes
 ```
 
-Package-local development test:
+Or install the CLI:
 
 ```bash
-npm pack
-npm exec --yes --package ./repo-pattern-0.0.2.tgz -- repo-pattern --help
+npm install -g @negikirin/repo-pattern
+repo-pattern setup --profile web --yes
 ```
 
-## Setup guide
+By default, commands target the current directory. To work on another project, add `--target /path/to/project`.
 
-The main setup instructions are consolidated in:
+## Quick start
 
-```text
-docs/repo-pattern/setup-guide.md
-```
-
-The guide focuses on one-step new project setup, MCP profile selection, setup flow, and repo-pattern commands.
-
-## Normal usage
-
-From this repo:
+Interactive setup:
 
 ```bash
-node scripts/repo-pattern.mjs init --target /path/to/project --profile web
+repo-pattern setup
 ```
 
-`init` creates minimal Claude setup, generates MCP config, runs the ECC setup flow, and runs doctor.
-
-If the ECC plugin cannot be verified or installed automatically, the CLI prints the manual Claude Code commands:
-
-```text
-/plugin marketplace add https://github.com/affaan-m/ECC
-/plugin install ecc@ecc
-```
-
-## Existing project migration
+Scriptable setup:
 
 ```bash
-node scripts/repo-pattern.mjs audit --target /path/to/project
-node scripts/repo-pattern.mjs migrate --target /path/to/project --profile web
-node scripts/repo-pattern.mjs doctor --target /path/to/project
+repo-pattern setup --profile web --yes
 ```
 
-Migration archives old local Claude runtime surfaces before writing the minimal setup.
-
-## Cleanup only
+Migrate an existing project:
 
 ```bash
-node scripts/repo-pattern.mjs cleanup --target /path/to/project
+repo-pattern audit
+repo-pattern setup --profile web --migrate --yes
+repo-pattern doctor
 ```
 
-Cleanup removes or archives:
+## Commands
 
-- `.specify`
-- `.claude/skills`
-- `.claude/commands`
-- `.claude/hooks`
-- `.claude/scripts`
-- `.claude/rules`
-- non-empty hooks in `.claude/settings.json`
-- machine-local `.claude/settings.local.json`
+| Command | Purpose |
+| --- | --- |
+| `repo-pattern help` | Show CLI help. |
+| `repo-pattern setup` | Initialize or migrate a Claude Code setup. |
+| `repo-pattern audit` | Inspect current Claude Code/ECC state. |
+| `repo-pattern doctor` | Validate the generated setup. |
+| `repo-pattern mcp --profile web` | Regenerate `.mcp.json` from an MCP profile. |
+| `repo-pattern rules` | Apply or refresh project-local ECC rules. |
+| `repo-pattern cleanup` | Archive old local Claude runtime surfaces. |
+| `repo-pattern ecc` | Run or attempt ECC setup manually. |
 
+Common options:
 
-## Claude Code settings policy
-
-`repo-pattern` keeps shared Claude Code settings safe and minimal:
-
-```text
-.claude/settings.json
+```bash
+--target /path/to/project  # default: current directory
+--profile web              # default MCP profile
+--with-rules               # opt in to .claude/rules/ecc
+--migrate                  # take over legacy/local Claude runtime surfaces
+--dry-run                  # preview mutating commands
+--yes                      # non-interactive setup
 ```
-
-Default policy:
-
-- `permissions.allow` starts empty
-- dangerous shell commands are placed in `permissions.ask`
-- common secrets are blocked in `permissions.deny`
-- `hooks` stays `{}`
-- `enabledMcpjsonServers` is synced from the selected MCP profile
-- personal preferences stay in `.claude/settings.local.json`
-
-`repo-pattern mcp` regenerates `.mcp.json` and updates `.claude/settings.json` so `enabledMcpjsonServers` matches the active profile.
 
 ## MCP profiles
 
-```bash
-node scripts/repo-pattern.mjs mcp --target /path/to/project --profile web
-```
+| Profile | Use when |
+| --- | --- |
+| `minimal` | You want only essential docs/filesystem tooling. |
+| `web` | You build web apps and want browser/docs helpers. |
+| `backend` | You focus on server-side projects. |
+| `research` | You need search and extraction tooling. |
+| `full` | You want every bundled MCP server enabled. |
+| `custom` | You want to choose exact MCP servers interactively; not available with `--yes`. |
 
-Available profiles:
+When selected, Context7 and Tavily prompts include dashboard links for getting API keys.
 
-- `minimal`
-- `web`
-- `backend`
-- `research`
-- `full.local.example`
-
-The default profile is `web`.
-
-## ECC setup
-
-`init` runs ECC setup automatically.
-
-Advanced/manual command:
-
-```bash
-node scripts/repo-pattern.mjs ecc --target /path/to/project
-```
-
-If you already have your own ECC setup function, set:
-
-```bash
-export REPO_PATTERN_ECC_SETUP_CMD="your-ecc-setup-command"
-```
-
-The command receives the target project path via:
-
-```bash
-REPO_PATTERN_TARGET=/path/to/project
-```
-
-`repo-pattern` itself never copies ECC skills, commands, hooks, scripts, or rules into the target project.
-
-## Target structure after init
+## What it creates
 
 ```text
 target-project/
-├── CLAUDE.md
+├── CLAUDE.md                     # created empty if missing
 ├── .claude/
 │   ├── CLAUDE.md
-│   ├── settings.json
-│   └── settings.local.example.json
-├── mcp/
-│   ├── profiles/
-│   └── servers/
-├── docs/
-│   └── repo-pattern/
-│       ├── workflow.md
-│       └── setup-guide.md
-├── .mcp.json.example
+│   ├── settings.json             # copied from example, gitignored
+│   └── settings.local.json       # when local settings are provided, gitignored
+├── .mcp.json                     # generated, gitignored
 ├── .repo-pattern.json
 └── .repo-pattern.lock.json
 ```
 
-Generated local file:
+`repo-pattern` preserves an existing root `CLAUDE.md` and keeps machine-local values out of git.
 
-```text
-.mcp.json
-```
+## Safety defaults
 
-`.mcp.json` is intentionally gitignored by default because it is generated from profiles.
+- `.mcp.json` is gitignored because it may contain local values.
+- `.claude/settings.local.json` is gitignored.
+- `.claude/settings.json` keeps `hooks: {}` by default.
+- No vendored ECC skills, commands, hooks, scripts, or rules are installed unless explicitly requested.
+- Optional external skills are user opt-in only: `--with-skill taste`, `--with-skill document-specialist`, or interactive setup.
 
-## Commands
+## Learn more
 
-```bash
-node scripts/repo-pattern.mjs audit --target .
-node scripts/repo-pattern.mjs init --target . --profile web
-node scripts/repo-pattern.mjs migrate --target . --profile web
-node scripts/repo-pattern.mjs cleanup --target .
-node scripts/repo-pattern.mjs mcp --target . --profile web
-node scripts/repo-pattern.mjs ecc --target .
-node scripts/repo-pattern.mjs doctor --target .
-```
+Full setup details live in [docs/repo-pattern/setup-guide.md](docs/repo-pattern/setup-guide.md).
+Third-party license notices are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-All mutating commands support:
+From a source checkout, replace `repo-pattern` with:
 
 ```bash
---dry-run
+node scripts/repo-pattern.mjs
 ```
-
-## Design rule
-
-`repo-pattern` is setup infrastructure only.
-
-After setup, use ECC as the workflow layer inside Claude Code.

@@ -1,9 +1,17 @@
 # Repo Pattern Setup Guide
 
-This guide focuses on the normal path:
+This guide focuses on the guided terminal path:
 
 ```bash
-node scripts/repo-pattern.mjs init --target /path/to/project --profile web
+node scripts/repo-pattern.mjs setup --target /path/to/project
+```
+
+Use `setup` when you want an arrow-key UI for profile choice, optional ECC rules, migration safety, and confirmation.
+
+Use scriptable `setup --yes` when you already know the exact options:
+
+```bash
+node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --yes
 ```
 
 Use this when you want to initialize a new project with:
@@ -16,7 +24,7 @@ minimal Claude Code setup
 + repo-pattern metadata
 ```
 
-`repo-pattern` is intentionally not a Claude runtime pack. It does not install local Claude skills, commands, hooks, scripts, or rules into the target project. ECC provides the workflow surface through plugin-managed runtime.
+`repo-pattern` is intentionally not a Claude runtime pack. It does not install local Claude skills, commands, hooks, scripts, or rules by default. Project-local ECC rules are explicit opt-in via `setup --with-rules`, `rules`, or interactive `setup`. Optional external skills are explicit opt-in via `setup --with-skill <name>` or interactive `setup`.
 
 ---
 
@@ -54,10 +62,10 @@ The source `package.json` remains:
 
 ## NPX package usage
 
-When published to npm, `repo-pattern` can be used without cloning the repository:
+When published to GitHub Packages, `repo-pattern` can be used without cloning the repository after configuring npm for `@negikirin`:
 
 ```bash
-npx repo-pattern init --target . --profile web
+npx @negikirin/repo-pattern setup --target . --profile web --yes
 ```
 
 The package exposes one CLI binary:
@@ -78,37 +86,55 @@ npm exec --yes --package ./repo-pattern-0.0.2.tgz -- repo-pattern --help
 Run from the `repo-pattern` repository:
 
 ```bash
-node scripts/repo-pattern.mjs init --target /path/to/project --profile web
+node scripts/repo-pattern.mjs setup --target /path/to/project
 ```
 
 Example:
 
 ```bash
-node scripts/repo-pattern.mjs init --target ~/Code/my-app --profile web
+node scripts/repo-pattern.mjs setup --target ~/Code/my-app
 ```
 
-For most projects, this is the only command you need.
+For scripts or CI, use the non-interactive path:
+
+```bash
+node scripts/repo-pattern.mjs setup --target ~/Code/my-app --profile web --yes
+```
+
+Setup first checks `claude --version`, then uses a library-backed terminal wizard. It can auto-detect ECC rules or let you choose rule packs by type, asks for selected MCP API keys/relative paths when needed, then asks for Anthropic provider/model values and writes them to the target's gitignored `.claude/settings.local.json`.
+
+Keys:
+
+```text
+↑ / ↓       move
+Space       toggle MCP/rules choices
+Enter       confirm current step
+Esc/Ctrl+C  cancel
+```
+
+For non-interactive scripts, use `setup --yes`.
 
 ---
 
-## 2. What `init` does
+## 2. What `setup` does
 
-`init` runs the full setup flow:
+`setup` runs the full setup flow:
 
 ```text
 1. Audit the target project.
 2. Create minimal `.claude/` setup.
 3. Create empty root `CLAUDE.md` if missing. If it already exists, keep it unchanged.
 4. Write `.claude/CLAUDE.md` if missing.
-5. Write `.claude/settings.json`.
-6. Write `.claude/settings.local.example.json`.
-7. Copy MCP profiles and server definitions.
-8. Generate `.mcp.json` from the selected profile.
-9. Write `.mcp.json.example`.
+5. Write `.claude/settings.json` from `.claude/settings.example.json`.
+6. During `setup`, write gitignored `.claude/settings.local.json` from prompted provider/model values.
+7. Read MCP profiles and server definitions from `repo-pattern`.
+8. In interactive mode, ask for selected MCP API keys and relative paths when placeholders require them.
+9. Generate `.mcp.json` from the selected profile.
 10. Write `.repo-pattern.json`.
 11. Write `.repo-pattern.lock.json`.
 12. Run or attempt ECC setup flow.
-13. Run doctor.
+13. During `setup` with rules enabled, apply ECC rules.
+14. Run doctor.
 ```
 
 After setup, the target project should contain:
@@ -119,44 +145,49 @@ target-project/
 ├── .claude/
 │   ├── CLAUDE.md
 │   ├── settings.json
-│   └── settings.local.example.json
-├── mcp/
-│   ├── profiles/
-│   └── servers/
-├── docs/
-│   └── repo-pattern/
-│       ├── workflow.md
-│       └── setup-guide.md
+│   └── settings.local.json  # setup only, gitignored
 ├── .mcp.json
-├── .mcp.json.example
 ├── .repo-pattern.json
 └── .repo-pattern.lock.json
 ```
 
 ## Root `CLAUDE.md` policy
 
-`repo-pattern init` creates the target project's root `CLAUDE.md` as an empty file when it is missing.
+`repo-pattern setup` creates the target project's root `CLAUDE.md` as an empty file when it is missing.
 
-If the target project already has `CLAUDE.md`, `repo-pattern init` leaves it unchanged.
+If the target project already has `CLAUDE.md`, `repo-pattern setup` leaves it unchanged.
 
 This keeps root `CLAUDE.md` reserved for project-specific instructions instead of copying repo-pattern's own instructions into every target project.
 
-The target project should not contain these by default:
+The target project should not contain these unmanaged runtime surfaces by default:
 
 ```text
-.specify/
 .claude/skills/
 .claude/commands/
 .claude/hooks/
 .claude/scripts/
-.claude/rules/
 ```
+
+Project-local rules are opt-in and limited to repo-pattern-managed `.claude/rules/ecc/`.
+
+Optional external skills are also opt-in and limited to repo-pattern-managed `.claude/skills/`:
+
+```bash
+repo-pattern setup --with-skill taste --yes
+repo-pattern setup --with-skill document-specialist --yes
+repo-pattern setup --with-skills taste,document-specialist --yes
+```
+
+Available optional skills:
+
+- `taste` — UI taste/design skills from https://github.com/Leonxlnx/taste-skill/ (MIT).
+- `document-specialist` — documentation specialist from https://github.com/SpillwaveSolutions/document-specialist-skill/ (license not declared upstream; choose only when you accept that source).
 
 ---
 
 ## 3. MCP profiles
 
-MCP config is generated from a profile.
+MCP config is generated from a profile. In interactive `setup`, choose `custom` when you want to select exact MCP servers instead of using a preset.
 
 Default profile:
 
@@ -167,7 +198,7 @@ web
 Select a profile with:
 
 ```bash
-node scripts/repo-pattern.mjs init --target /path/to/project --profile <profile>
+node scripts/repo-pattern.mjs setup --target /path/to/project --profile <profile> --yes
 ```
 
 or regenerate later:
@@ -176,12 +207,14 @@ or regenerate later:
 node scripts/repo-pattern.mjs mcp --target /path/to/project --profile <profile>
 ```
 
+Interactive `setup` and `mcp` ask for selected MCP placeholders such as `CONTEXT7_API_KEY` and `TAVILY_API_KEY`. The filesystem MCP server uses the target project root (`.`) as its allowed directory. Other MCP paths, when prompted, must be relative (`src`, `packages/api`); absolute machine paths and `..` are rejected. With `--yes` or non-TTY runs, unresolved secret placeholders stay in `.mcp.json` and the CLI prints the values to fill later.
+
 ---
 
 ## 4. Profile: `minimal`
 
 ```bash
-node scripts/repo-pattern.mjs init --target /path/to/project --profile minimal
+node scripts/repo-pattern.mjs setup --target /path/to/project --profile minimal --yes
 ```
 
 Enabled servers:
@@ -214,7 +247,7 @@ simple experiments
 ## 5. Profile: `web`
 
 ```bash
-node scripts/repo-pattern.mjs init --target /path/to/project --profile web
+node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --yes
 ```
 
 Enabled servers:
@@ -248,7 +281,7 @@ E2E testing workflows
 Recommended default:
 
 ```bash
-node scripts/repo-pattern.mjs init --target ~/Code/my-app --profile web
+node scripts/repo-pattern.mjs setup --target ~/Code/my-app --profile web --yes
 ```
 
 ---
@@ -256,7 +289,7 @@ node scripts/repo-pattern.mjs init --target ~/Code/my-app --profile web
 ## 6. Profile: `backend`
 
 ```bash
-node scripts/repo-pattern.mjs init --target /path/to/project --profile backend
+node scripts/repo-pattern.mjs setup --target /path/to/project --profile backend --yes
 ```
 
 Enabled servers:
@@ -290,7 +323,7 @@ impact analysis
 ## 7. Profile: `research`
 
 ```bash
-node scripts/repo-pattern.mjs init --target /path/to/project --profile research
+node scripts/repo-pattern.mjs setup --target /path/to/project --profile research --yes
 ```
 
 Enabled servers:
@@ -330,10 +363,10 @@ export CONTEXT7_API_KEY="..."
 
 ---
 
-## 8. Profile: `full.local.example`
+## 8. Profile: `full`
 
 ```bash
-node scripts/repo-pattern.mjs init --target /path/to/project --profile full.local.example
+node scripts/repo-pattern.mjs setup --target /path/to/project --profile full --yes
 ```
 
 Enabled servers:
@@ -360,8 +393,16 @@ Not recommended as the default for normal projects.
 
 ---
 
+## 9. Custom MCP selection
 
-## 9. Claude Code settings
+In interactive setup, choose `custom` to select exact MCP servers from the available `mcp/servers/*.json` definitions.
+
+Use this when no preset profile matches the project.
+
+---
+
+
+## 10. Claude Code settings
 
 
 ## Context and token guards
@@ -385,13 +426,13 @@ Meaning:
 - defer MCP tool loading unless tools fit within 5% of context
 
 
-`repo-pattern init` writes a shared project settings file:
+`repo-pattern setup` writes local ignored project settings from the tracked `.claude/settings.example.json` template:
 
 ```text
 .claude/settings.json
 ```
 
-This file is intentionally safe by default:
+The template is intentionally safe by default:
 
 ```text
 permissions.allow = []
@@ -417,29 +458,55 @@ For example, profile `web` sets:
 ]
 ```
 
-Local preferences should go in:
+Local preferences and Anthropic provider/model values should go in:
 
 ```text
 .claude/settings.local.json
 ```
 
-Do not commit that file. Commit only:
+`setup` asks for these values and writes the file for you:
 
 ```text
-.claude/settings.local.example.json
+ANTHROPIC_BASE_URL
+ANTHROPIC_AUTH_TOKEN
+ANTHROPIC_DEFAULT_OPUS_MODEL
+ANTHROPIC_DEFAULT_SONNET_MODEL
+ANTHROPIC_DEFAULT_HAIKU_MODEL
 ```
 
-## 10. Repo-pattern commands
+Do not commit that file; `setup` adds it to `.gitignore`.
 
-### `init`
+## 12. Repo-pattern commands
 
-Initialize a new project.
+### `setup`
+
+Guided terminal setup.
 
 ```bash
-node scripts/repo-pattern.mjs init --target /path/to/project --profile web
+node scripts/repo-pattern.mjs setup --target /path/to/project
 ```
 
-This is the main command.
+Behavior:
+
+```text
+EMPTY/PARTIAL       → recommends setup
+LEGACY_VENDOR       → recommends migrate and requires confirmation
+ECC_NATIVE_MINIMAL  → offers doctor, MCP regeneration, or exit
+```
+
+Interactive mode uses ↑/↓ to move, Space to toggle MCP/rules choices, Enter to confirm. It writes `.claude/settings.local.json` and adds that path to the target `.gitignore`. Use `setup --yes` for CI/scripts.
+
+---
+
+### `setup --yes`
+
+Initialize a new project non-interactively.
+
+```bash
+node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --yes
+```
+
+This is the scriptable setup path.
 
 It performs:
 
@@ -447,6 +514,7 @@ It performs:
 minimal Claude setup
 MCP generation
 ECC setup flow
+optional ECC rules sync
 doctor check
 ```
 
@@ -502,7 +570,7 @@ node scripts/repo-pattern.mjs doctor --target /path/to/project
 Doctor checks that:
 
 ```text
-local Claude runtime surfaces are absent
+unmanaged local Claude runtime surfaces are absent
 settings hooks are empty
 .mcp.json has no hardcoded machine path
 .repo-pattern.json is valid
@@ -513,84 +581,73 @@ Run this after setup or after changing MCP profiles.
 
 ---
 
-### `migrate`
-
-Migrate an existing project with older Claude Code setup.
-
-```bash
-node scripts/repo-pattern.mjs migrate --target /path/to/project --profile web
-```
-
-Use this only when the project already has legacy local Claude setup such as:
-
-```text
-.claude/skills/
-.claude/commands/
-.claude/hooks/
-.claude/scripts/
-.claude/rules/
-.specify/
-```
-
-Migration backs up old files before replacing them with the minimal ECC-first setup.
-
----
-
 ### `cleanup`
 
-Remove old local Claude runtime surfaces.
+Advanced recovery command for removing old local Claude runtime surfaces.
 
 ```bash
 node scripts/repo-pattern.mjs cleanup --target /path/to/project
 ```
 
-Use this when you only want to clear old setup before running `init`.
+Use this when you only want to clear old setup before running `setup`.
 
 ---
 
 ### `ecc`
 
-Run or print ECC setup instructions.
+Advanced/manual command to rerun or print ECC setup instructions.
 
 ```bash
 node scripts/repo-pattern.mjs ecc --target /path/to/project
 ```
 
-Usually not needed because `init` already runs ECC setup flow.
+Usually not needed because `setup` already runs ECC setup flow.
 
 ---
 
-## 11. Recommended flows
+### `rules`
+
+Advanced/manual command to apply repo-pattern-managed ECC rules under `.claude/rules/ecc/`.
+
+```bash
+node scripts/repo-pattern.mjs rules --target /path/to/project
+```
+
+Usually not needed when `setup --with-rules` was used.
+
+---
+
+## 13. Recommended flows
 
 ### New web/full-stack project
 
 ```bash
-node scripts/repo-pattern.mjs init --target ~/Code/my-app --profile web
+node scripts/repo-pattern.mjs setup --target ~/Code/my-app
 ```
 
 ### New backend project
 
 ```bash
-node scripts/repo-pattern.mjs init --target ~/Code/my-api --profile backend
+node scripts/repo-pattern.mjs setup --target ~/Code/my-api --profile backend --yes
 ```
 
 ### Minimal project
 
 ```bash
-node scripts/repo-pattern.mjs init --target ~/Code/my-tool --profile minimal
+node scripts/repo-pattern.mjs setup --target ~/Code/my-tool --profile minimal --yes
 ```
 
 ### Research-heavy project
 
 ```bash
-node scripts/repo-pattern.mjs init --target ~/Code/my-research --profile research
+node scripts/repo-pattern.mjs setup --target ~/Code/my-research --profile research --yes
 ```
 
 ### Existing project with old setup
 
 ```bash
 node scripts/repo-pattern.mjs audit --target ~/Code/old-project
-node scripts/repo-pattern.mjs migrate --target ~/Code/old-project --profile web
+node scripts/repo-pattern.mjs setup --target ~/Code/old-project --profile web --migrate --yes
 node scripts/repo-pattern.mjs doctor --target ~/Code/old-project
 ```
 
@@ -603,12 +660,18 @@ node scripts/repo-pattern.mjs doctor --target ~/Code/my-app
 
 ---
 
-## 12. Summary
+## 14. Summary
 
 For normal usage:
 
 ```bash
-node scripts/repo-pattern.mjs init --target /path/to/project --profile web
+node scripts/repo-pattern.mjs setup --target /path/to/project
+```
+
+For scripted usage:
+
+```bash
+node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --yes
 ```
 
 Use another profile only when the project clearly needs it:
@@ -624,9 +687,9 @@ full     → local testing only
 
 ## ECC rules auto-cache
 
-`repo-pattern` automatically selects ECC rule packs from the target project's stack and applies them to project scope.
+ECC rules are opt-in. `repo-pattern` can select ECC rule packs from the target project's stack and apply them to project scope.
 
-No extra mode or scope arguments are needed:
+Run rules explicitly with:
 
 ```bash
 node scripts/repo-pattern.mjs rules --target /path/to/project
@@ -665,4 +728,4 @@ ruby
 arkts
 ```
 
-`init` runs this rules step automatically after ECC setup and before doctor.
+For scriptable setup, use `--with-rules --yes` to run this rules step after ECC setup and before doctor.

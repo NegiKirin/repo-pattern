@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
-import { exists, readJson } from "./fs-utils.mjs";
+import { exists, isTracked, readJson } from "./fs-utils.mjs";
+import { printBox, style } from "./prompt.mjs";
+import { expectedOptionalSkillDirs } from "./skills.mjs";
 
-const SPEC_RE = /Spec Kit|speckit/i;
 const HARDCODED_PATH_RE = /"\/home\/|"\/Users\/|"[A-Za-z]:\\\\/;
 
 async function fileContains(file, regex) {
@@ -11,50 +11,6 @@ async function fileContains(file, regex) {
   const text = await fs.readFile(file, "utf8");
   return regex.test(text);
 }
-
-async function scanForSpecRefs(root) {
-  const candidates = [
-    "README.md",
-    "CLAUDE.md",
-    ".claude/CLAUDE.md",
-    "docs"
-  ];
-
-  async function scan(p) {
-    if (!exists(p)) return false;
-    const stat = await fs.stat(p);
-    if (stat.isDirectory()) {
-      const entries = await fs.readdir(p);
-      for (const entry of entries) {
-        if (entry === ".git" || entry === ".repo-pattern" || entry === "node_modules") continue;
-        if (await scan(path.join(p, entry))) return true;
-      }
-      return false;
-    }
-
-    if (!/\.(md|txt|json|yml|yaml)$/i.test(p)) return false;
-    return fileContains(p, SPEC_RE);
-  }
-
-  for (const rel of candidates) {
-    if (await scan(path.join(root, rel))) return true;
-  }
-  return false;
-}
-
-function isTracked(root, relPath) {
-  try {
-    const output = execFileSync("git", ["ls-files", relPath], {
-      cwd: root,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"]
-    });
-    return output.trim().length > 0;
-  } catch {
-    return false;
-  }
-}
-
 
 async function isOnlyEccRulesDir(target) {
   const rulesDir = path.join(target, ".claude", "rules");
@@ -71,10 +27,23 @@ function hasNonEmptyObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0;
 }
 
+async function listDirNames(dir) {
+  if (!exists(dir)) return [];
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
+  } catch {
+    return [];
+  }
+}
+
 export async function auditProject(target) {
   const settings = await readJson(path.join(target, ".claude", "settings.json"), {});
   const repoPattern = await readJson(path.join(target, ".repo-pattern.json"), null);
 
+  const actualSkillDirs = await listDirNames(path.join(target, ".claude", "skills"));
+  const expectedSkillDirs = expectedOptionalSkillDirs(repoPattern?.optionalSkills || []);
+  const hasOnlyManagedSkills = JSON.stringify(actualSkillDirs) === JSON.stringify(expectedSkillDirs);
   const hasMcpJson = exists(path.join(target, ".mcp.json"));
   const hasHardcodedMcpPath = hasMcpJson
     ? await fileContains(path.join(target, ".mcp.json"), HARDCODED_PATH_RE)
@@ -85,11 +54,12 @@ export async function auditProject(target) {
     hasClaudeDir: exists(path.join(target, ".claude")),
     hasMcpJson,
     hasHardcodedMcpPath,
-    hasSpecify: exists(path.join(target, ".specify")),
-    hasSpecKitReferences: await scanForSpecRefs(target),
     hasSettingsLocalTracked: isTracked(target, ".claude/settings.local.json"),
     hasSettingsHooks: hasNonEmptyObject(settings.hooks),
     hasClaudeSkillsDir: exists(path.join(target, ".claude", "skills")),
+    actualSkillDirs,
+    expectedSkillDirs,
+    hasOnlyManagedSkills,
     hasClaudeCommandsDir: exists(path.join(target, ".claude", "commands")),
     hasClaudeHooksDir: exists(path.join(target, ".claude", "hooks")),
     hasClaudeScriptsDir: exists(path.join(target, ".claude", "scripts")),
@@ -99,15 +69,15 @@ export async function auditProject(target) {
     repoPattern
   };
 
+  const allowSourceSkills = repoPattern?.mode === "template";
+  const allowManagedSkills = repoPattern?.runtime?.localSkills === true && Array.isArray(repoPattern?.optionalSkills) && result.hasOnlyManagedSkills;
   const legacy = (
-    result.hasSpecify ||
-    result.hasSpecKitReferences ||
     result.hasSettingsHooks ||
-    result.hasClaudeSkillsDir ||
+    (result.hasClaudeSkillsDir && !allowSourceSkills && !allowManagedSkills) ||
     result.hasClaudeCommandsDir ||
     result.hasClaudeHooksDir ||
     result.hasClaudeScriptsDir ||
-    result.hasClaudeRulesDir
+    (result.hasClaudeRulesDir && !result.hasOnlyEccRulesDir)
   );
 
   if (!result.hasClaudeDir && !result.hasMcpJson && !result.hasRepoPatternJson) {
@@ -128,24 +98,30 @@ export async function auditProject(target) {
 }
 
 export function printAudit(audit) {
-  const present = (ok) => ok ? "✓" : "·";
-  const clean = (bad) => bad ? "⚠" : "✓";
+  const warning = style("error", "⚠");
+  const rows = [
+    `Target  ${audit.target}`,
+    `State   ${audit.state}`
+  ];
+  const needsSetup = audit.state !== "EMPTY";
+  const issues = [
+    [needsSetup && !audit.hasClaudeDir, ".claude missing"],
+    [needsSetup && !audit.hasMcpJson, ".mcp.json missing"],
+    [needsSetup && !audit.hasRepoPatternJson, ".repo-pattern.json missing"],
+    [audit.hasHardcodedMcpPath, "hardcoded machine path in .mcp.json"],
+    [audit.hasSettingsLocalTracked, ".claude/settings.local.json tracked"],
+    [audit.hasSettingsHooks, ".claude/settings.json hooks not empty"],
+    [audit.repoPattern?.runtime?.localSkills === true && !audit.hasOnlyManagedSkills, ".claude/skills does not match managed optional skills"],
+    [audit.hasClaudeSkillsDir && !audit.hasOnlyManagedSkills, ".claude/skills contains unmanaged entries"],
+    [audit.hasClaudeCommandsDir, ".claude/commands present"],
+    [audit.hasClaudeHooksDir, ".claude/hooks present"],
+    [audit.hasClaudeScriptsDir, ".claude/scripts present"],
+    [audit.hasClaudeRulesDir && !audit.hasOnlyEccRulesDir, "non-ECC .claude/rules present"]
+  ].filter(([bad]) => bad);
 
-  console.log(`Repo Pattern Audit`);
-  console.log(`Target: ${audit.target}`);
-  console.log(`State: ${audit.state}\n`);
+  if (issues.length > 0) {
+    rows.push("", ...issues.map(([, message]) => `${warning} ${message}`));
+  }
 
-  console.log(`${present(audit.hasClaudeDir)} .claude present`);
-  console.log(`${present(audit.hasMcpJson)} .mcp.json present`);
-  console.log(`${clean(audit.hasHardcodedMcpPath)} no hardcoded machine path in .mcp.json`);
-  console.log(`${clean(audit.hasSpecify)} .specify absent`);
-  console.log(`${clean(audit.hasSpecKitReferences)} Spec Kit references absent`);
-  console.log(`${clean(audit.hasSettingsLocalTracked)} .claude/settings.local.json not tracked`);
-  console.log(`${clean(audit.hasSettingsHooks)} .claude/settings.json hooks empty`);
-  console.log(`${clean(audit.hasClaudeSkillsDir)} .claude/skills absent`);
-  console.log(`${clean(audit.hasClaudeCommandsDir)} .claude/commands absent`);
-  console.log(`${clean(audit.hasClaudeHooksDir)} .claude/hooks absent`);
-  console.log(`${clean(audit.hasClaudeScriptsDir)} .claude/scripts absent`);
-  console.log(`${clean(audit.hasClaudeRulesDir && !audit.hasOnlyEccRulesDir)} no non-ECC .claude/rules`);
-  console.log(`${present(audit.hasRepoPatternJson)} .repo-pattern.json present`);
+  printBox("Audit", rows);
 }

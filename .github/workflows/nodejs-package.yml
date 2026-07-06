@@ -57,13 +57,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Configure scoped package name for GitHub Packages
-        shell: bash
-        run: |
-          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
-          npm pkg set name="@${OWNER}/repo-pattern"
-          npm pkg set publishConfig.registry="https://npm.pkg.github.com/"
-
       - name: Verify package contents
         run: npm pack --dry-run
 
