@@ -1,10 +1,10 @@
 # repo-pattern
 
 <p align="center">
-  <img alt="Repo Pattern" src="https://img.shields.io/badge/repo--pattern-ECC--first-blue">
-  <img alt="Claude Code" src="https://img.shields.io/badge/Claude%20Code-ready-black">
-  <img alt="MCP Profiles" src="https://img.shields.io/badge/MCP-profiles-green">
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-lightgrey">
+<img alt="Repo Pattern" src="https://img.shields.io/badge/repo--pattern-ECC--first-blue">
+<img alt="Claude Code" src="https://img.shields.io/badge/Claude%20Code-ready-black">
+<img alt="MCP Profiles" src="https://img.shields.io/badge/MCP-profiles-green">
+<img alt="License" src="https://img.shields.io/badge/license-MIT-lightgrey">
 </p>
 
 **A clean Claude Code setup and migrator in one command.**
@@ -13,21 +13,21 @@
 
 ## Why use it?
 
-- **Start fast** — generate `.claude/`, `.mcp.json`, and repo-pattern metadata.
-- **Stay clean** — no local skills, commands, hooks, scripts, or duplicated templates by default.
-- **Use MCP profiles** — choose `minimal`, `web`, `backend`, `research`, `full`, or `custom`.
-- **ECC-first** — `setup` runs or attempts Everything Claude Code setup automatically.
-- **Migrate safely** — audit, cleanup, doctor, and `setup --migrate` are built in.
+* **Start fast** — generate `.claude/`, `.mcp.json`, and repo-pattern metadata.
+* **Stay clean** — no local skills, commands, hooks, scripts, or duplicated templates by default.
+* **Use MCP profiles** — choose `minimal`, `web`, `backend`, `research`, `full`, or `custom`.
+* **ECC-first** — `setup` runs or attempts Everything Claude Code setup automatically.
+* **Migrate safely** — audit, cleanup, doctor, and `setup --migrate` are built in.
 
 ## Install
 
-Use directly with `npx`:
+Use directly with `npx` without installing:
 
 ```bash
-npx @negikirin/repo-pattern setup --profile web --yes
+npx repo-pattern setup --profile web --yes
 ```
 
-Or install the CLI:
+Or install the CLI globally, then run `repo-pattern`:
 
 ```bash
 npm install -g @negikirin/repo-pattern
@@ -41,27 +41,27 @@ By default, commands target the current directory. To work on another project, a
 Interactive setup:
 
 ```bash
-repo-pattern setup
+npx repo-pattern setup
 ```
 
 Scriptable setup:
 
 ```bash
-repo-pattern setup --profile web --yes
+npx repo-pattern setup --profile web --yes
 ```
 
 Migrate an existing project:
 
 ```bash
-repo-pattern audit
-repo-pattern setup --profile web --migrate --yes
-repo-pattern doctor
+npx repo-pattern audit
+npx repo-pattern setup --profile web --migrate --yes
+npx repo-pattern doctor
 ```
 
 ## Commands
 
 | Command | Purpose |
-| --- | --- |
+|----|----|
 | `repo-pattern help` | Show CLI help. |
 | `repo-pattern setup` | Initialize or migrate a Claude Code setup. |
 | `repo-pattern audit` | Inspect current Claude Code/ECC state. |
@@ -87,7 +87,7 @@ Common options:
 ## MCP profiles
 
 | Profile | Use when |
-| --- | --- |
+|----|----|
 | `minimal` | You want only essential docs/filesystem tooling. |
 | `web` | You build web apps and want browser/docs helpers. |
 | `backend` | You focus on server-side projects. |
@@ -115,23 +115,23 @@ target-project/
 
 ## Safety defaults
 
-- `.mcp.json` is gitignored because it may contain local values.
-- `.claude/settings.local.json` is gitignored.
-- `.claude/settings.json` keeps `hooks: {}` and disables commit attribution by default; interactive setup can turn it on or use a custom trailer.
-- No vendored ECC skills, commands, hooks, scripts, or rules are installed unless explicitly requested.
-- Karpathy-inspired Claude Code guidelines are included in `.claude/CLAUDE.md` from `multica-ai/andrej-karpathy-skills` (MIT).
-- Optional external skills are user opt-in only: `--with-skill taste`, `--with-skill document-specialist`, `--with-skill ui-ux-pro-max`, `--with-skill impeccable`, `--with-skill huashu-design`, or interactive setup.
+* `.mcp.json` is gitignored because it may contain local values.
+* `.claude/settings.local.json` is gitignored.
+* `.claude/settings.json` keeps `hooks: {}` and disables commit attribution by default; interactive setup can turn it on or use a custom trailer.
+* No vendored ECC skills, commands, hooks, scripts, or rules are installed unless explicitly requested.
+* Karpathy-inspired Claude Code guidelines are included in `.claude/CLAUDE.md` from `multica-ai/andrej-karpathy-skills` (MIT).
+* Optional external skills are user opt-in only: `--with-skill taste`, `--with-skill document-specialist`, `--with-skill ui-ux-pro-max`, `--with-skill impeccable`, `--with-skill huashu-design`, or interactive setup.
 
 ## External guidance and skills
 
 | Name | Integrated as | Source | License |
-| --- | --- | --- | --- |
+|----|----|----|----|
 | `karpathy-guidelines` | Built-in `.claude/CLAUDE.md` guidance | https://github.com/multica-ai/andrej-karpathy-skills | MIT |
 | `taste` | Optional `.claude/skills/` install via `--with-skill taste` | https://github.com/Leonxlnx/taste-skill/ | MIT |
 | `document-specialist` | Optional `.claude/skills/` install via `--with-skill document-specialist` | https://github.com/SpillwaveSolutions/document-specialist-skill/ | NOASSERTION — no upstream license declared during review on 2026-07-06 |
 | `ui-ux-pro-max` | Optional `.claude/skills/` install via `--with-skill ui-ux-pro-max` (requires Python 3.x) | https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/ | MIT |
 | `impeccable` | Optional `.claude/skills/` skill-only install via `--with-skill impeccable` (scripts require Node >=24) | https://github.com/pbakaus/impeccable/ | Apache-2.0 |
-| `huashu-design` | Optional `.claude/skills/` install via `--with-skill huashu-design` (multimedia scripts may need Playwright/Python/ffmpeg; install can take ~10 minutes, so opt in deliberately) | https://github.com/alchaincyf/huashu-design/ | MIT |
+| `huashu-design` | Optional `.claude/skills/` install via `--with-skill huashu-design` (multimedia scripts may need Playwright/Python/ffmpeg; install can take \~10 minutes, so opt in deliberately) | https://github.com/alchaincyf/huashu-design/ | MIT |
 
 ## Learn more
 
@@ -143,3 +143,5 @@ From a source checkout, replace `repo-pattern` with:
 ```bash
 node scripts/repo-pattern.mjs
 ```
+
+
