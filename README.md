@@ -129,6 +129,7 @@ target-project/
 - `.claude/settings.local.json` is gitignored.
 - `.claude/settings.json` keeps `hooks: {}` by default.
 - No vendored ECC skills, commands, hooks, scripts, or rules are installed unless explicitly requested.
+- Optional external skills are user opt-in only: `--with-skill taste`, `--with-skill document-specialist`, or interactive setup.
 
 ## Learn more
 

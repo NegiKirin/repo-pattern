@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { exists, isTracked, readJson } from "./fs-utils.mjs";
 import { printBox, style } from "./prompt.mjs";
+import { expectedOptionalSkillDirs } from "./skills.mjs";
 
 const HARDCODED_PATH_RE = /"\/home\/|"\/Users\/|"[A-Za-z]:\\\\/;
 
@@ -26,10 +27,23 @@ function hasNonEmptyObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0;
 }
 
+async function listDirNames(dir) {
+  if (!exists(dir)) return [];
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
+  } catch {
+    return [];
+  }
+}
+
 export async function auditProject(target) {
   const settings = await readJson(path.join(target, ".claude", "settings.json"), {});
   const repoPattern = await readJson(path.join(target, ".repo-pattern.json"), null);
 
+  const actualSkillDirs = await listDirNames(path.join(target, ".claude", "skills"));
+  const expectedSkillDirs = expectedOptionalSkillDirs(repoPattern?.optionalSkills || []);
+  const hasOnlyManagedSkills = JSON.stringify(actualSkillDirs) === JSON.stringify(expectedSkillDirs);
   const hasMcpJson = exists(path.join(target, ".mcp.json"));
   const hasHardcodedMcpPath = hasMcpJson
     ? await fileContains(path.join(target, ".mcp.json"), HARDCODED_PATH_RE)
@@ -43,6 +57,9 @@ export async function auditProject(target) {
     hasSettingsLocalTracked: isTracked(target, ".claude/settings.local.json"),
     hasSettingsHooks: hasNonEmptyObject(settings.hooks),
     hasClaudeSkillsDir: exists(path.join(target, ".claude", "skills")),
+    actualSkillDirs,
+    expectedSkillDirs,
+    hasOnlyManagedSkills,
     hasClaudeCommandsDir: exists(path.join(target, ".claude", "commands")),
     hasClaudeHooksDir: exists(path.join(target, ".claude", "hooks")),
     hasClaudeScriptsDir: exists(path.join(target, ".claude", "scripts")),
@@ -53,9 +70,10 @@ export async function auditProject(target) {
   };
 
   const allowSourceSkills = repoPattern?.mode === "template";
+  const allowManagedSkills = repoPattern?.runtime?.localSkills === true && Array.isArray(repoPattern?.optionalSkills) && result.hasOnlyManagedSkills;
   const legacy = (
     result.hasSettingsHooks ||
-    (result.hasClaudeSkillsDir && !allowSourceSkills) ||
+    (result.hasClaudeSkillsDir && !allowSourceSkills && !allowManagedSkills) ||
     result.hasClaudeCommandsDir ||
     result.hasClaudeHooksDir ||
     result.hasClaudeScriptsDir ||
@@ -93,7 +111,8 @@ export function printAudit(audit) {
     [audit.hasHardcodedMcpPath, "hardcoded machine path in .mcp.json"],
     [audit.hasSettingsLocalTracked, ".claude/settings.local.json tracked"],
     [audit.hasSettingsHooks, ".claude/settings.json hooks not empty"],
-    [audit.hasClaudeSkillsDir, ".claude/skills present"],
+    [audit.repoPattern?.runtime?.localSkills === true && !audit.hasOnlyManagedSkills, ".claude/skills does not match managed optional skills"],
+    [audit.hasClaudeSkillsDir && !audit.hasOnlyManagedSkills, ".claude/skills contains unmanaged entries"],
     [audit.hasClaudeCommandsDir, ".claude/commands present"],
     [audit.hasClaudeHooksDir, ".claude/hooks present"],
     [audit.hasClaudeScriptsDir, ".claude/scripts present"],

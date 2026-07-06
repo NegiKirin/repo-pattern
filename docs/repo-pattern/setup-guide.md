@@ -24,7 +24,7 @@ minimal Claude Code setup
 + repo-pattern metadata
 ```
 
-`repo-pattern` is intentionally not a Claude runtime pack. It does not install local Claude skills, commands, hooks, scripts, or rules by default. Project-local ECC rules are explicit opt-in via `setup --with-rules`, `rules`, or interactive `setup`.
+`repo-pattern` is intentionally not a Claude runtime pack. It does not install local Claude skills, commands, hooks, scripts, or rules by default. Project-local ECC rules are explicit opt-in via `setup --with-rules`, `rules`, or interactive `setup`. Optional external skills are explicit opt-in via `setup --with-skill <name>` or interactive `setup`.
 
 ---
 
@@ -169,6 +169,19 @@ The target project should not contain these unmanaged runtime surfaces by defaul
 ```
 
 Project-local rules are opt-in and limited to repo-pattern-managed `.claude/rules/ecc/`.
+
+Optional external skills are also opt-in and limited to repo-pattern-managed `.claude/skills/`:
+
+```bash
+repo-pattern setup --with-skill taste --yes
+repo-pattern setup --with-skill document-specialist --yes
+repo-pattern setup --with-skills taste,document-specialist --yes
+```
+
+Available optional skills:
+
+- `taste` — UI taste/design skills from https://github.com/Leonxlnx/taste-skill/ (MIT).
+- `document-specialist` — documentation specialist from https://github.com/SpillwaveSolutions/document-specialist-skill/ (license not declared upstream; choose only when you accept that source).
 
 ---
 

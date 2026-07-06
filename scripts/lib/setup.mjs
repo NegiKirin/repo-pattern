@@ -7,6 +7,7 @@ import { doctorProject } from "./doctor.mjs";
 import { collectMcpValues, generateMcp, listAvailableMcpServers, readMcpConfig } from "./mcp.mjs";
 import { askConfirm, askPassword, askText, isInteractive, printBox, printLogo, printSummary, selectMany, selectOne, style } from "./prompt.mjs";
 import { ECC_RULE_PACKS, selectEccRules } from "./ecc-rules.mjs";
+import { applyOptionalSkills, OPTIONAL_SKILLS } from "./skills.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -83,7 +84,7 @@ async function chooseMcpValues(sourceRoot, mcpConfig) {
 async function chooseRuleConfig(detection) {
   const autoRules = selectEccRules(detection);
   const ruleMode = await selectOne({
-    message: "Step 2/3 — Choose ECC rule detection mode",
+    message: "Step 2/4 — Choose ECC rule detection mode",
     options: [
       { value: "auto", label: "auto", description: `detect from project (${autoRules.join(", ")})` },
       { value: "manual", label: "manual", description: "choose rule packs by type" },
@@ -106,8 +107,16 @@ async function chooseRuleConfig(detection) {
   };
 }
 
+async function chooseOptionalSkills(initialValues = []) {
+  return selectMany({
+    message: "Step 3/4 — Optional external skills",
+    options: OPTIONAL_SKILLS,
+    initialValues
+  });
+}
+
 async function chooseLocalSettingsEnv() {
-  printBox("Step 3/3 — Local Claude provider settings", ["These values are written to .claude/settings.local.json and gitignored."]);
+  printBox("Step 4/4 — Local Claude provider settings", ["These values are written to .claude/settings.local.json and gitignored."]);
   const env = {};
   for (const [name, fallback, ask, validate] of LOCAL_SETTINGS_FIELDS) {
     env[name] = await ask(name, { initial: process.env[name] || fallback, validate });
@@ -115,7 +124,7 @@ async function chooseLocalSettingsEnv() {
   return env;
 }
 
-async function confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig, localSettingsEnv, dryRun }) {
+async function confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig, optionalSkills, localSettingsEnv, dryRun }) {
   printSummary("Setup summary", [
     ["Action", action],
     ["Target", target],
@@ -123,6 +132,7 @@ async function confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig
     ["MCP servers", mcpConfig.mcpServers?.join(", ") || "from profile"],
     ["MCP values", Object.keys(mcpValues).length ? Object.keys(mcpValues).join(", ") : "none"],
     ["Rules", ruleConfig.applyRules ? ruleConfig.rules.join(", ") : "none"],
+    ["Optional skills", optionalSkills.length ? optionalSkills.join(", ") : "none"],
     ["Local settings", ".claude/settings.local.json"],
     ["Base URL", localSettingsEnv.ANTHROPIC_BASE_URL],
     ["Opus", localSettingsEnv.ANTHROPIC_DEFAULT_OPUS_MODEL],
@@ -130,8 +140,8 @@ async function confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig
     ["Haiku", localSettingsEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL],
     ["Auth token", style("dim", "[hidden]")],
     ["Dry-run", dryRun ? "yes" : "no"],
-    ["Will write", "CLAUDE.md (if missing), .claude/CLAUDE.md, .claude/settings.json, .claude/settings.local.json, .mcp.json, .repo-pattern.json, .repo-pattern.lock.json"],
-    ["Will not write", ".claude/skills, .claude/commands, .claude/hooks, .claude/scripts"]
+    ["Will write", `CLAUDE.md (if missing), .claude/CLAUDE.md, .claude/settings.json, .claude/settings.local.json, .mcp.json, .repo-pattern.json, .repo-pattern.lock.json${optionalSkills.length ? ", .claude/skills" : ""}`],
+    ["Will not write", optionalSkills.length ? ".claude/commands, .claude/hooks, .claude/scripts" : ".claude/skills, .claude/commands, .claude/hooks, .claude/scripts"]
   ]);
 
   const answer = await selectOne({
@@ -153,6 +163,7 @@ async function handleInitialized({ sourceRoot, target, profile, dryRun }) {
     options: [
       { value: "doctor", label: "Run doctor" },
       { value: "mcp", label: "Regenerate MCP profile" },
+      { value: "skills", label: "Add optional skills" },
       { value: "exit", label: "Exit" }
     ],
     initialValue: "doctor"
@@ -166,20 +177,31 @@ async function handleInitialized({ sourceRoot, target, profile, dryRun }) {
     const mcpValues = await chooseMcpValues(sourceRoot, mcpConfig);
     await generateMcp({ sourceRoot, target, profile: mcpConfig.profile, mcpServers: mcpConfig.mcpServers, mcpValues, dryRun });
   }
+  if (action === "skills") {
+    const optionalSkills = await chooseOptionalSkills();
+    await applyOptionalSkills({ target, skills: optionalSkills, dryRun });
+    if (!dryRun) await doctorProject(target, { updateLock: true, dryRun });
+  }
 }
 
-export async function setupProject({ sourceRoot, target, profile = "web", dryRun = false, force = false, migrate = false, yes = false, applyRules = false }) {
+export async function setupProject({ sourceRoot, target, profile = "web", dryRun = false, force = false, migrate = false, yes = false, applyRules = false, optionalSkills = [] }) {
   if (!isInteractive()) {
     if (!yes) throw new Error("setup requires an interactive terminal, or pass --yes for scriptable mode.");
     if (profile === "custom") throw new Error("setup --yes cannot use the custom profile; choose a named profile.");
 
     const audit = await auditProject(target);
-    if (audit.state === "ECC_NATIVE_MINIMAL" && !force) {
+    if (audit.state === "ECC_NATIVE_MINIMAL" && !force && optionalSkills.length === 0) {
       await doctorProject(target, { dryRun });
       return;
     }
 
-    await provisionProject({ sourceRoot, target, profile, dryRun, force, migrate, applyRules });
+    if (audit.state === "ECC_NATIVE_MINIMAL" && optionalSkills.length > 0) {
+      await applyOptionalSkills({ target, skills: optionalSkills, dryRun });
+      if (!dryRun) await doctorProject(target, { updateLock: true, dryRun });
+      return;
+    }
+
+    await provisionProject({ sourceRoot, target, profile, dryRun, force, migrate, applyRules, optionalSkills });
     return;
   }
 
@@ -190,6 +212,7 @@ export async function setupProject({ sourceRoot, target, profile = "web", dryRun
   const chosenProfile = await chooseProfile(profile, detection);
   const mcpConfig = await chooseMcpConfig(sourceRoot, chosenProfile);
   const ruleConfig = await chooseRuleConfig(detection);
+  const selectedOptionalSkills = await chooseOptionalSkills(optionalSkills);
 
   const audit = await auditProject(target);
   printAudit(audit);
@@ -199,7 +222,12 @@ export async function setupProject({ sourceRoot, target, profile = "web", dryRun
   }
 
   if (audit.state === "ECC_NATIVE_MINIMAL") {
-    await handleInitialized({ sourceRoot, target, profile: chosenProfile, dryRun });
+    if (selectedOptionalSkills.length > 0) {
+      await applyOptionalSkills({ target, skills: selectedOptionalSkills, dryRun });
+      if (!dryRun) await doctorProject(target, { updateLock: true, dryRun });
+    } else {
+      await handleInitialized({ sourceRoot, target, profile: chosenProfile, dryRun });
+    }
     return;
   }
 
@@ -213,7 +241,7 @@ export async function setupProject({ sourceRoot, target, profile = "web", dryRun
   const mcpValues = await chooseMcpValues(sourceRoot, mcpConfig);
   const localSettingsEnv = await chooseLocalSettingsEnv();
 
-  if (!await confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig, localSettingsEnv, dryRun })) {
+  if (!await confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, dryRun })) {
     throw new Error("Setup cancelled.");
   }
 
@@ -229,6 +257,7 @@ export async function setupProject({ sourceRoot, target, profile = "web", dryRun
     ruleMode: ruleConfig.ruleMode,
     rules: ruleConfig.rules,
     applyRules: ruleConfig.applyRules,
+    optionalSkills: selectedOptionalSkills,
     localSettingsEnv
   });
 }

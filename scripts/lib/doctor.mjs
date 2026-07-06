@@ -28,7 +28,8 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   const lockPath = path.join(target, ".repo-pattern.lock.json");
   const lock = await readJson(lockPath, {});
   const allowSourceSkills = audit.repoPattern?.mode === "template";
-  check(!audit.hasClaudeSkillsDir || allowSourceSkills, ".claude/skills does not exist outside source template repos");
+  const managedSkills = audit.repoPattern?.runtime?.localSkills === true && Array.isArray(audit.repoPattern?.optionalSkills) && audit.hasOnlyManagedSkills;
+  check(!audit.hasClaudeSkillsDir || allowSourceSkills || managedSkills, ".claude/skills does not exist unless repo-pattern-managed optional skills are enabled");
   check(!audit.hasClaudeCommandsDir, ".claude/commands does not exist");
   check(!audit.hasClaudeHooksDir, ".claude/hooks does not exist");
   check(!audit.hasClaudeScriptsDir, ".claude/scripts does not exist");
@@ -43,7 +44,8 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
 
   const repoPattern = audit.repoPattern || {};
   check(repoPattern.workflow === "ecc-native", ".repo-pattern.json workflow=ecc-native");
-  check(repoPattern.runtime?.localSkills === false, ".repo-pattern.json runtime.localSkills=false");
+  check(repoPattern.runtime?.localSkills === false || managedSkills, ".repo-pattern.json runtime.localSkills=false unless optional skills are managed");
+  if (managedSkills) check(audit.hasClaudeSkillsDir, ".claude/skills exists for managed optional skills");
   check(repoPattern.runtime?.localCommands === false, ".repo-pattern.json runtime.localCommands=false");
   check(repoPattern.runtime?.localHooks === false, ".repo-pattern.json runtime.localHooks=false");
   check(repoPattern.runtime?.localScripts === false, ".repo-pattern.json runtime.localScripts=false");

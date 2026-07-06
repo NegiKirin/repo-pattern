@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { printAudit } from "./lib/audit.mjs";
 import { applyMcpValues, mcpSecretPrompt, validateRelativeMcpPath } from "./lib/mcp.mjs";
 import { printSummary, renderLogo, style } from "./lib/prompt.mjs";
+import { invalidOptionalSkills, normalizeOptionalSkills } from "./lib/skills.mjs";
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
 const cliPath = path.join(cliDir, "repo-pattern.mjs");
@@ -52,6 +53,8 @@ assert.deepEqual(applyMcpValues(mcpServers, {
 });
 
 assert.equal(applyMcpValues(mcpServers).filesystem.args[2], ".");
+assert.deepEqual(normalizeOptionalSkills(["taste", "taste", "document-specialist"]), ["taste", "document-specialist"]);
+assert.deepEqual(invalidOptionalSkills(["taste", "nope"]), ["nope"]);
 
 const auditLogs = [];
 const originalAuditLog = console.log;
@@ -122,6 +125,14 @@ assert.match(result.stderr, /Unknown argument: --bogus/);
 result = runCli(["setup", "--target"]);
 assert.equal(result.status, 2);
 assert.match(result.stderr, /Missing value for --target/);
+
+result = runCli(["setup", "--with-skill", "nope"]);
+assert.equal(result.status, 2);
+assert.match(result.stderr, /Unknown optional skill\(s\): nope/);
+
+result = runCli(["help"]);
+assert.equal(result.status, 0);
+assert.match(result.stdout, /--with-skill <name>/);
 
 result = runCli(["audit"]);
 assert.equal(result.status, 0);

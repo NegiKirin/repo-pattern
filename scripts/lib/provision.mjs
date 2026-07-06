@@ -7,6 +7,7 @@ import { doctorProject } from "./doctor.mjs";
 import { applyEccRules } from "./rules.mjs";
 import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, isTracked, readJson, writeJson, writeIfMissing } from "./fs-utils.mjs";
 import { printSummary, style } from "./prompt.mjs";
+import { applyOptionalSkills } from "./skills.mjs";
 
 const TARGET_CLAUDE_MD = "";
 
@@ -82,7 +83,7 @@ async function writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun
   await appendGitignoreLine(target, ".claude/settings.local.json", { dryRun });
 }
 
-export async function provisionProject({ sourceRoot, target, profile = "web", mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, ruleMode = "auto", rules = null, applyRules = false }) {
+export async function provisionProject({ sourceRoot, target, profile = "web", mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, ruleMode = "auto", rules = null, applyRules = false, optionalSkills = [] }) {
   printSummary("Provisioning target", [["Target", target]]);
   const audit = await auditProject(target);
   printAudit(audit);
@@ -127,6 +128,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", mc
   const mcpResult = await generateMcp({ sourceRoot, target, profile, mcpServers, mcpValues, dryRun });
   const eccStatus = await setupEcc({ sourceRoot, target, dryRun });
   if (applyRules) await applyEccRules({ target, dryRun, ruleMode, rules });
+  if (optionalSkills.length > 0) await applyOptionalSkills({ target, skills: optionalSkills, dryRun });
 
   if (dryRun) {
     console.log("[dry-run] doctor skipped because no files were written.");
@@ -148,7 +150,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", mc
     ["Status", dryRun ? `preview only; ${pendingText}` : pendingText],
     ["Target", target],
     ["Profile", profile],
-    [dryRun ? "Would write" : "Written", "CLAUDE.md (if missing), .claude/, .mcp.json, .repo-pattern.json, .repo-pattern.lock.json"],
+    [dryRun ? "Would write" : "Written", `CLAUDE.md (if missing), .claude/, .mcp.json, .repo-pattern.json, .repo-pattern.lock.json${optionalSkills.length ? ", .claude/skills" : ""}`],
     ["Doctor", dryRun ? "skipped (dry-run)" : style("success", "passed")],
     ["Next", next]
   ]);
