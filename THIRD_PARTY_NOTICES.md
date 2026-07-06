@@ -10,6 +10,13 @@ Copyright (c) 2026 Affaan Mustafa
 
 repo-pattern does not vendor ECC skills, commands, hooks, scripts, or runtime surfaces by default.
 
+## Karpathy-inspired guidelines
+
+repo-pattern includes Claude Code behavioral guidelines from `multica-ai/andrej-karpathy-skills` in `.claude/CLAUDE.md`.
+
+- Source: https://github.com/multica-ai/andrej-karpathy-skills
+- License: MIT
+
 ## Optional external skills
 
 Optional skills are not bundled with repo-pattern. When explicitly selected by the user, repo-pattern downloads them from their upstream repositories into the target project's `.claude/skills/` directory.

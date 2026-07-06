@@ -129,7 +129,16 @@ target-project/
 - `.claude/settings.local.json` is gitignored.
 - `.claude/settings.json` keeps `hooks: {}` by default.
 - No vendored ECC skills, commands, hooks, scripts, or rules are installed unless explicitly requested.
+- Karpathy-inspired Claude Code guidelines are included in `.claude/CLAUDE.md` from `multica-ai/andrej-karpathy-skills` (MIT).
 - Optional external skills are user opt-in only: `--with-skill taste`, `--with-skill document-specialist`, or interactive setup.
+
+## External guidance and skills
+
+| Name | Integrated as | Source | License |
+| --- | --- | --- | --- |
+| `karpathy-guidelines` | Built-in `.claude/CLAUDE.md` guidance | https://github.com/multica-ai/andrej-karpathy-skills | MIT |
+| `taste` | Optional `.claude/skills/` install via `--with-skill taste` | https://github.com/Leonxlnx/taste-skill/ | MIT |
+| `document-specialist` | Optional `.claude/skills/` install via `--with-skill document-specialist` | https://github.com/SpillwaveSolutions/document-specialist-skill/ | NOASSERTION — no upstream license declared during review on 2026-07-06 |
 
 ## Learn more
 
