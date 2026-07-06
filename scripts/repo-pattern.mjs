@@ -104,7 +104,7 @@ Setup UI:
   --migrate      Take over legacy/local Claude runtime surfaces
   --force        Reapply setup over repo-pattern-managed state
   --with-rules               Opt in to repo-pattern-managed .claude/rules/ecc
-  --with-skill <name>        Opt in to external .claude/skills (taste, document-specialist, ui-ux-pro-max, impeccable, huashu-design)
+  --with-skill <name>        Opt in to external skills/plugins (taste, document-specialist, ui-ux-pro-max, impeccable, huashu-design)
   --with-skills <a,b>        Comma-separated optional skills
   --yes                      Run setup non-interactively
 `);

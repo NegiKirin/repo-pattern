@@ -1,17 +1,47 @@
 import { execSync } from "node:child_process";
 import path from "node:path";
-import { readJson, writeJson } from "./fs-utils.mjs";
+import { appendGitignoreLine, isTracked, readJson, writeJson } from "./fs-utils.mjs";
 import { printSummary } from "./prompt.mjs";
+
+const ECC_PLUGIN_ID = "ecc@ecc";
+const ECC_MARKETPLACE = {
+  source: {
+    source: "git",
+    url: "https://github.com/affaan-m/ECC.git"
+  }
+};
+
+export function applyEccPluginSettings(settings = {}) {
+  return {
+    ...settings,
+    enabledPlugins: {
+      ...(settings.enabledPlugins || {}),
+      [ECC_PLUGIN_ID]: true
+    },
+    extraKnownMarketplaces: {
+      ...(settings.extraKnownMarketplaces || {}),
+      ecc: ECC_MARKETPLACE
+    }
+  };
+}
 
 function hasEccPlugin() {
   try {
-    return execSync("claude plugin list", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).includes("ecc@ecc");
+    return execSync("claude plugin list", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).includes(ECC_PLUGIN_ID);
   } catch {
     return false;
   }
 }
 
+async function writeEccLocalSettings({ target, dryRun }) {
+  if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local plugin settings.");
+  const file = path.join(target, ".claude", "settings.local.json");
+  await writeJson(file, applyEccPluginSettings(await readJson(file, {})), { dryRun });
+  await appendGitignoreLine(target, ".claude/settings.local.json", { dryRun });
+}
+
 export async function setupEcc({ target, dryRun = false }) {
+  await writeEccLocalSettings({ target, dryRun });
   let status = hasEccPlugin() ? "installed" : "manual-plugin-install-required";
 
   if (status === "installed") {

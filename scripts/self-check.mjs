@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { printAudit } from "./lib/audit.mjs";
+import { applyEccPluginSettings } from "./lib/ecc.mjs";
 import { applyMcpValues, mcpSecretPrompt, validateRelativeMcpPath } from "./lib/mcp.mjs";
 import { applyAttributionSetting } from "./lib/provision.mjs";
 import { printSummary, renderLogo, style } from "./lib/prompt.mjs";
-import { expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills } from "./lib/skills.mjs";
+import { applyOptionalSkills, applyPluginSkillSettings, expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills } from "./lib/skills.mjs";
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
 const cliPath = path.join(cliDir, "repo-pattern.mjs");
@@ -57,8 +60,24 @@ assert.equal(applyMcpValues(mcpServers).filesystem.args[2], ".");
 assert.deepEqual(applyAttributionSetting({ hooks: {} }, { mode: "off" }), { hooks: {}, attribution: { commit: "" } });
 assert.deepEqual(applyAttributionSetting({ attribution: { commit: "" } }, { mode: "on" }), {});
 assert.deepEqual(applyAttributionSetting({ attribution: { pr: "PR" } }, { mode: "custom", commit: "Custom" }), { attribution: { pr: "PR", commit: "Custom" } });
+assert.deepEqual(applyEccPluginSettings({ enabledPlugins: { other: false } }).enabledPlugins, { other: false, "ecc@ecc": true });
+assert.equal(applyEccPluginSettings().extraKnownMarketplaces.ecc.source.url, "https://github.com/affaan-m/ECC.git");
 assert.deepEqual(normalizeOptionalSkills(["taste", "taste", "document-specialist", "ui-ux-pro-max", "impeccable", "huashu-design"]), ["taste", "document-specialist", "ui-ux-pro-max", "impeccable", "huashu-design"]);
 assert.deepEqual(invalidOptionalSkills(["taste", "ui-ux-pro-max", "impeccable", "huashu-design", "nope"]), ["nope"]);
+assert.deepEqual(applyPluginSkillSettings({}, [{
+  source: "https://github.com/Leonxlnx/taste-skill.git",
+  plugin: { marketplace: "taste-skill", name: "taste-skill" }
+}]), {
+  enabledPlugins: { "taste-skill@taste-skill": true },
+  extraKnownMarketplaces: {
+    "taste-skill": {
+      source: {
+        source: "git",
+        url: "https://github.com/Leonxlnx/taste-skill.git"
+      }
+    }
+  }
+});
 assert.deepEqual(expectedOptionalSkillDirs([
   {
     name: "ui-ux-pro-max",
@@ -75,7 +94,50 @@ assert.deepEqual(expectedOptionalSkillDirs([
     source: "https://github.com/alchaincyf/huashu-design.git",
     revision: "0e7ec8aca0058184c1a9e06e57697e84f68a3f0f"
   }
-]), ["huashu-design", "impeccable", "ui-ux-pro-max"]);
+]), ["huashu-design"]);
+
+const skillTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-skill-"));
+const originalSkillLog = console.log;
+console.log = () => {};
+try {
+  await applyOptionalSkills({ target: skillTarget, skills: ["taste"] });
+  console.log = originalSkillLog;
+  const settings = JSON.parse(await fs.readFile(path.join(skillTarget, ".claude", "settings.local.json"), "utf8"));
+  const repoConfig = JSON.parse(await fs.readFile(path.join(skillTarget, ".repo-pattern.json"), "utf8"));
+  assert.equal(settings.enabledPlugins["taste-skill@taste-skill"], true);
+  assert.equal(settings.extraKnownMarketplaces["taste-skill"].source.url, "https://github.com/Leonxlnx/taste-skill.git");
+  assert.equal(repoConfig.runtime.localSkills, false);
+  assert.deepEqual(repoConfig.optionalSkills[0].plugin, { marketplace: "taste-skill", name: "taste-skill" });
+} finally {
+  console.log = originalSkillLog;
+  await fs.rm(skillTarget, { recursive: true, force: true });
+}
+
+const mixedSkillTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-skill-mixed-"));
+console.log = () => {};
+try {
+  await fs.mkdir(path.join(mixedSkillTarget, ".claude", "skills", "document-specialist-skill"), { recursive: true });
+  await fs.writeFile(path.join(mixedSkillTarget, ".claude", "skills", "document-specialist-skill", "KEEP"), "ok", "utf8");
+  await fs.writeFile(path.join(mixedSkillTarget, ".repo-pattern.json"), JSON.stringify({
+    runtime: { localSkills: true },
+    optionalSkills: [{
+      name: "document-specialist",
+      source: "https://github.com/SpillwaveSolutions/document-specialist-skill.git",
+      revision: "4d50d302b9f40e8eafec72d78a86676cdd9511ac",
+      license: "NOASSERTION",
+      installedDirs: ["document-specialist-skill"]
+    }]
+  }), "utf8");
+  await applyOptionalSkills({ target: mixedSkillTarget, skills: ["taste"] });
+  console.log = originalSkillLog;
+  const repoConfig = JSON.parse(await fs.readFile(path.join(mixedSkillTarget, ".repo-pattern.json"), "utf8"));
+  assert.equal(await fs.readFile(path.join(mixedSkillTarget, ".claude", "skills", "document-specialist-skill", "KEEP"), "utf8"), "ok");
+  assert.equal(repoConfig.runtime.localSkills, true);
+  assert.deepEqual(repoConfig.optionalSkills.map((entry) => entry.name), ["document-specialist", "taste"]);
+} finally {
+  console.log = originalSkillLog;
+  await fs.rm(mixedSkillTarget, { recursive: true, force: true });
+}
 
 const auditLogs = [];
 const originalAuditLog = console.log;

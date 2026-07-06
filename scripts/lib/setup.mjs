@@ -153,6 +153,7 @@ function attributionSummary(attributionConfig) {
 }
 
 async function confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig, optionalSkills, localSettingsEnv, attributionConfig, dryRun }) {
+  const hasLocalSkill = optionalSkills.some((name) => !OPTIONAL_SKILLS.find((skill) => skill.value === name)?.plugin);
   printSummary("Setup summary", [
     ["Action", action],
     ["Target", target],
@@ -169,8 +170,8 @@ async function confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig
     ["Auth token", style("dim", "[hidden]")],
     ["Commit attribution", attributionSummary(attributionConfig)],
     ["Dry-run", dryRun ? "yes" : "no"],
-    ["Will write", `CLAUDE.md (if missing), .claude/CLAUDE.md, .claude/settings.json, .claude/settings.local.json, .mcp.json, .repo-pattern.json, .repo-pattern.lock.json${optionalSkills.length ? ", .claude/skills" : ""}`],
-    ["Will not write", optionalSkills.length ? ".claude/commands, .claude/hooks, .claude/scripts" : ".claude/skills, .claude/commands, .claude/hooks, .claude/scripts"]
+    ["Will write", `CLAUDE.md (if missing), .claude/CLAUDE.md, .claude/settings.json, .claude/settings.local.json, .mcp.json, .repo-pattern.json, .repo-pattern.lock.json${optionalSkills.length ? ", optional skill/plugin config" : ""}${hasLocalSkill ? ", .claude/skills" : ""}`],
+    ["Will not write", hasLocalSkill ? ".claude/commands, .claude/hooks, .claude/scripts" : ".claude/skills, .claude/commands, .claude/hooks, .claude/scripts"]
   ]);
 
   const answer = await selectOne({
