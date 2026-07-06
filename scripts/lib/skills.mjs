@@ -216,8 +216,18 @@ export async function applyOptionalSkills({ target, skills = [], dryRun = false 
     appliedSkills.push({ name: skill.value, source: skill.source, revision: skill.revision, license: skill.license, installedDirs });
   }
 
-  if (dryRun) console.log(`[dry-run] rm -rf ${path.join(target, ".repo-pattern", "cache")}`);
-  else await removePath(path.join(target, ".repo-pattern", "cache"));
+  const repoPatternDir = path.join(target, ".repo-pattern");
+  if (dryRun) {
+    console.log(`[dry-run] rm -rf ${path.join(repoPatternDir, "cache")}`);
+    console.log(`[dry-run] rmdir ${repoPatternDir} if empty`);
+  } else {
+    await removePath(path.join(repoPatternDir, "cache"));
+    try {
+      await fs.rmdir(repoPatternDir);
+    } catch (error) {
+      if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error.code)) throw error;
+    }
+  }
 
   const repoConfigPath = path.join(target, ".repo-pattern.json");
   const repoConfig = await readJson(repoConfigPath, {});
