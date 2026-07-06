@@ -29,7 +29,7 @@ minimal Claude Code setup
 ---
 
 
-## GitHub Packages publishing
+## npmjs publishing
 
 The repository includes:
 
@@ -37,32 +37,16 @@ The repository includes:
 .github/workflows/nodejs-package.yml
 ```
 
-Create a GitHub Release to trigger publishing.
-
-The workflow publishes to GitHub Packages with:
+Create a GitHub Release to trigger publishing to npmjs. The workflow expects an `NPM_TOKEN` repository secret and publishes with:
 
 ```text
-registry-url: https://npm.pkg.github.com/
-NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
-
-Because GitHub Packages only supports scoped npm package names, the workflow temporarily changes the package name during CI to:
-
-```text
-@<github-owner>/repo-pattern
-```
-
-The source `package.json` remains:
-
-```json
-{
-  "name": "repo-pattern"
-}
+registry-url: https://registry.npmjs.org/
+NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 ```
 
 ## NPX package usage
 
-When published to GitHub Packages, `repo-pattern` can be used without cloning the repository after configuring npm for `@negikirin`:
+When published to npmjs, `repo-pattern` can be used without cloning the repository:
 
 ```bash
 npx @negikirin/repo-pattern setup --target . --profile web --yes
@@ -78,7 +62,7 @@ Local package test before publishing:
 
 ```bash
 npm pack
-npm exec --yes --package ./repo-pattern-0.0.2.tgz -- repo-pattern --help
+npm exec --yes --package ./repo-pattern-0.1.0.tgz -- repo-pattern --help
 ```
 
 ## 1. One-step setup for a new project

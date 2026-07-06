@@ -21,18 +21,6 @@
 
 ## Install
 
-Configure GitHub Packages once for the `@negikirin` scope:
-
-```bash
-npm config set @negikirin:registry https://npm.pkg.github.com
-```
-
-If GitHub Packages requires auth, login with a GitHub token that has `read:packages`:
-
-```bash
-npm login --scope=@negikirin --auth-type=legacy --registry=https://npm.pkg.github.com
-```
-
 Use directly with `npx`:
 
 ```bash

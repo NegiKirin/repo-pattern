@@ -63,7 +63,7 @@
     ".github/workflows/"
   ],
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com/"
+    "access": "public"
   },
   "dependencies": {
     "@clack/prompts": "^0.11.0"
