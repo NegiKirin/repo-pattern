@@ -143,7 +143,7 @@ target-project/
 | `document-specialist` | Optional `.claude/skills/` install via `--with-skill document-specialist` | https://github.com/SpillwaveSolutions/document-specialist-skill/ | NOASSERTION — no upstream license declared during review on 2026-07-06 |
 | `ui-ux-pro-max` | Optional `.claude/skills/` install via `--with-skill ui-ux-pro-max` (requires Python 3.x) | https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/ | MIT |
 | `impeccable` | Optional `.claude/skills/` skill-only install via `--with-skill impeccable` (scripts require Node >=24) | https://github.com/pbakaus/impeccable/ | Apache-2.0 |
-| `huashu-design` | Optional `.claude/skills/` install via `--with-skill huashu-design` (multimedia scripts may need Playwright/Python/ffmpeg) | https://github.com/alchaincyf/huashu-design/ | MIT |
+| `huashu-design` | Optional `.claude/skills/` install via `--with-skill huashu-design` (multimedia scripts may need Playwright/Python/ffmpeg; install can take ~10 minutes, so opt in deliberately) | https://github.com/alchaincyf/huashu-design/ | MIT |
 
 ## Learn more
 
