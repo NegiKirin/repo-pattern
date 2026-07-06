@@ -1,7 +1,7 @@
 import path from "node:path";
 import { auditProject } from "./audit.mjs";
 import { isTracked, readJson, writeJson } from "./fs-utils.mjs";
-import { printBox } from "./prompt.mjs";
+import { printBox, style } from "./prompt.mjs";
 
 function renderDoctor(target, checks, infoRows) {
   const failed = checks.filter((row) => !row.ok);
@@ -9,10 +9,10 @@ function renderDoctor(target, checks, infoRows) {
 
   printBox("Doctor", [
     `Target  ${target}`,
-    `Checks  ${checks.length - failed.length}/${checks.length} passed${failed.length ? `, ${failed.length} failed` : ""}`,
+    `Checks  ${checks.length - failed.length}/${checks.length} ${style("success", "passed")}${failed.length ? `, ${failed.length} ${style("error", "failed")}` : ""}`,
     "",
-    ...visibleChecks.map((row) => `${row.ok ? "✓" : "✗"} ${row.label}`),
-    ...infoRows.map((row) => `i ${row}`)
+    ...visibleChecks.map((row) => `${row.ok ? style("success", "✓") : style("error", "✗")} ${row.label}`),
+    ...infoRows.map((row) => `${style("info", "i")} ${row}`)
   ]);
 }
 

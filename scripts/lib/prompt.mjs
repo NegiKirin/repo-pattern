@@ -100,6 +100,12 @@ export function printBox(title, lines = []) {
 }
 
 const ANSI_RESET = "\x1b[0m";
+const ANSI_STYLES = {
+  dim: "\x1b[2m",
+  error: "\x1b[31m",
+  info: "\x1b[34m",
+  success: "\x1b[32m"
+};
 const LOGO_PALETTE = ["\x1b[38;5;39m", "\x1b[38;5;81m", "\x1b[38;5;141m", "\x1b[38;5;213m"];
 const LOGO_LINES = [
   "  ____  ____ ",
@@ -112,6 +118,11 @@ const LOGO_LINES = [
 
 function supportsAnsiColor() {
   return isInteractive() && !process.env.NO_COLOR && process.env.TERM !== "dumb";
+}
+
+export function style(kind, value) {
+  const color = ANSI_STYLES[kind];
+  return color && supportsAnsiColor() ? `${color}${value}${ANSI_RESET}` : String(value);
 }
 
 function gradient(line) {

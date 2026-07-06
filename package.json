@@ -15,6 +15,15 @@
     "prepublishOnly": "npm test && npm run pack:dry"
   },
   "license": "MIT",
+  "author": "NegiKirin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NegiKirin/repo-pattern.git"
+  },
+  "bugs": {
+    "url": "https://github.com/NegiKirin/repo-pattern/issues"
+  },
+  "homepage": "https://github.com/NegiKirin/repo-pattern#readme",
   "keywords": [
     "repo-pattern",
     "claude-code",
@@ -50,6 +59,7 @@
     "CLAUDE.md",
     "README.md",
     "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
     ".github/workflows/"
   ],
   "publishConfig": {

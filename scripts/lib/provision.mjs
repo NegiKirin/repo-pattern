@@ -6,9 +6,13 @@ import { setupEcc } from "./ecc.mjs";
 import { doctorProject } from "./doctor.mjs";
 import { applyEccRules } from "./rules.mjs";
 import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, isTracked, readJson, writeJson, writeIfMissing } from "./fs-utils.mjs";
-import { printSummary } from "./prompt.mjs";
+import { printSummary, style } from "./prompt.mjs";
 
 const TARGET_CLAUDE_MD = "";
+
+function shellQuote(value) {
+  return `'${String(value).replaceAll("'", `'"'"'`)}'`;
+}
 
 function repoPatternConfig(profile) {
   return {
@@ -134,12 +138,18 @@ export async function provisionProject({ sourceRoot, target, profile = "web", mc
     ...(eccStatus === "manual-plugin-install-required" ? ["ECC plugin"] : []),
     ...(mcpResult.missingValues.length > 0 ? ["MCP values"] : [])
   ];
-  const pendingText = pending.length ? `${pending.join(", ")} pending` : "ready";
+  const pendingText = pending.length ? `${pending.join(", ")} pending` : style("success", "ready");
+  const next = dryRun
+    ? "review output, then rerun without --dry-run"
+    : pending.length
+      ? `resolve ${pending.join(" and ")}, then run claude`
+      : `cd ${shellQuote(target)} && claude`;
   printSummary("Setup complete", [
     ["Status", dryRun ? `preview only; ${pendingText}` : pendingText],
     ["Target", target],
     ["Profile", profile],
-    ["Doctor", dryRun ? "skipped (dry-run)" : "passed"],
-    ["Next", dryRun ? "review output, then rerun without --dry-run" : pending.length ? `resolve ${pending.join(" and ")}, then run claude` : "open target and run claude"]
+    [dryRun ? "Would write" : "Written", "CLAUDE.md (if missing), .claude/, .mcp.json, .repo-pattern.json, .repo-pattern.lock.json"],
+    ["Doctor", dryRun ? "skipped (dry-run)" : style("success", "passed")],
+    ["Next", next]
   ]);
 }

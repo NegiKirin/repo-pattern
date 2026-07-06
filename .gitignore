@@ -3,6 +3,7 @@
 .repo-pattern/backups/
 
 # Claude Code local state
+CLAUDE.md
 .claude/settings.local.json
 .claude/settings.json
 .claude/session-data/

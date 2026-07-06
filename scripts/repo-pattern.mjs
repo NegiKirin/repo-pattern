@@ -68,17 +68,18 @@ function help() {
   console.log(`repo-pattern — minimal ECC-first Claude Code setup
 
 Usage:
-  node scripts/repo-pattern.mjs setup   --target .
-  node scripts/repo-pattern.mjs setup   --target . --profile web --yes
-  node scripts/repo-pattern.mjs setup   --target . --profile web --migrate --yes
+  repo-pattern help
+  repo-pattern setup
+  repo-pattern setup --profile web --yes
+  repo-pattern setup --profile web --migrate --yes
 
 Advanced:
-  node scripts/repo-pattern.mjs mcp     --target . --profile web
-  node scripts/repo-pattern.mjs ecc     --target .
-  node scripts/repo-pattern.mjs rules   --target .
-  node scripts/repo-pattern.mjs audit   --target .
-  node scripts/repo-pattern.mjs doctor  --target .
-  node scripts/repo-pattern.mjs cleanup --target .
+  repo-pattern mcp --profile web
+  repo-pattern ecc
+  repo-pattern rules
+  repo-pattern audit
+  repo-pattern doctor
+  repo-pattern cleanup
 
 Options:
   --target <path>   Target project path. Default: .

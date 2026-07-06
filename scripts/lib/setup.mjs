@@ -5,7 +5,7 @@ import { detectProject } from "./project-detect.mjs";
 import { provisionProject } from "./provision.mjs";
 import { doctorProject } from "./doctor.mjs";
 import { collectMcpValues, generateMcp, listAvailableMcpServers, readMcpConfig } from "./mcp.mjs";
-import { askConfirm, askPassword, askText, isInteractive, printBox, printLogo, printSummary, selectMany, selectOne } from "./prompt.mjs";
+import { askConfirm, askPassword, askText, isInteractive, printBox, printLogo, printSummary, selectMany, selectOne, style } from "./prompt.mjs";
 import { ECC_RULE_PACKS, selectEccRules } from "./ecc-rules.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -19,12 +19,25 @@ const PROFILES = [
   { value: "custom", label: "custom", description: "choose exact MCP servers" }
 ];
 
+function validateRequired(value) {
+  return String(value || "").trim() ? true : "Required";
+}
+
+function validateUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? true : "Use http:// or https://.";
+  } catch {
+    return "Use a valid URL.";
+  }
+}
+
 const LOCAL_SETTINGS_FIELDS = [
-  ["ANTHROPIC_BASE_URL", "https://example.com/v1", askText],
-  ["ANTHROPIC_AUTH_TOKEN", "", askPassword],
-  ["ANTHROPIC_DEFAULT_OPUS_MODEL", "claude-opus-4-8", askText],
-  ["ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-sonnet-4-6", askText],
-  ["ANTHROPIC_DEFAULT_HAIKU_MODEL", "claude-haiku-4-5", askText]
+  ["ANTHROPIC_BASE_URL", "https://example.com/v1", askText, validateUrl],
+  ["ANTHROPIC_AUTH_TOKEN", "", askPassword, null],
+  ["ANTHROPIC_DEFAULT_OPUS_MODEL", "claude-opus-4-8", askText, validateRequired],
+  ["ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-sonnet-4-6", askText, validateRequired],
+  ["ANTHROPIC_DEFAULT_HAIKU_MODEL", "claude-haiku-4-5", askText, validateRequired]
 ];
 
 function suggestedProfile(detection, fallback) {
@@ -96,8 +109,8 @@ async function chooseRuleConfig(detection) {
 async function chooseLocalSettingsEnv() {
   printBox("Step 3/3 — Local Claude provider settings", ["These values are written to .claude/settings.local.json and gitignored."]);
   const env = {};
-  for (const [name, fallback, ask] of LOCAL_SETTINGS_FIELDS) {
-    env[name] = await ask(name, { initial: process.env[name] || fallback });
+  for (const [name, fallback, ask, validate] of LOCAL_SETTINGS_FIELDS) {
+    env[name] = await ask(name, { initial: process.env[name] || fallback, validate });
   }
   return env;
 }
@@ -115,8 +128,10 @@ async function confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig
     ["Opus", localSettingsEnv.ANTHROPIC_DEFAULT_OPUS_MODEL],
     ["Sonnet", localSettingsEnv.ANTHROPIC_DEFAULT_SONNET_MODEL],
     ["Haiku", localSettingsEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL],
-    ["Auth token", "[hidden]"],
-    ["Dry-run", dryRun ? "yes" : "no"]
+    ["Auth token", style("dim", "[hidden]")],
+    ["Dry-run", dryRun ? "yes" : "no"],
+    ["Will write", "CLAUDE.md (if missing), .claude/CLAUDE.md, .claude/settings.json, .claude/settings.local.json, .mcp.json, .repo-pattern.json, .repo-pattern.lock.json"],
+    ["Will not write", ".claude/skills, .claude/commands, .claude/hooks, .claude/scripts"]
   ]);
 
   const answer = await selectOne({

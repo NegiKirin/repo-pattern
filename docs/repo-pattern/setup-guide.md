@@ -194,7 +194,7 @@ or regenerate later:
 node scripts/repo-pattern.mjs mcp --target /path/to/project --profile <profile>
 ```
 
-Interactive `setup` and `mcp` ask for selected MCP placeholders such as `CONTEXT7_API_KEY`, `TAVILY_API_KEY`, and `CLAUDE_PROJECT_DIR`. MCP paths must be relative (`.`, `src`, `packages/api`); absolute machine paths and `..` are rejected. With `--yes` or non-TTY runs, placeholders stay in `.mcp.json` and the CLI prints the values to fill later.
+Interactive `setup` and `mcp` ask for selected MCP placeholders such as `CONTEXT7_API_KEY` and `TAVILY_API_KEY`. The filesystem MCP server uses the target project root (`.`) as its allowed directory. Other MCP paths, when prompted, must be relative (`src`, `packages/api`); absolute machine paths and `..` are rejected. With `--yes` or non-TTY runs, unresolved secret placeholders stay in `.mcp.json` and the CLI prints the values to fill later.
 
 ---
 

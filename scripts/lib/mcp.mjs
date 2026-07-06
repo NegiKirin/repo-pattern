@@ -1,11 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { appendGitignoreLine, ensureDir, exists, isTracked, readJson, writeJson } from "./fs-utils.mjs";
-import { askPassword, askText, isInteractive, printSummary } from "./prompt.mjs";
+import { askPassword, askText, isInteractive, printSummary, style } from "./prompt.mjs";
 
 const PLACEHOLDER_RE = /^\$\{([A-Z0-9_]+)(?::-(.*))?\}$/;
 const SECRET_RE = /(API_KEY|TOKEN|SECRET|PASSWORD)$/;
 const PATH_RE = /(PROJECT_DIR|_DIR|_PATH)$/;
+const SECRET_HELP_URLS = {
+  CONTEXT7_API_KEY: "https://context7.com/dashboard",
+  TAVILY_API_KEY: "https://app.tavily.com/home"
+};
 
 export async function listAvailableMcpServers(sourceRoot) {
   const serverDir = path.join(sourceRoot, "mcp", "servers");
@@ -28,6 +32,11 @@ export function validateRelativeMcpPath(value) {
   return true;
 }
 
+export function mcpSecretPrompt(input) {
+  const helpUrl = SECRET_HELP_URLS[input.name];
+  return helpUrl ? `MCP secret — ${input.label} (get key: ${helpUrl})` : `MCP secret — ${input.label}`;
+}
+
 function findMcpInputs(mcpServers) {
   const inputs = [];
   const seen = new Set();
@@ -45,7 +54,7 @@ function findMcpInputs(mcpServers) {
       add({
         ...placeholder,
         kind: SECRET_RE.test(placeholder.name) ? "secret" : "text",
-        label: `${serverName} ${envName}`
+        label: `${serverName}: ${envName}`
       });
     }
 
@@ -55,7 +64,7 @@ function findMcpInputs(mcpServers) {
       add({
         ...placeholder,
         kind: PATH_RE.test(placeholder.name) ? "path" : "text",
-        label: `${serverName} ${placeholder.name}`
+        label: `${serverName}: ${placeholder.name}`
       });
     }
   }
@@ -84,9 +93,13 @@ export function applyMcpValues(mcpServers, values = {}) {
 }
 
 export async function readMcpConfig({ sourceRoot, profile = "web", mcpServers: selectedServers = null }) {
-  const profileData = selectedServers ? null : await readJson(path.join(sourceRoot, "mcp", "profiles", `${profile}.json`));
+  const profileDir = path.join(sourceRoot, "mcp", "profiles");
+  const profileData = selectedServers ? null : await readJson(path.join(profileDir, `${profile}.json`));
   const profileServers = selectedServers || profileData?.servers;
-  if (!profileServers) throw new Error(`MCP profile not found: ${profile}`);
+  if (!profileServers) {
+    const profiles = (await fs.readdir(profileDir)).filter((name) => name.endsWith(".json")).map((name) => path.basename(name, ".json")).sort();
+    throw new Error(`MCP profile not found: ${profile}. Available profiles: ${profiles.join(", ")}`);
+  }
   if (profile === "custom" && profileServers.length === 0) throw new Error("Custom MCP profile requires at least one server.");
 
   const mcpServers = {};
@@ -111,17 +124,17 @@ export async function collectMcpValues(mcpServers, { yes = false, values = {} } 
     if (nextValues[input.name]) continue;
     const initial = process.env[input.name] || input.defaultValue;
     if (input.kind === "path") {
-      nextValues[input.name] = await askText(`MCP path for ${input.label}`, {
+      nextValues[input.name] = await askText(`MCP path — ${input.label}`, {
         initial: initial || ".",
         validate: validateRelativeMcpPath
       });
     } else if (input.kind === "secret") {
-      nextValues[input.name] = await askPassword(`MCP secret for ${input.label}`, {
+      nextValues[input.name] = await askPassword(mcpSecretPrompt(input), {
         initial,
         validate: (value) => String(value || "").trim() ? true : "Required"
       });
     } else {
-      nextValues[input.name] = await askText(`MCP value for ${input.label}`, {
+      nextValues[input.name] = await askText(`MCP value — ${input.label}`, {
         initial,
         validate: (value) => String(value || "").trim() ? true : "Required"
       });
@@ -135,7 +148,7 @@ function warnMissingMcpValues(mcpServers, values) {
   const missing = missingRequiredInputs(findMcpInputs(mcpServers), { ...process.env, ...values });
   if (missing.length === 0) return [];
   const names = missing.map((input) => input.name);
-  console.warn(`MCP values not provided; update .mcp.json or export env vars for: ${names.join(", ")}`);
+  console.warn(style("info", `MCP values missing: ${names.join(", ")}. Export env vars or edit .mcp.json before using those servers.`));
   return names;
 }
 

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { exists, isTracked, readJson } from "./fs-utils.mjs";
-import { printBox } from "./prompt.mjs";
+import { printBox, style } from "./prompt.mjs";
 
 const HARDCODED_PATH_RE = /"\/home\/|"\/Users\/|"[A-Za-z]:\\\\/;
 
@@ -80,23 +80,29 @@ export async function auditProject(target) {
 }
 
 export function printAudit(audit) {
-  const present = (ok) => ok ? "✓" : "·";
-  const clean = (bad) => bad ? "⚠" : "✓";
-
-  printBox("Audit", [
+  const warning = style("error", "⚠");
+  const rows = [
     `Target  ${audit.target}`,
-    `State   ${audit.state}`,
-    "",
-    `${present(audit.hasClaudeDir)} .claude present`,
-    `${present(audit.hasMcpJson)} .mcp.json present`,
-    `${clean(audit.hasHardcodedMcpPath)} no hardcoded machine path in .mcp.json`,
-    `${clean(audit.hasSettingsLocalTracked)} .claude/settings.local.json not tracked`,
-    `${clean(audit.hasSettingsHooks)} .claude/settings.json hooks empty`,
-    `${clean(audit.hasClaudeSkillsDir)} .claude/skills absent`,
-    `${clean(audit.hasClaudeCommandsDir)} .claude/commands absent`,
-    `${clean(audit.hasClaudeHooksDir)} .claude/hooks absent`,
-    `${clean(audit.hasClaudeScriptsDir)} .claude/scripts absent`,
-    `${clean(audit.hasClaudeRulesDir && !audit.hasOnlyEccRulesDir)} no non-ECC .claude/rules`,
-    `${present(audit.hasRepoPatternJson)} .repo-pattern.json present`
-  ]);
+    `State   ${audit.state}`
+  ];
+  const needsSetup = audit.state !== "EMPTY";
+  const issues = [
+    [needsSetup && !audit.hasClaudeDir, ".claude missing"],
+    [needsSetup && !audit.hasMcpJson, ".mcp.json missing"],
+    [needsSetup && !audit.hasRepoPatternJson, ".repo-pattern.json missing"],
+    [audit.hasHardcodedMcpPath, "hardcoded machine path in .mcp.json"],
+    [audit.hasSettingsLocalTracked, ".claude/settings.local.json tracked"],
+    [audit.hasSettingsHooks, ".claude/settings.json hooks not empty"],
+    [audit.hasClaudeSkillsDir, ".claude/skills present"],
+    [audit.hasClaudeCommandsDir, ".claude/commands present"],
+    [audit.hasClaudeHooksDir, ".claude/hooks present"],
+    [audit.hasClaudeScriptsDir, ".claude/scripts present"],
+    [audit.hasClaudeRulesDir && !audit.hasOnlyEccRulesDir, "non-ECC .claude/rules present"]
+  ].filter(([bad]) => bad);
+
+  if (issues.length > 0) {
+    rows.push("", ...issues.map(([, message]) => `${warning} ${message}`));
+  }
+
+  printBox("Audit", rows);
 }
