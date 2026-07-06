@@ -126,15 +126,16 @@ For non-interactive scripts, use `setup --yes`.
 3. Create empty root `CLAUDE.md` if missing. If it already exists, keep it unchanged.
 4. Write `.claude/CLAUDE.md` if missing.
 5. Write `.claude/settings.json` from `.claude/settings.example.json`.
-6. During `setup`, write gitignored `.claude/settings.local.json` from prompted provider/model values.
-7. Read MCP profiles and server definitions from `repo-pattern`.
-8. In interactive mode, ask for selected MCP API keys and relative paths when placeholders require them.
-9. Generate `.mcp.json` from the selected profile.
-10. Write `.repo-pattern.json`.
-11. Write `.repo-pattern.lock.json`.
-12. Run or attempt ECC setup flow.
-13. During `setup` with rules enabled, apply ECC rules.
-14. Run doctor.
+6. In interactive setup, ask whether commit attribution is off, on, or custom.
+7. During `setup`, write gitignored `.claude/settings.local.json` from prompted provider/model values.
+8. Read MCP profiles and server definitions from `repo-pattern`.
+9. In interactive mode, ask for selected MCP API keys and relative paths when placeholders require them.
+10. Generate `.mcp.json` from the selected profile.
+11. Write `.repo-pattern.json`.
+12. Write `.repo-pattern.lock.json`.
+13. Run or attempt ECC setup flow.
+14. During `setup` with rules enabled, apply ECC rules.
+15. Run doctor.
 ```
 
 After setup, the target project should contain:
@@ -175,13 +176,19 @@ Optional external skills are also opt-in and limited to repo-pattern-managed `.c
 ```bash
 repo-pattern setup --with-skill taste --yes
 repo-pattern setup --with-skill document-specialist --yes
-repo-pattern setup --with-skills taste,document-specialist --yes
+repo-pattern setup --with-skill ui-ux-pro-max --yes
+repo-pattern setup --with-skill impeccable --yes
+repo-pattern setup --with-skill huashu-design --yes
+repo-pattern setup --with-skills taste,document-specialist,ui-ux-pro-max,impeccable,huashu-design --yes
 ```
 
 Available optional skills:
 
 - `taste` — UI taste/design skills from https://github.com/Leonxlnx/taste-skill/ (MIT).
 - `document-specialist` — documentation specialist from https://github.com/SpillwaveSolutions/document-specialist-skill/ (license not declared upstream; choose only when you accept that source).
+- `ui-ux-pro-max` — UI/UX design intelligence from https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/ (MIT; requires Python 3.x).
+- `impeccable` — visual design QA from https://github.com/pbakaus/impeccable/ (Apache-2.0; skill-only install, scripts require Node >=24).
+- `huashu-design` — multimedia design workflow from https://github.com/alchaincyf/huashu-design/ (MIT; scripts may need Playwright, Python, and ffmpeg).
 
 ---
 
@@ -435,11 +442,14 @@ Meaning:
 The template is intentionally safe by default:
 
 ```text
-permissions.allow = []
-permissions.ask   = dangerous shell operations
-permissions.deny  = common secrets and credential files
-hooks             = {}
+permissions.allow   = []
+permissions.ask     = dangerous shell operations
+permissions.deny    = common secrets and credential files
+hooks               = {}
+attribution.commit  = "" (disables Claude Code Co-Authored-By trailers)
 ```
+
+Interactive setup asks whether commit attribution should be `off`, `on`, or `custom`. `on` leaves Claude Code's default attribution behavior in place; `custom` writes your exact trailer string to `attribution.commit`.
 
 The selected MCP profile is also approved in:
 

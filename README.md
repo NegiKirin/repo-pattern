@@ -89,6 +89,8 @@ Common options:
 --target /path/to/project  # default: current directory
 --profile web              # default MCP profile
 --with-rules               # opt in to .claude/rules/ecc
+--with-skill ui-ux-pro-max # optional UI/UX skill; requires Python 3.x
+--with-skills impeccable,huashu-design # optional design QA/media skills
 --migrate                  # take over legacy/local Claude runtime surfaces
 --dry-run                  # preview mutating commands
 --yes                      # non-interactive setup
@@ -127,10 +129,10 @@ target-project/
 
 - `.mcp.json` is gitignored because it may contain local values.
 - `.claude/settings.local.json` is gitignored.
-- `.claude/settings.json` keeps `hooks: {}` by default.
+- `.claude/settings.json` keeps `hooks: {}` and disables commit attribution by default; interactive setup can turn it on or use a custom trailer.
 - No vendored ECC skills, commands, hooks, scripts, or rules are installed unless explicitly requested.
 - Karpathy-inspired Claude Code guidelines are included in `.claude/CLAUDE.md` from `multica-ai/andrej-karpathy-skills` (MIT).
-- Optional external skills are user opt-in only: `--with-skill taste`, `--with-skill document-specialist`, or interactive setup.
+- Optional external skills are user opt-in only: `--with-skill taste`, `--with-skill document-specialist`, `--with-skill ui-ux-pro-max`, `--with-skill impeccable`, `--with-skill huashu-design`, or interactive setup.
 
 ## External guidance and skills
 
@@ -139,6 +141,9 @@ target-project/
 | `karpathy-guidelines` | Built-in `.claude/CLAUDE.md` guidance | https://github.com/multica-ai/andrej-karpathy-skills | MIT |
 | `taste` | Optional `.claude/skills/` install via `--with-skill taste` | https://github.com/Leonxlnx/taste-skill/ | MIT |
 | `document-specialist` | Optional `.claude/skills/` install via `--with-skill document-specialist` | https://github.com/SpillwaveSolutions/document-specialist-skill/ | NOASSERTION — no upstream license declared during review on 2026-07-06 |
+| `ui-ux-pro-max` | Optional `.claude/skills/` install via `--with-skill ui-ux-pro-max` (requires Python 3.x) | https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/ | MIT |
+| `impeccable` | Optional `.claude/skills/` skill-only install via `--with-skill impeccable` (scripts require Node >=24) | https://github.com/pbakaus/impeccable/ | Apache-2.0 |
+| `huashu-design` | Optional `.claude/skills/` install via `--with-skill huashu-design` (multimedia scripts may need Playwright/Python/ffmpeg) | https://github.com/alchaincyf/huashu-design/ | MIT |
 
 ## Learn more
 

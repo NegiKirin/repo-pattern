@@ -31,3 +31,21 @@ Optional skills are not bundled with repo-pattern. When explicitly selected by t
 
 - Source: https://github.com/SpillwaveSolutions/document-specialist-skill/
 - License: NOASSERTION — no license was declared in the visible repository metadata during review on 2026-07-06. Use only when you accept that upstream source.
+
+### ui-ux-pro-max
+
+- Source: https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/
+- License: MIT
+- Copyright (c) 2024 Next Level Builder
+
+### impeccable
+
+- Source: https://github.com/pbakaus/impeccable/
+- License: Apache-2.0
+- Copyright 2025 Paul Bakaus
+
+### huashu-design
+
+- Source: https://github.com/alchaincyf/huashu-design/
+- License: MIT
+- Copyright (c) 2026 alchaincyf (花叔 · 花生)
