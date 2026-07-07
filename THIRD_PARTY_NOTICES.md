@@ -49,3 +49,13 @@ Optional skills are not bundled with repo-pattern. When explicitly selected by t
 - Source: https://github.com/alchaincyf/huashu-design/
 - License: MIT
 - Copyright (c) 2026 alchaincyf (花叔 · 花生)
+
+### nextjs-pattern
+
+- Source: https://github.com/NegiKirin/nextjs-pattern/
+- License: MIT
+
+### fastapi-pattern
+
+- Source: https://github.com/NegiKirin/fastapi-pattern/
+- License: MIT
