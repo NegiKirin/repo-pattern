@@ -61,8 +61,13 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
     );
   }
   const appliedRules = lock.ecc?.appliedRules || [];
-  if (appliedRules.length > 0) {
-    check(audit.hasOnlyEccRulesDir, ".claude/rules/ecc contains ECC-managed project rules");
+  const managedRulesClaimed = lock.ecc?.rulesSyncedBy === "repo-pattern-auto-cache" || appliedRules.length > 0;
+  if (managedRulesClaimed) {
+    const existingRules = new Set(audit.eccRulePackDirs || []);
+    check(appliedRules.length > 0, ".repo-pattern.lock.json ecc.appliedRules lists synced ECC rule packs");
+    check(audit.hasOnlyEccRulesDir, ".claude/rules/ecc contains only ECC-managed project rules");
+    check(audit.hasClaudeEccRulesDir && existingRules.size > 0, ".claude/rules/ecc contains synced ECC rule pack directories");
+    check(appliedRules.every((rule) => existingRules.has(rule)), "all locked ECC rule packs exist under .claude/rules/ecc");
   }
   infoRows.push(`ECC setup status: ${lock.ecc?.status || "unknown"}`);
   if (lock.ecc?.status === "manual-plugin-install-required") {
