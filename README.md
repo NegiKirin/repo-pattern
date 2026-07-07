@@ -31,10 +31,7 @@ Or install the CLI globally, then run `repo-pattern`:
 
 ```bash
 npm install -g @negikirin/repo-pattern
-repo-pattern setup --profile web --yes
 ```
-
-By default, commands target the current directory. To work on another project, add `--target /path/to/project`.
 
 ## Quick start
 
