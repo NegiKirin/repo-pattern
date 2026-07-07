@@ -24,6 +24,15 @@ function list(values, fallback = "none detected") {
   return values.length ? values.join(", ") : fallback;
 }
 
+function errorText(error) {
+  return [error?.stderr, error?.stdout, error?.message].filter(Boolean).join("\n").trim();
+}
+
+export function formatEccCloneError(error) {
+  const detail = errorText(error) || "git clone failed";
+  return `Could not sync ECC rules from ${ECC_REPO_URL}. GitHub HTTPS access on github.com:443 may be blocked by your proxy, firewall, or VPN. Check with: git ls-remote ${ECC_REPO_URL}\nOriginal error: ${detail}`;
+}
+
 async function ensureEccCache(target, { dryRun = false } = {}) {
   const cacheRoot = path.join(target, ".repo-pattern", "cache");
   const eccCache = path.join(cacheRoot, "ECC");
@@ -46,13 +55,17 @@ async function ensureEccCache(target, { dryRun = false } = {}) {
   }
 
   await ensureDir(cacheRoot);
-  if (isInteractive()) {
-    await withSpinner("Syncing ECC rules", async () => {
-      await runGitAsync(["clone", "--depth", "1", "--quiet", ECC_REPO_URL, eccCache], target);
-    });
-  } else {
-    console.log(`Syncing ECC rules from ${ECC_REPO_URL}`);
-    runGit(["clone", "--depth", "1", ECC_REPO_URL, eccCache], target);
+  try {
+    if (isInteractive()) {
+      await withSpinner("Syncing ECC rules", async () => {
+        await runGitAsync(["clone", "--depth", "1", "--quiet", ECC_REPO_URL, eccCache], target);
+      });
+    } else {
+      console.log(`Syncing ECC rules from ${ECC_REPO_URL}`);
+      runGit(["clone", "--depth", "1", ECC_REPO_URL, eccCache], target);
+    }
+  } catch (error) {
+    throw new Error(formatEccCloneError(error));
   }
   return eccCache;
 }

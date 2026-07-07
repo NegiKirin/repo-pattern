@@ -7,7 +7,7 @@
   "ecc": {
     "installMode": "plugin",
     "status": "not-run",
-    "rulesSyncedBy": "repo-pattern-auto-cache",
+    "rulesSyncedBy": null,
     "hooks": "plugin-managed",
     "syncedAt": null,
     "rulesScope": "project",

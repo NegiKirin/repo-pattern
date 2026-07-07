@@ -4,11 +4,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { printAudit } from "./lib/audit.mjs";
+import { auditProject, printAudit } from "./lib/audit.mjs";
+import { doctorProject } from "./lib/doctor.mjs";
 import { applyEccPluginSettings } from "./lib/ecc.mjs";
 import { applyMcpValues, mcpSecretPrompt, validateRelativeMcpPath } from "./lib/mcp.mjs";
 import { applyAttributionSetting } from "./lib/provision.mjs";
 import { printSummary, renderLogo, style } from "./lib/prompt.mjs";
+import { formatEccCloneError } from "./lib/rules.mjs";
 import { applyOptionalSkills, applyPluginSkillSettings, expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills } from "./lib/skills.mjs";
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
@@ -138,6 +140,70 @@ try {
   console.log = originalSkillLog;
   await fs.rm(mixedSkillTarget, { recursive: true, force: true });
 }
+
+async function writeDoctorFixture(target, { appliedRules = ["typescript"], createRuleDirs = true } = {}) {
+  await fs.mkdir(path.join(target, ".claude"), { recursive: true });
+  await fs.writeFile(path.join(target, ".claude", "settings.json"), JSON.stringify({ hooks: {} }), "utf8");
+  await fs.writeFile(path.join(target, ".repo-pattern.json"), JSON.stringify({
+    workflow: "ecc-native",
+    runtime: {
+      localSkills: false,
+      localCommands: false,
+      localHooks: false,
+      localScripts: false,
+      localRules: false
+    }
+  }), "utf8");
+  await fs.writeFile(path.join(target, ".repo-pattern.lock.json"), JSON.stringify({
+    ecc: {
+      status: "not-run",
+      rulesSyncedBy: "repo-pattern-auto-cache",
+      appliedRules
+    }
+  }), "utf8");
+  if (createRuleDirs) {
+    for (const rule of appliedRules) await fs.mkdir(path.join(target, ".claude", "rules", "ecc", rule), { recursive: true });
+  }
+}
+
+const doctorTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-doctor-"));
+const originalDoctorLog = console.log;
+console.log = () => {};
+try {
+  await writeDoctorFixture(doctorTarget);
+  const audit = await auditProject(doctorTarget);
+  assert.deepEqual(audit.eccRulePackDirs, ["typescript"]);
+  await doctorProject(doctorTarget);
+} finally {
+  console.log = originalDoctorLog;
+  await fs.rm(doctorTarget, { recursive: true, force: true });
+}
+
+const missingRulesTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-doctor-missing-"));
+console.log = () => {};
+try {
+  await writeDoctorFixture(missingRulesTarget, { createRuleDirs: false });
+  await assert.rejects(() => doctorProject(missingRulesTarget), /Doctor failed/);
+} finally {
+  console.log = originalDoctorLog;
+  await fs.rm(missingRulesTarget, { recursive: true, force: true });
+}
+
+const emptyRulesTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-doctor-empty-"));
+console.log = () => {};
+try {
+  await writeDoctorFixture(emptyRulesTarget, { appliedRules: [] });
+  await assert.rejects(() => doctorProject(emptyRulesTarget), /Doctor failed/);
+} finally {
+  console.log = originalDoctorLog;
+  await fs.rm(emptyRulesTarget, { recursive: true, force: true });
+}
+
+const cloneError = formatEccCloneError({ stderr: "fatal: unable to access: Failed to connect to github.com port 443" });
+assert.match(cloneError, /https:\/\/github\.com\/affaan-m\/ECC\.git/);
+assert.match(cloneError, /github\.com:443|HTTPS/);
+assert.match(cloneError, /proxy|firewall/);
+assert.match(cloneError, /git ls-remote/);
 
 const auditLogs = [];
 const originalAuditLog = console.log;

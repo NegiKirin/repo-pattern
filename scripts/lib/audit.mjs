@@ -16,8 +16,8 @@ async function isOnlyEccRulesDir(target) {
   const rulesDir = path.join(target, ".claude", "rules");
   if (!exists(rulesDir)) return false;
   try {
-    const entries = await fs.readdir(rulesDir);
-    return entries.length === 1 && entries[0] === "ecc";
+    const entries = await fs.readdir(rulesDir, { withFileTypes: true });
+    return entries.length === 1 && entries[0].name === "ecc" && entries[0].isDirectory();
   } catch {
     return false;
   }
@@ -44,6 +44,9 @@ export async function auditProject(target) {
   const actualSkillDirs = await listDirNames(path.join(target, ".claude", "skills"));
   const expectedSkillDirs = expectedOptionalSkillDirs(repoPattern?.optionalSkills || []);
   const hasOnlyManagedSkills = JSON.stringify(actualSkillDirs) === JSON.stringify(expectedSkillDirs);
+  const eccRulesDir = path.join(target, ".claude", "rules", "ecc");
+  const hasClaudeEccRulesDir = exists(eccRulesDir);
+  const eccRulePackDirs = await listDirNames(eccRulesDir);
   const hasMcpJson = exists(path.join(target, ".mcp.json"));
   const hasHardcodedMcpPath = hasMcpJson
     ? await fileContains(path.join(target, ".mcp.json"), HARDCODED_PATH_RE)
@@ -65,6 +68,8 @@ export async function auditProject(target) {
     hasClaudeScriptsDir: exists(path.join(target, ".claude", "scripts")),
     hasClaudeRulesDir: exists(path.join(target, ".claude", "rules")),
     hasOnlyEccRulesDir: await isOnlyEccRulesDir(target),
+    hasClaudeEccRulesDir,
+    eccRulePackDirs,
     hasRepoPatternJson: !!repoPattern,
     repoPattern
   };
