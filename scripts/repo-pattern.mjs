@@ -66,7 +66,7 @@ function parseArgs(argv) {
 
   const invalidSkills = invalidOptionalSkills(options.optionalSkills);
   if (invalidSkills.length > 0) {
-    console.error(`Unknown optional skill(s): ${invalidSkills.join(", ")}. Available: taste, document-specialist, ui-ux-pro-max, impeccable, huashu-design`);
+    console.error(`Unknown optional skill(s): ${invalidSkills.join(", ")}. Available: taste, document-specialist, ui-ux-pro-max, impeccable, huashu-design, nextjs-pattern, fastapi-pattern`);
     process.exit(2);
   }
 
@@ -84,7 +84,8 @@ Usage:
   repo-pattern setup --profile web --migrate --yes
   repo-pattern setup --with-skill taste --yes
   repo-pattern setup --with-skill ui-ux-pro-max --yes  # requires Python 3.x
-  repo-pattern setup --with-skills impeccable,huashu-design --yes
+  repo-pattern setup --with-skill nextjs-pattern --yes
+  repo-pattern setup --with-skills nextjs-pattern,fastapi-pattern --yes
 
 Advanced:
   repo-pattern mcp --profile web
@@ -104,7 +105,7 @@ Setup UI:
   --migrate      Take over legacy/local Claude runtime surfaces
   --force        Reapply setup over repo-pattern-managed state
   --with-rules               Opt in to repo-pattern-managed .claude/rules/ecc
-  --with-skill <name>        Opt in to external skills/plugins (taste, document-specialist, ui-ux-pro-max, impeccable, huashu-design)
+  --with-skill <name>        Opt in to external skills/plugins (taste, document-specialist, ui-ux-pro-max, impeccable, huashu-design, nextjs-pattern, fastapi-pattern)
   --with-skills <a,b>        Comma-separated optional skills
   --yes                      Run setup non-interactively
 `);

@@ -163,7 +163,9 @@ repo-pattern setup --with-skill document-specialist --yes
 repo-pattern setup --with-skill ui-ux-pro-max --yes
 repo-pattern setup --with-skill impeccable --yes
 repo-pattern setup --with-skill huashu-design --yes
-repo-pattern setup --with-skills taste,document-specialist,ui-ux-pro-max,impeccable,huashu-design --yes
+repo-pattern setup --with-skill nextjs-pattern --yes
+repo-pattern setup --with-skill fastapi-pattern --yes
+repo-pattern setup --with-skills taste,document-specialist,ui-ux-pro-max,impeccable,huashu-design,nextjs-pattern,fastapi-pattern --yes
 ```
 
 Available optional skills:
@@ -173,6 +175,8 @@ Available optional skills:
 - `ui-ux-pro-max` — Claude Code plugin from https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/ (MIT).
 - `impeccable` — Claude Code plugin from https://github.com/pbakaus/impeccable/ (Apache-2.0).
 - `huashu-design` — `.claude/skills/` copy from https://github.com/alchaincyf/huashu-design/ (MIT; scripts may need Playwright, Python, and ffmpeg).
+- `nextjs-pattern` — `.claude/skills/` copy from https://github.com/NegiKirin/nextjs-pattern/ (MIT).
+- `fastapi-pattern` — `.claude/skills/` copy from https://github.com/NegiKirin/fastapi-pattern/ (MIT).
 
 ---
 

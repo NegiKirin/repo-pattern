@@ -64,8 +64,8 @@ assert.deepEqual(applyAttributionSetting({ attribution: { commit: "" } }, { mode
 assert.deepEqual(applyAttributionSetting({ attribution: { pr: "PR" } }, { mode: "custom", commit: "Custom" }), { attribution: { pr: "PR", commit: "Custom" } });
 assert.deepEqual(applyEccPluginSettings({ enabledPlugins: { other: false } }).enabledPlugins, { other: false, "ecc@ecc": true });
 assert.equal(applyEccPluginSettings().extraKnownMarketplaces.ecc.source.url, "https://github.com/affaan-m/ECC.git");
-assert.deepEqual(normalizeOptionalSkills(["taste", "taste", "document-specialist", "ui-ux-pro-max", "impeccable", "huashu-design"]), ["taste", "document-specialist", "ui-ux-pro-max", "impeccable", "huashu-design"]);
-assert.deepEqual(invalidOptionalSkills(["taste", "ui-ux-pro-max", "impeccable", "huashu-design", "nope"]), ["nope"]);
+assert.deepEqual(normalizeOptionalSkills(["taste", "taste", "document-specialist", "ui-ux-pro-max", "impeccable", "huashu-design", "nextjs-pattern", "fastapi-pattern"]), ["taste", "document-specialist", "ui-ux-pro-max", "impeccable", "huashu-design", "nextjs-pattern", "fastapi-pattern"]);
+assert.deepEqual(invalidOptionalSkills(["taste", "ui-ux-pro-max", "impeccable", "huashu-design", "nextjs-pattern", "fastapi-pattern", "nope"]), ["nope"]);
 assert.deepEqual(applyPluginSkillSettings({}, [{
   source: "https://github.com/Leonxlnx/taste-skill.git",
   plugin: { marketplace: "taste-skill", name: "taste-skill" }
@@ -95,8 +95,18 @@ assert.deepEqual(expectedOptionalSkillDirs([
     name: "huashu-design",
     source: "https://github.com/alchaincyf/huashu-design.git",
     revision: "0e7ec8aca0058184c1a9e06e57697e84f68a3f0f"
+  },
+  {
+    name: "nextjs-pattern",
+    source: "https://github.com/NegiKirin/nextjs-pattern.git",
+    revision: "d5b1ac4ea33f6054841ed9d8005ac587ab2a9a5d"
+  },
+  {
+    name: "fastapi-pattern",
+    source: "https://github.com/NegiKirin/fastapi-pattern.git",
+    revision: "3abf484af46765c01a476b2ef61bb211b2b5bab8"
   }
-]), ["huashu-design"]);
+]), ["fastapi-pattern", "huashu-design", "nextjs-pattern"]);
 
 const skillTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-skill-"));
 const originalSkillLog = console.log;
@@ -139,6 +149,17 @@ try {
 } finally {
   console.log = originalSkillLog;
   await fs.rm(mixedSkillTarget, { recursive: true, force: true });
+}
+
+const dryRunRootCopyTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-skill-dry-run-"));
+const dryRunSkillLogs = [];
+console.log = (message = "") => dryRunSkillLogs.push(String(message));
+try {
+  await applyOptionalSkills({ target: dryRunRootCopyTarget, skills: ["nextjs-pattern"], dryRun: true });
+  assert(dryRunSkillLogs.some((line) => line.includes(".claude/skills/nextjs-pattern")));
+} finally {
+  console.log = originalSkillLog;
+  await fs.rm(dryRunRootCopyTarget, { recursive: true, force: true });
 }
 
 async function writeDoctorFixture(target, { appliedRules = ["typescript"], createRuleDirs = true } = {}) {
@@ -285,6 +306,8 @@ assert.match(result.stdout, /--with-skill <name>/);
 assert.match(result.stdout, /ui-ux-pro-max/);
 assert.match(result.stdout, /impeccable/);
 assert.match(result.stdout, /huashu-design/);
+assert.match(result.stdout, /nextjs-pattern/);
+assert.match(result.stdout, /fastapi-pattern/);
 
 result = runCli(["audit"]);
 assert.equal(result.status, 0);

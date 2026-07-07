@@ -75,7 +75,7 @@ Common options:
 --profile web              # default MCP profile
 --with-rules               # opt in to .claude/rules/ecc
 --with-skill ui-ux-pro-max # optional UI/UX skill; requires Python 3.x
---with-skills impeccable,huashu-design # optional design QA/media skills
+--with-skills nextjs-pattern,fastapi-pattern # optional framework pattern skills
 --migrate                  # take over legacy/local Claude runtime surfaces
 --dry-run                  # preview mutating commands
 --yes                      # non-interactive setup
@@ -117,7 +117,7 @@ target-project/
 * `.claude/settings.json` keeps `hooks: {}` and disables commit attribution by default; interactive setup can turn it on or use a custom trailer.
 * No vendored ECC skills, commands, hooks, scripts, or rules are installed unless explicitly requested.
 * Karpathy-inspired Claude Code guidelines are included in `.claude/CLAUDE.md` from `multica-ai/andrej-karpathy-skills` (MIT).
-* Optional external skills are user opt-in only: `--with-skill taste`, `--with-skill document-specialist`, `--with-skill ui-ux-pro-max`, `--with-skill impeccable`, `--with-skill huashu-design`, or interactive setup.
+* Optional external skills are user opt-in only: `--with-skill taste`, `--with-skill document-specialist`, `--with-skill ui-ux-pro-max`, `--with-skill impeccable`, `--with-skill huashu-design`, `--with-skill nextjs-pattern`, `--with-skill fastapi-pattern`, or interactive setup.
 
 ## External guidance and skills
 
@@ -129,6 +129,8 @@ target-project/
 | `ui-ux-pro-max` | Optional Claude Code plugin via `--with-skill ui-ux-pro-max` | https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/ | MIT |
 | `impeccable` | Optional Claude Code plugin via `--with-skill impeccable` | https://github.com/pbakaus/impeccable/ | Apache-2.0 |
 | `huashu-design` | Optional `.claude/skills/` install via `--with-skill huashu-design` (multimedia scripts may need Playwright/Python/ffmpeg; install can take \~10 minutes, so opt in deliberately) | https://github.com/alchaincyf/huashu-design/ | MIT |
+| `nextjs-pattern` | Optional `.claude/skills/` install via `--with-skill nextjs-pattern` | https://github.com/NegiKirin/nextjs-pattern/ | MIT |
+| `fastapi-pattern` | Optional `.claude/skills/` install via `--with-skill fastapi-pattern` | https://github.com/NegiKirin/fastapi-pattern/ | MIT |
 
 ## Learn more
 

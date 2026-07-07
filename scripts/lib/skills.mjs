@@ -65,6 +65,26 @@ export const OPTIONAL_SKILLS = [
     includePaths: ["SKILL.md", "assets", "references", "scripts", "demos", "package.json", "package-lock.json", "README.md", "README.en.md", "LICENSE"],
     destName: "huashu-design",
     partialClone: true
+  },
+  {
+    value: "nextjs-pattern",
+    label: "nextjs-pattern",
+    description: "Next.js project pattern skill (MIT)",
+    source: "https://github.com/NegiKirin/nextjs-pattern.git",
+    revision: "d5b1ac4ea33f6054841ed9d8005ac587ab2a9a5d",
+    license: "MIT",
+    installedDirs: ["nextjs-pattern"],
+    destName: "nextjs-pattern"
+  },
+  {
+    value: "fastapi-pattern",
+    label: "fastapi-pattern",
+    description: "FastAPI project pattern skill (MIT)",
+    source: "https://github.com/NegiKirin/fastapi-pattern.git",
+    revision: "3abf484af46765c01a476b2ef61bb211b2b5bab8",
+    license: "MIT",
+    installedDirs: ["fastapi-pattern"],
+    destName: "fastapi-pattern"
   }
 ];
 
@@ -222,8 +242,13 @@ async function copySkill(skill, cacheDir, destRoot, { dryRun = false } = {}) {
     return installedDirs;
   }
 
-  await rejectSymlinks(cacheDir);
+  if (!dryRun) await rejectSymlinks(cacheDir);
   const dest = path.join(destRoot, skill.destName);
+  if (dryRun) {
+    console.log(`[dry-run] copy ${cacheDir} -> ${dest}`);
+    console.log(`[dry-run] rm -rf ${path.join(dest, ".git")}`);
+    return [skill.destName];
+  }
   await copyRecursive(cacheDir, dest, { dryRun });
   await removePath(path.join(dest, ".git"), { dryRun });
   return [skill.destName];
