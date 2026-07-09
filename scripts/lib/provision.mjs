@@ -150,7 +150,10 @@ export async function provisionProject({ sourceRoot, target, profile = "web", mc
   await writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun });
 
   await writeJson(path.join(target, ".repo-pattern.json"), repoPatternConfig(profile), { dryRun });
-  await writeJson(path.join(target, ".repo-pattern.lock.json"), lockConfig(profile), { dryRun });
+  const lockPath = path.join(target, ".repo-pattern.lock.json");
+  if (isTracked(target, ".repo-pattern.lock.json")) throw new Error(".repo-pattern.lock.json is tracked. Untrack it before writing local setup state.");
+  await writeJson(lockPath, lockConfig(profile), { dryRun });
+  await appendGitignoreLine(target, ".repo-pattern.lock.json", { dryRun });
 
   const mcpResult = await generateMcp({ sourceRoot, target, profile, mcpServers, mcpValues, dryRun });
   const eccStatus = await setupEcc({ sourceRoot, target, dryRun });

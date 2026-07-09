@@ -55,7 +55,6 @@
     "docs/",
     "mcp/",
     ".repo-pattern.json",
-    ".repo-pattern.lock.json",
     "CLAUDE.md",
     "README.md",
     "LICENSE",
