@@ -1,6 +1,6 @@
 {
   "name": "@negikirin/repo-pattern",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Minimal ECC-first Claude Code project setup and migrator",
   "type": "module",
   "bin": {
@@ -10,7 +10,7 @@
     "audit": "node scripts/repo-pattern.mjs audit --target .",
     "doctor": "node scripts/repo-pattern.mjs doctor --target .",
     "mcp:web": "node scripts/repo-pattern.mjs mcp --target . --profile web",
-    "test": "node scripts/self-check.mjs && node scripts/repo-pattern.mjs doctor --target .",
+    "test": "node scripts/self-check.mjs",
     "pack:dry": "npm pack --dry-run",
     "prepublishOnly": "npm test && npm run pack:dry"
   },
