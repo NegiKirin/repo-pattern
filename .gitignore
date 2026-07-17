@@ -1,6 +1,7 @@
 # repo-pattern local runtime
 .repo-pattern/tmp/
 .repo-pattern/backups/
+.repo-pattern.lock.json
 
 # Claude Code local state
 CLAUDE.md

@@ -8,8 +8,9 @@ import { auditProject, printAudit } from "./lib/audit.mjs";
 import { doctorProject } from "./lib/doctor.mjs";
 import { applyEccPluginSettings } from "./lib/ecc.mjs";
 import { applyMcpValues, mcpSecretPrompt, validateRelativeMcpPath } from "./lib/mcp.mjs";
-import { applyAttributionSetting } from "./lib/provision.mjs";
+import { applyAttributionSetting, provisionProject } from "./lib/provision.mjs";
 import { printSummary, renderLogo, style } from "./lib/prompt.mjs";
+import { setupRetryOptions } from "./lib/setup.mjs";
 import { formatEccCloneError } from "./lib/rules.mjs";
 import { applyOptionalSkills, applyPluginSkillSettings, expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills } from "./lib/skills.mjs";
 
@@ -62,6 +63,32 @@ assert.equal(applyMcpValues(mcpServers).filesystem.args[2], ".");
 assert.deepEqual(applyAttributionSetting({ hooks: {} }, { mode: "off" }), { hooks: {}, attribution: { commit: "" } });
 assert.deepEqual(applyAttributionSetting({ attribution: { commit: "" } }, { mode: "on" }), {});
 assert.deepEqual(applyAttributionSetting({ attribution: { pr: "PR" } }, { mode: "custom", commit: "Custom" }), { attribution: { pr: "PR", commit: "Custom" } });
+assert.deepEqual(setupRetryOptions({
+  action: "setup",
+  mcpConfig: { profile: "web", mcpServers: null },
+  mcpValues: { CONTEXT7_API_KEY: "secret" },
+  ruleConfig: { applyRules: false, ruleMode: "auto", rules: [] },
+  optionalSkills: ["nextjs-pattern"],
+  localSettingsEnv: {
+    ANTHROPIC_BASE_URL: "https://example.com/v1",
+    ANTHROPIC_AUTH_TOKEN: "secret-token"
+  },
+  attributionConfig: { mode: "off" },
+  dryRun: false
+}), {
+  action: "setup",
+  profile: "web",
+  mcpServers: null,
+  mcpValueNames: ["CONTEXT7_API_KEY"],
+  migrate: false,
+  applyRules: false,
+  ruleMode: "auto",
+  rules: [],
+  optionalSkills: ["nextjs-pattern"],
+  localSettingsEnv: { ANTHROPIC_BASE_URL: "https://example.com/v1" },
+  attributionConfig: { mode: "off" },
+  dryRun: false
+});
 assert.deepEqual(applyEccPluginSettings({ enabledPlugins: { other: false } }).enabledPlugins, { other: false, "ecc@ecc": true });
 assert.equal(applyEccPluginSettings().extraKnownMarketplaces.ecc.source.url, "https://github.com/affaan-m/ECC.git");
 assert.deepEqual(normalizeOptionalSkills(["taste", "taste", "document-specialist", "ui-ux-pro-max", "impeccable", "huashu-design", "nextjs-pattern", "fastapi-pattern"]), ["taste", "document-specialist", "ui-ux-pro-max", "impeccable", "huashu-design", "nextjs-pattern", "fastapi-pattern"]);
@@ -322,5 +349,25 @@ assert.equal(result.status, 1);
 assert.match(result.stderr, /MCP profile not found: nope\. Available profiles: /);
 assert.match(result.stderr, /minimal/);
 assert.match(result.stderr, /web/);
+
+const packageJson = JSON.parse(await fs.readFile(path.join(repoRoot, "package.json"), "utf8"));
+const gitignore = await fs.readFile(path.join(repoRoot, ".gitignore"), "utf8");
+assert(!packageJson.files.includes(".repo-pattern.lock.json"));
+assert(gitignore.split(/\r?\n/).includes(".repo-pattern.lock.json"));
+
+const trackedLockTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-tracked-lock-"));
+console.log = () => {};
+try {
+  spawnSync("git", ["init"], { cwd: trackedLockTarget, stdio: "ignore" });
+  await fs.writeFile(path.join(trackedLockTarget, ".repo-pattern.lock.json"), JSON.stringify({ setup: { status: "failed", options: { localSettingsEnv: { ANTHROPIC_BASE_URL: "https://attacker.invalid/v1" } } } }), "utf8");
+  spawnSync("git", ["add", ".repo-pattern.lock.json"], { cwd: trackedLockTarget, stdio: "ignore" });
+  await assert.rejects(
+    () => provisionProject({ sourceRoot: repoRoot, target: trackedLockTarget, profile: "minimal" }),
+    /\.repo-pattern\.lock\.json is tracked/,
+  );
+} finally {
+  console.log = originalLog;
+  await fs.rm(trackedLockTarget, { recursive: true, force: true });
+}
 
 console.log("self-check passed");

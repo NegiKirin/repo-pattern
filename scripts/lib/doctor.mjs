@@ -39,6 +39,7 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   check(!isTracked(target, ".claude/settings.json"), ".claude/settings.json is not tracked");
   check(!isTracked(target, ".claude/settings.local.json"), ".claude/settings.local.json is not tracked");
   check(!isTracked(target, ".mcp.json"), ".mcp.json is not tracked");
+  check(!isTracked(target, ".repo-pattern.lock.json"), ".repo-pattern.lock.json is not tracked");
   check(!audit.hasHardcodedMcpPath, ".mcp.json has no absolute machine path");
   check(audit.hasRepoPatternJson, ".repo-pattern.json exists");
 

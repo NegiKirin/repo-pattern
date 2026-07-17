@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import path from "node:path";
 import { promisify } from "node:util";
 import { auditProject, printAudit } from "./audit.mjs";
 import { detectProject } from "./project-detect.mjs";
@@ -7,6 +8,7 @@ import { doctorProject } from "./doctor.mjs";
 import { collectMcpValues, generateMcp, listAvailableMcpServers, readMcpConfig } from "./mcp.mjs";
 import { askConfirm, askPassword, askText, isInteractive, printBox, printLogo, printSummary, selectMany, selectOne, style } from "./prompt.mjs";
 import { ECC_RULE_PACKS, selectEccRules } from "./ecc-rules.mjs";
+import { isTracked, readJson, writeJson } from "./fs-utils.mjs";
 import { applyOptionalSkills, OPTIONAL_SKILLS } from "./skills.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -41,6 +43,87 @@ const LOCAL_SETTINGS_FIELDS = [
   ["ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-sonnet-4-6", askText, validateRequired],
   ["ANTHROPIC_DEFAULT_HAIKU_MODEL", "claude-haiku-4-5", askText, validateRequired]
 ];
+const SECRET_LOCAL_SETTINGS = new Set(["ANTHROPIC_AUTH_TOKEN"]);
+
+function setupLockPath(target) {
+  return path.join(target, ".repo-pattern.lock.json");
+}
+
+function safeLocalSettingsEnv(localSettingsEnv = {}) {
+  return Object.fromEntries(Object.entries(localSettingsEnv).filter(([name]) => !SECRET_LOCAL_SETTINGS.has(name)));
+}
+
+export function setupRetryOptions({ action, mcpConfig, mcpValues = {}, ruleConfig, optionalSkills, localSettingsEnv, attributionConfig, dryRun }) {
+  return {
+    action,
+    profile: mcpConfig.profile,
+    mcpServers: mcpConfig.mcpServers,
+    mcpValueNames: Object.keys(mcpValues),
+    migrate: action === "migrate",
+    applyRules: ruleConfig.applyRules,
+    ruleMode: ruleConfig.ruleMode,
+    rules: ruleConfig.rules,
+    optionalSkills,
+    localSettingsEnv: safeLocalSettingsEnv(localSettingsEnv),
+    attributionConfig,
+    dryRun
+  };
+}
+
+function setupOptionsFromLock(lock) {
+  const setup = lock?.setup;
+  if (!["failed", "running"].includes(setup?.status)) return null;
+  return setup.options || null;
+}
+
+async function writeSetupStatus(target, setup, { dryRun = false } = {}) {
+  const file = setupLockPath(target);
+  const lock = await readJson(file, {});
+  lock.setup = { ...(lock.setup || {}), ...setup };
+  await writeJson(file, lock, { dryRun });
+}
+
+async function currentLocalSettingsEnv(target) {
+  const settings = await readJson(path.join(target, ".claude", "settings.local.json"), {});
+  return settings.env || {};
+}
+
+function retryRows(setup) {
+  const options = setup.options || {};
+  return [
+    ["Status", setup.status],
+    ["Failed step", setup.failedStep || "unknown"],
+    ["Error", setup.error || "unknown"],
+    ["Profile", options.profile || "web"],
+    ["MCP servers", options.mcpServers?.join(", ") || "from profile"],
+    ["MCP values", options.mcpValueNames?.length ? options.mcpValueNames.join(", ") : "none"],
+    ["Rules", options.applyRules ? options.rules.join(", ") : "none"],
+    ["Optional skills", options.optionalSkills?.length ? options.optionalSkills.join(", ") : "none"],
+    ["Commit attribution", attributionSummary(options.attributionConfig || { mode: "off" })],
+    ["Dry-run", options.dryRun ? "yes" : "no"]
+  ];
+}
+
+async function choosePreviousSetupOptions(target) {
+  if (isTracked(target, ".repo-pattern.lock.json")) {
+    throw new Error(".repo-pattern.lock.json is tracked. Untrack it before retrying setup.");
+  }
+
+  const lock = await readJson(setupLockPath(target), {});
+  const options = setupOptionsFromLock(lock);
+  if (!options) return null;
+
+  printSummary("Previous setup did not complete", retryRows(lock.setup));
+  const answer = await selectOne({
+    message: "Press Enter to retry with previous settings, or edit them.",
+    options: [
+      { value: "retry", label: "Retry" },
+      { value: "edit", label: "Edit" }
+    ],
+    initialValue: "retry"
+  });
+  return answer === "retry" ? options : null;
+}
 
 function suggestedProfile(detection, fallback) {
   if (fallback && fallback !== "web") return fallback;
@@ -116,11 +199,11 @@ async function chooseOptionalSkills(initialValues = []) {
   });
 }
 
-async function chooseLocalSettingsEnv() {
+async function chooseLocalSettingsEnv(initialValues = {}) {
   printBox("Step 4/5 — Local Claude provider settings", ["These values are written to .claude/settings.local.json and gitignored."]);
   const env = {};
   for (const [name, fallback, ask, validate] of LOCAL_SETTINGS_FIELDS) {
-    env[name] = await ask(name, { initial: process.env[name] || fallback, validate });
+    env[name] = await ask(name, { initial: process.env[name] || initialValues[name] || fallback, validate });
   }
   return env;
 }
@@ -243,11 +326,16 @@ export async function setupProject({ sourceRoot, target, profile = "web", dryRun
   printLogo();
   await checkClaudeCode();
 
+  const previousOptions = await choosePreviousSetupOptions(target);
   const detection = await detectProject(target);
-  const chosenProfile = await chooseProfile(sourceRoot, profile, detection);
-  const mcpConfig = await chooseMcpConfig(sourceRoot, chosenProfile);
-  const ruleConfig = await chooseRuleConfig(detection);
-  const selectedOptionalSkills = await chooseOptionalSkills(optionalSkills);
+  const chosenProfile = previousOptions?.profile || await chooseProfile(sourceRoot, profile, detection);
+  const mcpConfig = previousOptions
+    ? { profile: previousOptions.profile, mcpServers: previousOptions.mcpServers }
+    : await chooseMcpConfig(sourceRoot, chosenProfile);
+  const ruleConfig = previousOptions
+    ? { applyRules: previousOptions.applyRules, ruleMode: previousOptions.ruleMode, rules: previousOptions.rules }
+    : await chooseRuleConfig(detection);
+  const selectedOptionalSkills = previousOptions?.optionalSkills || await chooseOptionalSkills(optionalSkills);
 
   const audit = await auditProject(target);
   printAudit(audit);
@@ -267,34 +355,45 @@ export async function setupProject({ sourceRoot, target, profile = "web", dryRun
   }
 
   const action = audit.state === "LEGACY_VENDOR" ? "migrate" : "setup";
-  if (action === "migrate" && !migrate) {
+  const shouldMigrate = previousOptions?.migrate || migrate;
+  if (action === "migrate" && !shouldMigrate) {
     printBox("Migration required", ["Legacy/local Claude runtime surfaces detected.", "Recommended action: migrate, with backups."]);
     const confirmed = await askConfirm("Run migrate?", false);
     if (!confirmed) throw new Error("Setup cancelled.");
   }
 
-  const mcpValues = await chooseMcpValues(sourceRoot, mcpConfig);
-  const localSettingsEnv = await chooseLocalSettingsEnv();
-  const attributionConfig = await chooseAttributionConfig();
+  const mcpValues = previousOptions ? {} : await chooseMcpValues(sourceRoot, mcpConfig);
+  const localSettingsEnv = previousOptions
+    ? { ...previousOptions.localSettingsEnv, ...(await currentLocalSettingsEnv(target)) }
+    : await chooseLocalSettingsEnv();
+  const attributionConfig = previousOptions?.attributionConfig || await chooseAttributionConfig();
 
   if (!await confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, attributionConfig, dryRun })) {
     throw new Error("Setup cancelled.");
   }
 
-  await provisionProject({
-    sourceRoot,
-    target,
-    profile: mcpConfig.profile,
-    mcpServers: mcpConfig.mcpServers,
-    mcpValues,
-    dryRun,
-    force: false,
-    migrate: action === "migrate",
-    ruleMode: ruleConfig.ruleMode,
-    rules: ruleConfig.rules,
-    applyRules: ruleConfig.applyRules,
-    optionalSkills: selectedOptionalSkills,
-    localSettingsEnv,
-    attributionConfig
-  });
+  const retryOptions = setupRetryOptions({ action, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, attributionConfig, dryRun });
+  await writeSetupStatus(target, { status: "running", startedAt: new Date().toISOString(), failedStep: null, error: null, options: retryOptions }, { dryRun });
+  try {
+    await provisionProject({
+      sourceRoot,
+      target,
+      profile: mcpConfig.profile,
+      mcpServers: mcpConfig.mcpServers,
+      mcpValues,
+      dryRun,
+      force: false,
+      migrate: shouldMigrate,
+      ruleMode: ruleConfig.ruleMode,
+      rules: ruleConfig.rules,
+      applyRules: ruleConfig.applyRules,
+      optionalSkills: selectedOptionalSkills,
+      localSettingsEnv,
+      attributionConfig
+    });
+    await writeSetupStatus(target, { status: "succeeded", succeededAt: new Date().toISOString(), failedStep: null, error: null, options: retryOptions }, { dryRun });
+  } catch (error) {
+    await writeSetupStatus(target, { status: "failed", failedAt: new Date().toISOString(), failedStep: "provision", error: error.message, options: retryOptions }, { dryRun });
+    throw error;
+  }
 }
