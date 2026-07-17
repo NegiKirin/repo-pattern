@@ -59,3 +59,20 @@ For multi-step tasks, state a brief plan:
 ```
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+<!-- BaseRules:start -->
+## 5. Safe File Editing
+
+- Before editing an existing file, read its current contents from disk.
+- Use `Edit` for partial changes to existing files.
+- Use `Write` without a prior `Read` only when creating a new file that does not exist.
+- Before overwriting an existing file with `Write`, read it first and preserve unrelated content.
+- Never use shell redirection, `sed -i`, `perl -i`, or another command to bypass the Read/Edit workflow.
+- Make the smallest possible change. Do not reformat or clean up unrelated content.
+- If the target contains unexpected content or user changes, stop and ask before editing.
+- Never overwrite, delete, rename, or replace files unless explicitly requested.
+- Never revert user changes with `git checkout`, `git restore`, `git reset`, or `git clean` unless explicitly requested.
+- Before editing a Git-tracked file, inspect its working-tree state when it may contain uncommitted changes.
+- After every edit, inspect `git diff -- <file>` and confirm that it contains only the requested changes.
+- If the diff is unexpected, stop and report it instead of making further edits.
+<!-- BaseRules:end -->
