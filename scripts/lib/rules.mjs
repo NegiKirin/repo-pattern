@@ -1,7 +1,7 @@
 import path from "node:path";
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
-import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, exists, readJson, removePath, writeJson } from "./fs-utils.mjs";
+import { backupPaths, copyRecursive, ensureDir, ensureRepoPatternGitignore, exists, readRepoConfig, readRepoLock, removePath, repoConfigPath, repoLockPath, writeJson } from "./fs-utils.mjs";
 import { detectProject } from "./project-detect.mjs";
 import { selectEccRules, normalizeEccRules, invalidEccRules } from "./ecc-rules.mjs";
 import { isInteractive, printSummary, withSpinner } from "./prompt.mjs";
@@ -87,10 +87,9 @@ export async function applyEccRules({ target, dryRun = false, ruleMode = "auto",
   ]);
   printSummary("Selected ECC rules", [["Rules", selectedRules.join(", ")]]);
 
-  const internalRoot = path.join(target, ".repo-pattern");
-  const cacheRoot = path.join(internalRoot, "cache");
+  const cacheRoot = path.join(target, ".repo-pattern", "cache");
   const eccCache = await ensureEccCache(target, { dryRun });
-  await appendGitignoreLine(target, ".repo-pattern/", { dryRun });
+  await ensureRepoPatternGitignore(target, { dryRun });
   const sourceRulesRoot = path.join(eccCache, "rules");
   const destRoot = path.join(target, ".claude", "rules", "ecc");
 
@@ -109,11 +108,11 @@ export async function applyEccRules({ target, dryRun = false, ruleMode = "auto",
     await copyRecursive(src, dest, { dryRun });
   }
 
-  if (dryRun) console.log(`[dry-run] rm -rf ${internalRoot}`);
-  else await removePath(internalRoot);
+  if (dryRun) console.log(`[dry-run] rm -rf ${cacheRoot}`);
+  else await removePath(cacheRoot);
 
-  const repoConfigPath = path.join(target, ".repo-pattern.json");
-  const repoConfig = await readJson(repoConfigPath, {});
+  const configPath = repoConfigPath(target);
+  const repoConfig = await readRepoConfig(target, {});
   repoConfig.ecc = {
     ...(repoConfig.ecc || {}),
     rulesSync: "repo-pattern-auto-cache",
@@ -121,10 +120,11 @@ export async function applyEccRules({ target, dryRun = false, ruleMode = "auto",
     rulesScope: "project",
     copyRuntimeSurfaces: false
   };
-  await writeJson(repoConfigPath, repoConfig, { dryRun });
+  await ensureRepoPatternGitignore(target, { dryRun });
+  await writeJson(configPath, repoConfig, { dryRun });
 
-  const lockPath = path.join(target, ".repo-pattern.lock.json");
-  const lock = await readJson(lockPath, {});
+  const lockPath = repoLockPath(target);
+  const lock = await readRepoLock(target, {});
   lock.ecc = {
     ...(lock.ecc || {}),
     rulesSyncedBy: "repo-pattern-auto-cache",
@@ -142,7 +142,7 @@ export async function applyEccRules({ target, dryRun = false, ruleMode = "auto",
   printSummary("Applied ECC rules", [
     ["Path", path.relative(target, destRoot)],
     ["Rules", selectedRules.join(", ")],
-    ["Internal dir", ".repo-pattern/ removed"]
+    ["Internal dir", ".repo-pattern/cache/ removed"]
   ]);
 
   return {

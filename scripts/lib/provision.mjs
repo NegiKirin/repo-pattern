@@ -5,7 +5,7 @@ import { generateMcp } from "./mcp.mjs";
 import { setupEcc } from "./ecc.mjs";
 import { doctorProject } from "./doctor.mjs";
 import { applyEccRules } from "./rules.mjs";
-import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, isTracked, readJson, writeJson, writeIfMissing } from "./fs-utils.mjs";
+import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, ensureRepoPatternGitignore, isTracked, readJson, removePath, repoConfigPath, repoLockPath, writeJson, writeIfMissing } from "./fs-utils.mjs";
 import { printSummary, style } from "./prompt.mjs";
 import { applyOptionalSkills } from "./skills.mjs";
 
@@ -133,12 +133,12 @@ export async function provisionProject({ sourceRoot, target, profile = "web", mc
 
   await writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun });
 
-  await writeJson(path.join(target, ".repo-pattern.json"), await repoPatternConfig(sourceRoot, profile), { dryRun });
-  await appendGitignoreLine(target, ".repo-pattern.json", { dryRun });
-  const lockPath = path.join(target, ".repo-pattern.lock.json");
-  if (isTracked(target, ".repo-pattern.lock.json")) throw new Error(".repo-pattern.lock.json is tracked. Untrack it before writing local setup state.");
+  await ensureRepoPatternGitignore(target, { dryRun });
+  await writeJson(repoConfigPath(target), await repoPatternConfig(sourceRoot, profile), { dryRun });
+  const lockPath = repoLockPath(target);
+  if (isTracked(target, ".repo-pattern/.repo-pattern.lock.json") || isTracked(target, ".repo-pattern.lock.json")) throw new Error("repo-pattern lock is tracked. Untrack it before writing local setup state.");
   await writeJson(lockPath, lockConfig(profile), { dryRun });
-  await appendGitignoreLine(target, ".repo-pattern.lock.json", { dryRun });
+  await ensureRepoPatternGitignore(target, { dryRun });
 
   const mcpResult = await generateMcp({ sourceRoot, target, profile, mcpServers, mcpValues, dryRun });
   const eccStatus = await setupEcc({ sourceRoot, target, dryRun });
@@ -165,7 +165,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", mc
     ["Status", dryRun ? `preview only; ${pendingText}` : pendingText],
     ["Target", target],
     ["Profile", profile],
-    [dryRun ? "Would write" : "Written", `CLAUDE.md (if missing), .claude/, .mcp.json, .repo-pattern.json, .repo-pattern.lock.json${optionalSkills.length ? ", optional skill/plugin config" : ""}`],
+    [dryRun ? "Would write" : "Written", `CLAUDE.md (if missing), .claude/, .mcp.json, .repo-pattern/.repo-pattern.json, .repo-pattern/.repo-pattern.lock.json${optionalSkills.length ? ", optional skill/plugin config" : ""}`],
     ["Doctor", dryRun ? "skipped (dry-run)" : style("success", "passed")],
     ["Next", next]
   ]);

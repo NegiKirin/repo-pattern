@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import path from "node:path";
-import { appendGitignoreLine, isTracked, readJson, writeJson } from "./fs-utils.mjs";
+import { appendGitignoreLine, ensureRepoPatternGitignore, isTracked, readJson, readRepoLock, repoLockPath, writeJson } from "./fs-utils.mjs";
 import { printSummary } from "./prompt.mjs";
 
 const ECC_PLUGIN_ID = "ecc@ecc";
@@ -75,8 +75,9 @@ ECC runtime surfaces are plugin-managed.
 `);
   }
 
-  const lockPath = path.join(target, ".repo-pattern.lock.json");
-  const lock = await readJson(lockPath, {});
+  await ensureRepoPatternGitignore(target, { dryRun });
+  const lockPath = repoLockPath(target);
+  const lock = await readRepoLock(target, {});
   lock.ecc = {
     ...(lock.ecc || {}),
     installMode: "plugin",

@@ -1,8 +1,26 @@
 # repo-pattern local runtime
-.repo-pattern/tmp/
-.repo-pattern/backups/
-.repo-pattern.json
-.repo-pattern.lock.json
+.repo-pattern/
+
+# Claude Code local state
+/CLAUDE.md
+.claude/
+
+# Generated MCP config
+.mcp.json
+
+# Secrets
+.env
+.env.*
+secrets/
+private/
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
+node_modules/
+
+AGENTS.md
 
 # Claude Code local state
 /CLAUDE.md

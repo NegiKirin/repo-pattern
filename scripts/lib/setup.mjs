@@ -8,7 +8,7 @@ import { doctorProject } from "./doctor.mjs";
 import { collectMcpValues, generateMcp, listAvailableMcpServers, readMcpConfig } from "./mcp.mjs";
 import { askConfirm, askPassword, askText, isInteractive, printBox, printLogo, printSummary, selectMany, selectOne, style } from "./prompt.mjs";
 import { ECC_RULE_PACKS, selectEccRules } from "./ecc-rules.mjs";
-import { isTracked, readJson, writeJson } from "./fs-utils.mjs";
+import { ensureRepoPatternGitignore, isTracked, readJson, readRepoLock, repoLockPath, writeJson } from "./fs-utils.mjs";
 import { applyOptionalSkills, OPTIONAL_SKILLS } from "./skills.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -46,7 +46,7 @@ const LOCAL_SETTINGS_FIELDS = [
 const SECRET_LOCAL_SETTINGS = new Set(["ANTHROPIC_AUTH_TOKEN"]);
 
 function setupLockPath(target) {
-  return path.join(target, ".repo-pattern.lock.json");
+  return repoLockPath(target);
 }
 
 function safeLocalSettingsEnv(localSettingsEnv = {}) {
@@ -78,6 +78,7 @@ function setupOptionsFromLock(lock) {
 
 async function writeSetupStatus(target, setup, { dryRun = false } = {}) {
   const file = setupLockPath(target);
+  await ensureRepoPatternGitignore(target, { dryRun });
   const lock = await readJson(file, {});
   lock.setup = { ...(lock.setup || {}), ...setup };
   await writeJson(file, lock, { dryRun });
@@ -105,11 +106,11 @@ function retryRows(setup) {
 }
 
 async function choosePreviousSetupOptions(target) {
-  if (isTracked(target, ".repo-pattern.lock.json")) {
-    throw new Error(".repo-pattern.lock.json is tracked. Untrack it before retrying setup.");
+  if (isTracked(target, ".repo-pattern/.repo-pattern.lock.json") || isTracked(target, ".repo-pattern.lock.json")) {
+    throw new Error("repo-pattern lock is tracked. Untrack it before retrying setup.");
   }
 
-  const lock = await readJson(setupLockPath(target), {});
+  const lock = await readRepoLock(target, {});
   const options = setupOptionsFromLock(lock);
   if (!options) return null;
 
@@ -253,7 +254,7 @@ async function confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig
     ["Auth token", style("dim", "[hidden]")],
     ["Commit attribution", attributionSummary(attributionConfig)],
     ["Dry-run", dryRun ? "yes" : "no"],
-    ["Will write", `CLAUDE.md (if missing), .claude/CLAUDE.md, .claude/settings.json, .claude/settings.local.json, .mcp.json, .repo-pattern.json, .repo-pattern.lock.json${optionalSkills.length ? ", optional skill/plugin config" : ""}${hasLocalSkill ? ", .claude/skills" : ""}`],
+    ["Will write", `CLAUDE.md (if missing), .claude/CLAUDE.md, .claude/settings.json, .claude/settings.local.json, .mcp.json, .repo-pattern/.repo-pattern.json, .repo-pattern/.repo-pattern.lock.json${optionalSkills.length ? ", optional skill/plugin config" : ""}${hasLocalSkill ? ", .claude/skills" : ""}`],
     ["Will not write", hasLocalSkill ? ".claude/commands, .claude/hooks, .claude/scripts" : ".claude/skills, .claude/commands, .claude/hooks, .claude/scripts"]
   ]);
 

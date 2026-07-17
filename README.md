@@ -104,8 +104,11 @@ target-project/
 │   ├── settings.json             # copied from example, gitignored
 │   └── settings.local.json       # when local settings are provided, gitignored
 ├── .mcp.json                     # generated, gitignored
-├── .repo-pattern.json            # generated from .repo-pattern.example.json, gitignored
-└── .repo-pattern.lock.json
+├── .repo-pattern/
+│   ├── .gitignore               # *
+│   ├── .repo-pattern.json
+│   └── .repo-pattern.lock.json
+```
 ```
 
 `repo-pattern` preserves an existing root `CLAUDE.md` and keeps machine-local values out of git.
@@ -113,7 +116,7 @@ target-project/
 ## Safety defaults
 
 * `.mcp.json` is gitignored because it may contain local values.
-* `.repo-pattern.json` is generated from `.repo-pattern.example.json` and gitignored.
+* `.repo-pattern/.repo-pattern.json` is generated from `.repo-pattern.example.json` and kept inside `.repo-pattern/`.
 * `.claude/` is generated from `.claude.example/` and gitignored.
 * Basic OS/IDE noise (`.DS_Store`, `Thumbs.db`, `.vscode/`, `.idea/`) is gitignored during setup.
 * `.claude/settings.json` keeps `hooks: {}` and disables commit attribution by default; interactive setup can turn it on or use a custom trailer.

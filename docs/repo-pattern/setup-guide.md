@@ -115,12 +115,13 @@ For non-interactive scripts, use `setup --yes`.
 8. Read MCP profiles and server definitions from `repo-pattern`.
 9. In interactive mode, ask for selected MCP API keys and relative paths when placeholders require them.
 10. Generate `.mcp.json` from the selected profile.
-11. Write `.repo-pattern.json` from `.repo-pattern.example.json`.
-12. Add generated setup files and basic OS/IDE noise to `.gitignore`.
-13. Write `.repo-pattern.lock.json`.
-14. Run or attempt ECC setup flow.
-14. During `setup` with rules enabled, apply ECC rules.
-15. Run doctor.
+11. Write `.repo-pattern/.repo-pattern.json` from `.repo-pattern.example.json`.
+12. Create `.repo-pattern/.gitignore` with `*`.
+13. Add generated setup files and basic OS/IDE noise to `.gitignore`.
+14. Write `.repo-pattern/.repo-pattern.lock.json`.
+15. Run or attempt ECC setup flow.
+16. During `setup` with rules enabled, apply ECC rules.
+17. Run doctor.
 ```
 
 After setup, the target project should contain:
@@ -133,8 +134,10 @@ target-project/
 │   ├── settings.json
 │   └── settings.local.json  # setup only, gitignored
 ├── .mcp.json
-├── .repo-pattern.json
-└── .repo-pattern.lock.json
+├── .repo-pattern/
+│   ├── .gitignore
+│   ├── .repo-pattern.json
+│   └── .repo-pattern.lock.json
 ```
 
 ## Root `CLAUDE.md` policy
@@ -572,7 +575,7 @@ Doctor checks that:
 unmanaged local Claude runtime surfaces are absent
 settings hooks are empty
 .mcp.json has no hardcoded machine path
-.repo-pattern.json is valid
+.repo-pattern/.repo-pattern.json is valid
 ECC setup status is recorded
 ```
 

@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { exists, isTracked, readJson } from "./fs-utils.mjs";
+import { exists, isTracked, readJson, readRepoConfig } from "./fs-utils.mjs";
 import { printBox, style } from "./prompt.mjs";
 import { expectedOptionalSkillDirs } from "./skills.mjs";
 
@@ -39,7 +39,7 @@ async function listDirNames(dir) {
 
 export async function auditProject(target) {
   const settings = await readJson(path.join(target, ".claude", "settings.json"), {});
-  const repoPattern = await readJson(path.join(target, ".repo-pattern.json"), null);
+  const repoPattern = await readRepoConfig(target, null);
 
   const actualSkillDirs = await listDirNames(path.join(target, ".claude", "skills"));
   const expectedSkillDirs = expectedOptionalSkillDirs(repoPattern?.optionalSkills || []);
@@ -112,7 +112,7 @@ export function printAudit(audit) {
   const issues = [
     [needsSetup && !audit.hasClaudeDir, ".claude missing"],
     [needsSetup && !audit.hasMcpJson, ".mcp.json missing"],
-    [needsSetup && !audit.hasRepoPatternJson, ".repo-pattern.json missing"],
+    [needsSetup && !audit.hasRepoPatternJson, ".repo-pattern/.repo-pattern.json missing"],
     [audit.hasHardcodedMcpPath, "hardcoded machine path in .mcp.json"],
     [audit.hasSettingsLocalTracked, ".claude/settings.local.json tracked"],
     [audit.hasSettingsHooks, ".claude/settings.json hooks not empty"],

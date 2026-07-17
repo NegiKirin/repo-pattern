@@ -1,9 +1,6 @@
 # Runtime/generated files
 .claude/
-.repo-pattern/cache/
-.repo-pattern/backups/
-.repo-pattern/tmp/
-.repo-pattern.json
+.repo-pattern/
 .mcp.json
 
 # Local/dev artifacts
