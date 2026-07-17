@@ -135,7 +135,7 @@ async function writePluginSkillSettings({ target, skills, dryRun }) {
   if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local plugin settings.");
   const file = path.join(target, ".claude", "settings.local.json");
   await writeJson(file, applyPluginSkillSettings(await readJson(file, {}), skills), { dryRun });
-  await appendGitignoreLine(target, ".claude/settings.local.json", { dryRun });
+  await appendGitignoreLine(target, ".claude/", { dryRun });
 }
 
 function runGit(args, cwd, { quiet = false } = {}) {

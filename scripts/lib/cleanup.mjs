@@ -27,7 +27,7 @@ export async function cleanupProject({ sourceRoot, target, dryRun = false }) {
     await removePath(path.join(target, rel), { dryRun });
   }
 
-  const settings = await readJson(path.join(sourceRoot, ".claude", "settings.example.json"), {});
+  const settings = await readJson(path.join(sourceRoot, ".claude.example", "settings.example.json"), {});
   await ensureDir(path.join(target, ".claude"), { dryRun });
   await writeJson(path.join(target, ".claude", "settings.json"), settings, { dryRun });
 

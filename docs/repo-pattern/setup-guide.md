@@ -109,15 +109,16 @@ For non-interactive scripts, use `setup --yes`.
 2. Create minimal `.claude/` setup.
 3. Create empty root `CLAUDE.md` if missing. If it already exists, keep it unchanged.
 4. Write `.claude/CLAUDE.md` if missing.
-5. Write `.claude/settings.json` from `.claude/settings.example.json`.
+5. Write `.claude/settings.json` from `.claude.example/settings.example.json`.
 6. In interactive setup, ask whether commit attribution is off, on, or custom.
 7. During `setup`, write gitignored `.claude/settings.local.json` from prompted provider/model values.
 8. Read MCP profiles and server definitions from `repo-pattern`.
 9. In interactive mode, ask for selected MCP API keys and relative paths when placeholders require them.
 10. Generate `.mcp.json` from the selected profile.
-11. Write `.repo-pattern.json`.
-12. Write `.repo-pattern.lock.json`.
-13. Run or attempt ECC setup flow.
+11. Write `.repo-pattern.json` from `.repo-pattern.example.json`.
+12. Add generated setup files and basic OS/IDE noise to `.gitignore`.
+13. Write `.repo-pattern.lock.json`.
+14. Run or attempt ECC setup flow.
 14. During `setup` with rules enabled, apply ECC rules.
 15. Run doctor.
 ```
@@ -421,7 +422,7 @@ Meaning:
 - defer MCP tool loading unless tools fit within 5% of context
 
 
-`repo-pattern setup` writes local ignored project settings from the tracked `.claude/settings.example.json` template:
+`repo-pattern setup` writes local ignored project settings from the tracked `.claude.example/settings.example.json` template:
 
 ```text
 .claude/settings.json

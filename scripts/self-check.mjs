@@ -352,8 +352,40 @@ assert.match(result.stderr, /web/);
 
 const packageJson = JSON.parse(await fs.readFile(path.join(repoRoot, "package.json"), "utf8"));
 const gitignore = await fs.readFile(path.join(repoRoot, ".gitignore"), "utf8");
+const gitignoreLines = gitignore.split(/\r?\n/);
 assert(!packageJson.files.includes(".repo-pattern.lock.json"));
-assert(gitignore.split(/\r?\n/).includes(".repo-pattern.lock.json"));
+assert(!packageJson.files.includes(".repo-pattern.json"));
+assert(packageJson.files.includes(".repo-pattern.example.json"));
+assert(packageJson.files.includes(".claude.example/CLAUDE.md"));
+assert(packageJson.files.includes(".claude.example/settings.example.json"));
+assert(packageJson.files.includes(".claude.example/settings.local.example.json"));
+assert(!packageJson.files.some((file) => file.startsWith(".claude/")));
+assert(gitignoreLines.includes(".repo-pattern.json"));
+assert(gitignoreLines.includes(".repo-pattern.lock.json"));
+assert(gitignoreLines.includes(".claude/"));
+
+const provisionTemplateTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-template-"));
+console.log = () => {};
+try {
+  await provisionProject({
+    sourceRoot: repoRoot,
+    target: provisionTemplateTarget,
+    profile: "minimal",
+    mcpValues: { CONTEXT7_API_KEY: "redacted-key" }
+  });
+  const repoConfig = JSON.parse(await fs.readFile(path.join(provisionTemplateTarget, ".repo-pattern.json"), "utf8"));
+  assert.equal(repoConfig.mode, "target");
+  assert.equal(repoConfig.mcp.profile, "minimal");
+  assert.equal(repoConfig.mcp.generated, true);
+  assert.equal(await fs.readFile(path.join(provisionTemplateTarget, ".claude", "CLAUDE.md"), "utf8"), await fs.readFile(path.join(repoRoot, ".claude.example", "CLAUDE.md"), "utf8"));
+  const provisionGitignore = (await fs.readFile(path.join(provisionTemplateTarget, ".gitignore"), "utf8")).split(/\r?\n/);
+  for (const line of [".DS_Store", "Thumbs.db", ".vscode/", ".idea/", ".claude/", ".repo-pattern.json"]) {
+    assert(provisionGitignore.includes(line));
+  }
+} finally {
+  console.log = originalLog;
+  await fs.rm(provisionTemplateTarget, { recursive: true, force: true });
+}
 
 const trackedLockTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-tracked-lock-"));
 console.log = () => {};

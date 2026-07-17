@@ -37,7 +37,7 @@ async function writeEccLocalSettings({ target, dryRun }) {
   if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local plugin settings.");
   const file = path.join(target, ".claude", "settings.local.json");
   await writeJson(file, applyEccPluginSettings(await readJson(file, {})), { dryRun });
-  await appendGitignoreLine(target, ".claude/settings.local.json", { dryRun });
+  await appendGitignoreLine(target, ".claude/", { dryRun });
 }
 
 export async function setupEcc({ target, dryRun = false }) {
