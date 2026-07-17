@@ -11,7 +11,7 @@ import { applyMcpValues, mcpSecretPrompt, validateRelativeMcpPath } from "./lib/
 import { applyAttributionSetting, provisionProject } from "./lib/provision.mjs";
 import { printSummary, renderLogo, style } from "./lib/prompt.mjs";
 import { setupRetryOptions } from "./lib/setup.mjs";
-import { formatEccCloneError } from "./lib/rules.mjs";
+import { applyEccRules, formatEccCloneError } from "./lib/rules.mjs";
 import { applyOptionalSkills, applyPluginSkillSettings, expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills } from "./lib/skills.mjs";
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
@@ -247,6 +247,31 @@ try {
 } finally {
   console.log = originalDoctorLog;
   await fs.rm(emptyRulesTarget, { recursive: true, force: true });
+}
+
+const pythonRulesTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-python-rules-"));
+console.log = () => {};
+try {
+  await fs.mkdir(path.join(pythonRulesTarget, ".claude"), { recursive: true });
+  await fs.writeFile(path.join(pythonRulesTarget, "pyproject.toml"), "", "utf8");
+  await fs.writeFile(path.join(pythonRulesTarget, ".claude", "CLAUDE.md"), "Existing guidance\n", "utf8");
+  for (const rule of ["common", "python"]) {
+    await fs.mkdir(path.join(pythonRulesTarget, ".repo-pattern", "cache", "ECC", "rules", rule), { recursive: true });
+  }
+  await applyEccRules({ target: pythonRulesTarget });
+  let claudeMd = await fs.readFile(path.join(pythonRulesTarget, ".claude", "CLAUDE.md"), "utf8");
+  assert.match(claudeMd, /`uv run` owns `\.venv`/);
+  assert.match(claudeMd, /Existing guidance/);
+
+  for (const rule of ["common", "python"]) {
+    await fs.mkdir(path.join(pythonRulesTarget, ".repo-pattern", "cache", "ECC", "rules", rule), { recursive: true });
+  }
+  await applyEccRules({ target: pythonRulesTarget });
+  claudeMd = await fs.readFile(path.join(pythonRulesTarget, ".claude", "CLAUDE.md"), "utf8");
+  assert.equal(claudeMd.split("<!-- USE UV:Start -->").length - 1, 1);
+} finally {
+  console.log = originalDoctorLog;
+  await fs.rm(pythonRulesTarget, { recursive: true, force: true });
 }
 
 const cloneError = formatEccCloneError({ stderr: "fatal: unable to access: Failed to connect to github.com port 443" });
