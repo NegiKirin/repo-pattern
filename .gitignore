@@ -1,15 +1,9 @@
 # repo-pattern local runtime
-.repo-pattern/tmp/
-.repo-pattern/backups/
-.repo-pattern.lock.json
+.repo-pattern/
 
 # Claude Code local state
-CLAUDE.md
-.claude/settings.local.json
-.claude/settings.json
-.claude/session-data/
-.claude/tmp/
-.claude/cache/
+/CLAUDE.md
+.claude/
 
 # Generated MCP config
 .mcp.json
@@ -26,5 +20,26 @@ private/
 .idea/
 node_modules/
 
-.claude/skills/gitnexus
 AGENTS.md
+
+# Claude Code local state
+/CLAUDE.md
+.claude/
+
+# Generated MCP config
+.mcp.json
+
+# Secrets
+.env
+.env.*
+secrets/
+private/
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
+node_modules/
+
+AGENTS.md
+Thumbs.db

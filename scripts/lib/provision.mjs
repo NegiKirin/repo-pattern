@@ -5,38 +5,24 @@ import { generateMcp } from "./mcp.mjs";
 import { setupEcc } from "./ecc.mjs";
 import { doctorProject } from "./doctor.mjs";
 import { applyEccRules } from "./rules.mjs";
-import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, isTracked, readJson, writeJson, writeIfMissing } from "./fs-utils.mjs";
+import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, ensureRepoPatternGitignore, isTracked, readJson, removePath, repoConfigPath, repoLockPath, writeJson, writeIfMissing } from "./fs-utils.mjs";
 import { printSummary, style } from "./prompt.mjs";
 import { applyOptionalSkills } from "./skills.mjs";
 
 const TARGET_CLAUDE_MD = "";
+const BASIC_GITIGNORE_LINES = [".DS_Store", "Thumbs.db", ".vscode/", ".idea/"];
 
 function shellQuote(value) {
   return `'${String(value).replaceAll("'", `'"'"'`)}'`;
 }
 
-function repoPatternConfig(profile) {
+async function repoPatternConfig(sourceRoot, profile) {
+  const template = await readJson(path.join(sourceRoot, ".repo-pattern.example.json"), {});
   return {
-    version: "2.0.0",
-    workflow: "ecc-native",
+    ...template,
     mode: "target",
-    runtime: {
-      localSkills: false,
-      localCommands: false,
-      localHooks: false,
-      localScripts: false,
-      localRules: false,
-      vendoredEccRules: false
-    },
-    ecc: {
-      installMode: "plugin",
-      rulesSync: "repo-pattern-auto-cache",
-      rulesProfile: "auto",
-      rulesScope: "project",
-      hooks: "plugin-managed",
-      copyRuntimeSurfaces: false
-    },
     mcp: {
+      ...(template.mcp || {}),
       profile,
       generated: true
     }
@@ -87,7 +73,7 @@ export function applyAttributionSetting(settings, attributionConfig = { mode: "o
 }
 
 async function writeClaudeSettings({ sourceRoot, target, attributionConfig, dryRun }) {
-  const template = await readJson(path.join(sourceRoot, ".claude", "settings.example.json"), {});
+  const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.example.json"), {});
   await writeJson(path.join(target, ".claude", "settings.json"), applyAttributionSetting(template, attributionConfig), { dryRun });
 }
 
@@ -95,15 +81,15 @@ export async function updateClaudeAttribution({ sourceRoot, target, attributionC
   if (isTracked(target, ".claude/settings.json")) throw new Error(".claude/settings.json is tracked. Untrack it before writing Claude Code settings.");
   const file = path.join(target, ".claude", "settings.json");
   const current = await readJson(file, null);
-  const template = await readJson(path.join(sourceRoot, ".claude", "settings.example.json"), {});
+  const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.example.json"), {});
   await writeJson(file, applyAttributionSetting(current || template, attributionConfig), { dryRun });
-  await appendGitignoreLine(target, ".claude/settings.json", { dryRun });
+  await appendGitignoreLine(target, ".claude/", { dryRun });
 }
 
 async function writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun }) {
   if (!localSettingsEnv) return;
   if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local provider settings.");
-  const template = await readJson(path.join(sourceRoot, ".claude", "settings.local.example.json"), {});
+  const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.local.example.json"), {});
   await writeJson(path.join(target, ".claude", "settings.local.json"), {
     ...template,
     env: {
@@ -111,7 +97,7 @@ async function writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun
       ...localSettingsEnv
     }
   }, { dryRun });
-  await appendGitignoreLine(target, ".claude/settings.local.json", { dryRun });
+  await appendGitignoreLine(target, ".claude/", { dryRun });
 }
 
 export async function provisionProject({ sourceRoot, target, profile = "web", mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, attributionConfig = { mode: "off" }, ruleMode = "auto", rules = null, applyRules = false, optionalSkills = [] }) {
@@ -132,28 +118,27 @@ export async function provisionProject({ sourceRoot, target, profile = "web", mc
   if (isTracked(target, ".claude/settings.json")) throw new Error(".claude/settings.json is tracked. Untrack it before writing Claude Code settings.");
   await ensureDir(path.join(target, ".claude"), { dryRun });
 
-  // No templates directory is used. repo-pattern keeps canonical project files in:
-  // - sourceRoot/.claude/*
-  // - sourceRoot/mcp/*
   // Target CLAUDE.md is created empty when missing so project-specific instructions can be added later. Existing target CLAUDE.md is preserved.
   await writeIfMissing(path.join(target, "CLAUDE.md"), TARGET_CLAUDE_MD, { dryRun });
+  for (const line of BASIC_GITIGNORE_LINES) await appendGitignoreLine(target, line, { dryRun });
 
   await copyRecursive(
-    path.join(sourceRoot, ".claude", "CLAUDE.md"),
+    path.join(sourceRoot, ".claude.example", "CLAUDE.md"),
     path.join(target, ".claude", "CLAUDE.md"),
     { dryRun }
   );
 
   await writeClaudeSettings({ sourceRoot, target, attributionConfig, dryRun });
-  await appendGitignoreLine(target, ".claude/settings.json", { dryRun });
+  await appendGitignoreLine(target, ".claude/", { dryRun });
 
   await writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun });
 
-  await writeJson(path.join(target, ".repo-pattern.json"), repoPatternConfig(profile), { dryRun });
-  const lockPath = path.join(target, ".repo-pattern.lock.json");
-  if (isTracked(target, ".repo-pattern.lock.json")) throw new Error(".repo-pattern.lock.json is tracked. Untrack it before writing local setup state.");
+  await ensureRepoPatternGitignore(target, { dryRun });
+  await writeJson(repoConfigPath(target), await repoPatternConfig(sourceRoot, profile), { dryRun });
+  const lockPath = repoLockPath(target);
+  if (isTracked(target, ".repo-pattern/.repo-pattern.lock.json") || isTracked(target, ".repo-pattern.lock.json")) throw new Error("repo-pattern lock is tracked. Untrack it before writing local setup state.");
   await writeJson(lockPath, lockConfig(profile), { dryRun });
-  await appendGitignoreLine(target, ".repo-pattern.lock.json", { dryRun });
+  await ensureRepoPatternGitignore(target, { dryRun });
 
   const mcpResult = await generateMcp({ sourceRoot, target, profile, mcpServers, mcpValues, dryRun });
   const eccStatus = await setupEcc({ sourceRoot, target, dryRun });
@@ -180,7 +165,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", mc
     ["Status", dryRun ? `preview only; ${pendingText}` : pendingText],
     ["Target", target],
     ["Profile", profile],
-    [dryRun ? "Would write" : "Written", `CLAUDE.md (if missing), .claude/, .mcp.json, .repo-pattern.json, .repo-pattern.lock.json${optionalSkills.length ? ", optional skill/plugin config" : ""}`],
+    [dryRun ? "Would write" : "Written", `CLAUDE.md (if missing), .claude/, .mcp.json, .repo-pattern/.repo-pattern.json, .repo-pattern/.repo-pattern.lock.json${optionalSkills.length ? ", optional skill/plugin config" : ""}`],
     ["Doctor", dryRun ? "skipped (dry-run)" : style("success", "passed")],
     ["Next", next]
   ]);

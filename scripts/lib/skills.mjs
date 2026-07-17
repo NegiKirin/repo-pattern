@@ -2,7 +2,7 @@ import { execFile, execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, exists, isTracked, readJson, removePath, writeJson } from "./fs-utils.mjs";
+import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, ensureRepoPatternGitignore, exists, isTracked, readJson, readRepoConfig, readRepoLock, removePath, repoConfigPath, repoLockPath, writeJson } from "./fs-utils.mjs";
 import { isInteractive, printSummary, withSpinner } from "./prompt.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -135,7 +135,7 @@ async function writePluginSkillSettings({ target, skills, dryRun }) {
   if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local plugin settings.");
   const file = path.join(target, ".claude", "settings.local.json");
   await writeJson(file, applyPluginSkillSettings(await readJson(file, {}), skills), { dryRun });
-  await appendGitignoreLine(target, ".claude/settings.local.json", { dryRun });
+  await appendGitignoreLine(target, ".claude/", { dryRun });
 }
 
 function runGit(args, cwd, { quiet = false } = {}) {
@@ -261,8 +261,7 @@ export async function applyOptionalSkills({ target, skills = [], dryRun = false 
   if (selected.length === 0) return { selectedSkills: [], appliedSkills: [] };
 
   const chosen = selected.map(knownSkill);
-  const repoConfigPath = path.join(target, ".repo-pattern.json");
-  const repoConfig = await readJson(repoConfigPath, {});
+  const repoConfig = await readRepoConfig(target, {});
   const desired = [...new Set([...(repoConfig.optionalSkills || []), ...chosen].map((entry) => entry.name || entry.value))]
     .map(knownSkill)
     .filter(Boolean);
@@ -282,7 +281,7 @@ export async function applyOptionalSkills({ target, skills = [], dryRun = false 
     await backupPaths(target, [".claude/skills"], { dryRun });
     await removePath(destRoot, { dryRun });
     await ensureDir(destRoot, { dryRun });
-    await appendGitignoreLine(target, ".repo-pattern/", { dryRun });
+    await ensureRepoPatternGitignore(target, { dryRun });
 
     for (const skill of localSkills) {
       const cacheDir = await syncSkillCache(target, skill, { dryRun });
@@ -308,10 +307,11 @@ export async function applyOptionalSkills({ target, skills = [], dryRun = false 
 
   repoConfig.runtime = { ...(repoConfig.runtime || {}), localSkills: localSkills.length > 0 };
   repoConfig.optionalSkills = appliedSkills.map(({ name, source, revision, license, installedDirs, plugin }) => ({ name, source, revision, license, installedDirs, ...(plugin ? { plugin } : {}) }));
-  await writeJson(repoConfigPath, repoConfig, { dryRun });
+  await writeJson(repoConfigPath(target), repoConfig, { dryRun });
 
-  const lockPath = path.join(target, ".repo-pattern.lock.json");
-  const lock = await readJson(lockPath, {});
+  await ensureRepoPatternGitignore(target, { dryRun });
+  const lockPath = repoLockPath(target);
+  const lock = await readRepoLock(target, {});
   lock.optionalSkills = { appliedSkills, appliedAt: new Date().toISOString() };
   await writeJson(lockPath, lock, { dryRun });
 

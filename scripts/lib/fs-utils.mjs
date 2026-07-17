@@ -20,6 +20,34 @@ export function isTracked(root, relPath) {
   }
 }
 
+export function repoConfigPath(target) {
+  return path.join(target, ".repo-pattern", ".repo-pattern.json");
+}
+
+export function repoLockPath(target) {
+  return path.join(target, ".repo-pattern", ".repo-pattern.lock.json");
+}
+
+export function legacyRepoConfigPath(target) {
+  return path.join(target, ".repo-pattern.json");
+}
+
+export function legacyRepoLockPath(target) {
+  return path.join(target, ".repo-pattern.lock.json");
+}
+
+export async function readRepoConfig(target, fallback = null) {
+  return await readJson(repoConfigPath(target), null) ?? await readJson(legacyRepoConfigPath(target), fallback);
+}
+
+export async function readRepoLock(target, fallback = null) {
+  return await readJson(repoLockPath(target), null) ?? await readJson(legacyRepoLockPath(target), fallback);
+}
+
+export async function ensureRepoPatternGitignore(target, { dryRun = false } = {}) {
+  await writeIfMissing(path.join(target, ".repo-pattern", ".gitignore"), "*\n", { dryRun });
+}
+
 export async function ensureDir(dir, { dryRun = false } = {}) {
   if (dryRun) {
     console.log(`[dry-run] mkdir -p ${dir}`);

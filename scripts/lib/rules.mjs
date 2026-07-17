@@ -1,12 +1,44 @@
 import path from "node:path";
 import { execFile, execFileSync } from "node:child_process";
+import fs from "node:fs/promises";
 import { promisify } from "node:util";
-import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, exists, readJson, removePath, writeJson } from "./fs-utils.mjs";
+import { backupPaths, copyRecursive, ensureDir, ensureRepoPatternGitignore, exists, readRepoConfig, readRepoLock, removePath, repoConfigPath, repoLockPath, writeJson } from "./fs-utils.mjs";
 import { detectProject } from "./project-detect.mjs";
 import { selectEccRules, normalizeEccRules, invalidEccRules } from "./ecc-rules.mjs";
 import { isInteractive, printSummary, withSpinner } from "./prompt.mjs";
 
 const ECC_REPO_URL = "https://github.com/affaan-m/ECC.git";
+const USE_UV_RULES = `<!-- USE UV:Start -->
+Python project uses \`uv\`. Do not run \`python\`, \`python3\`, \`pip\`, \`pytest\`, or manually activate \`.venv\` unless explicitly required. Use \`uv run\` so commands execute inside the project environment.
+
+Command replacements:
+- \`python script.py\` → \`uv run python script.py\`
+- \`python3 script.py\` → \`uv run python script.py\`
+- \`python -m module\` → \`uv run python -m module\`
+- \`python3 -m module\` → \`uv run python -m module\`
+- \`python - <<'PY' ... PY\` → \`uv run python - <<'PY' ... PY\`
+- \`python3 - <<'PY' ... PY\` → \`uv run python - <<'PY' ... PY\`
+- \`pytest\` → \`uv run pytest\`
+- \`pytest tests/...\` → \`uv run pytest tests/...\`
+- \`pip install <pkg>\` → \`uv add <pkg>\`
+- \`pip install -e .\` → \`uv sync\`
+- \`pip install -r requirements.txt\` → \`uv pip install -r requirements.txt\` only for legacy projects without \`pyproject.toml\`
+- \`python -m pip ...\` → prefer \`uv add\` / \`uv remove\`; use \`uv pip ...\` only as escape hatch
+- \`source .venv/bin/activate && <cmd>\` → \`uv run <cmd>\`
+
+Dependency commands:
+- Install/sync deps: \`uv sync\`
+- Reproducible install: \`uv sync --locked\`
+- Add runtime dep: \`uv add <package>\`
+- Add dev dep: \`uv add --dev <package>\`
+- Remove dep: \`uv remove <package>\`
+- Update lockfile: \`uv lock\`
+- Check lockfile: \`uv lock --check\`
+- Inspect deps: \`uv tree\`
+- Temporary tool: \`uvx <tool>\` or \`uv tool run <tool>\`
+
+Rule: \`uv run\` owns \`.venv\`. Put uv options before the child command: \`uv run --python -- pytest -q\`.
+<!-- USE UV:End -->`;
 const execFileAsync = promisify(execFile);
 
 function runGit(args, cwd, { quiet = false } = {}) {
@@ -87,10 +119,9 @@ export async function applyEccRules({ target, dryRun = false, ruleMode = "auto",
   ]);
   printSummary("Selected ECC rules", [["Rules", selectedRules.join(", ")]]);
 
-  const internalRoot = path.join(target, ".repo-pattern");
-  const cacheRoot = path.join(internalRoot, "cache");
+  const cacheRoot = path.join(target, ".repo-pattern", "cache");
   const eccCache = await ensureEccCache(target, { dryRun });
-  await appendGitignoreLine(target, ".repo-pattern/", { dryRun });
+  await ensureRepoPatternGitignore(target, { dryRun });
   const sourceRulesRoot = path.join(eccCache, "rules");
   const destRoot = path.join(target, ".claude", "rules", "ecc");
 
@@ -109,11 +140,19 @@ export async function applyEccRules({ target, dryRun = false, ruleMode = "auto",
     await copyRecursive(src, dest, { dryRun });
   }
 
-  if (dryRun) console.log(`[dry-run] rm -rf ${internalRoot}`);
-  else await removePath(internalRoot);
+  const claudeMdPath = path.join(target, ".claude", "CLAUDE.md");
+  const claudeMd = exists(claudeMdPath) ? await fs.readFile(claudeMdPath, "utf8") : "";
+  if (selectedRules.includes("python") && !claudeMd.includes("<!-- USE UV:Start -->")) {
+    const separator = claudeMd ? (claudeMd.endsWith("\n") ? "\n" : "\n\n") : "";
+    if (dryRun) console.log(`[dry-run] append uv rules to ${claudeMdPath}`);
+    else await fs.writeFile(claudeMdPath, `${claudeMd}${separator}${USE_UV_RULES}\n`, "utf8");
+  }
 
-  const repoConfigPath = path.join(target, ".repo-pattern.json");
-  const repoConfig = await readJson(repoConfigPath, {});
+  if (dryRun) console.log(`[dry-run] rm -rf ${cacheRoot}`);
+  else await removePath(cacheRoot);
+
+  const configPath = repoConfigPath(target);
+  const repoConfig = await readRepoConfig(target, {});
   repoConfig.ecc = {
     ...(repoConfig.ecc || {}),
     rulesSync: "repo-pattern-auto-cache",
@@ -121,10 +160,11 @@ export async function applyEccRules({ target, dryRun = false, ruleMode = "auto",
     rulesScope: "project",
     copyRuntimeSurfaces: false
   };
-  await writeJson(repoConfigPath, repoConfig, { dryRun });
+  await ensureRepoPatternGitignore(target, { dryRun });
+  await writeJson(configPath, repoConfig, { dryRun });
 
-  const lockPath = path.join(target, ".repo-pattern.lock.json");
-  const lock = await readJson(lockPath, {});
+  const lockPath = repoLockPath(target);
+  const lock = await readRepoLock(target, {});
   lock.ecc = {
     ...(lock.ecc || {}),
     rulesSyncedBy: "repo-pattern-auto-cache",
@@ -142,7 +182,7 @@ export async function applyEccRules({ target, dryRun = false, ruleMode = "auto",
   printSummary("Applied ECC rules", [
     ["Path", path.relative(target, destRoot)],
     ["Rules", selectedRules.join(", ")],
-    ["Internal dir", ".repo-pattern/ removed"]
+    ["Internal dir", ".repo-pattern/cache/ removed"]
   ]);
 
   return {

@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { appendGitignoreLine, ensureDir, exists, isTracked, readJson, writeJson } from "./fs-utils.mjs";
+import { appendGitignoreLine, ensureDir, ensureRepoPatternGitignore, exists, isTracked, readJson, readRepoLock, repoLockPath, writeJson } from "./fs-utils.mjs";
 import { askPassword, askText, isInteractive, printSummary, style } from "./prompt.mjs";
 
 const PLACEHOLDER_RE = /^\$\{([A-Z0-9_]+)(?::-(.*))?\}$/;
@@ -185,8 +185,9 @@ export async function generateMcp({ sourceRoot, target, profile = "web", mcpServ
 
   await syncEnabledMcpServers(target, profileServers, { dryRun });
 
-  const lockPath = path.join(target, ".repo-pattern.lock.json");
-  const lock = await readJson(lockPath, {});
+  await ensureRepoPatternGitignore(target, { dryRun });
+  const lockPath = repoLockPath(target);
+  const lock = await readRepoLock(target, {});
   lock.mcp = lock.mcp || {};
   lock.mcp.profile = profile;
   lock.mcp.enabledServers = profileServers;

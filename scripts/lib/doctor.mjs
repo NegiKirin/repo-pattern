@@ -1,6 +1,6 @@
 import path from "node:path";
 import { auditProject } from "./audit.mjs";
-import { isTracked, readJson, writeJson } from "./fs-utils.mjs";
+import { ensureRepoPatternGitignore, isTracked, readJson, readRepoLock, repoLockPath, writeJson } from "./fs-utils.mjs";
 import { printBox, style } from "./prompt.mjs";
 
 function renderDoctor(target, checks, infoRows) {
@@ -25,8 +25,8 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
     checks.push({ ok: Boolean(condition), label, silent: Boolean(condition && silentPass) });
   };
 
-  const lockPath = path.join(target, ".repo-pattern.lock.json");
-  const lock = await readJson(lockPath, {});
+  const lockPath = repoLockPath(target);
+  const lock = await readRepoLock(target, {});
   const allowSourceSkills = audit.repoPattern?.mode === "template";
   const managedSkills = audit.repoPattern?.runtime?.localSkills === true && Array.isArray(audit.repoPattern?.optionalSkills) && audit.hasOnlyManagedSkills;
   check(!audit.hasClaudeSkillsDir || allowSourceSkills || managedSkills, ".claude/skills does not exist unless repo-pattern-managed optional skills are enabled");
@@ -39,18 +39,18 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   check(!isTracked(target, ".claude/settings.json"), ".claude/settings.json is not tracked");
   check(!isTracked(target, ".claude/settings.local.json"), ".claude/settings.local.json is not tracked");
   check(!isTracked(target, ".mcp.json"), ".mcp.json is not tracked");
-  check(!isTracked(target, ".repo-pattern.lock.json"), ".repo-pattern.lock.json is not tracked");
+  check(!isTracked(target, ".repo-pattern/.repo-pattern.lock.json"), ".repo-pattern/.repo-pattern.lock.json is not tracked");
   check(!audit.hasHardcodedMcpPath, ".mcp.json has no absolute machine path");
-  check(audit.hasRepoPatternJson, ".repo-pattern.json exists");
+  check(audit.hasRepoPatternJson, ".repo-pattern/.repo-pattern.json exists");
 
   const repoPattern = audit.repoPattern || {};
-  check(repoPattern.workflow === "ecc-native", ".repo-pattern.json workflow=ecc-native");
-  check(repoPattern.runtime?.localSkills === false || managedSkills, ".repo-pattern.json runtime.localSkills=false unless optional skills are managed");
+  check(repoPattern.workflow === "ecc-native", ".repo-pattern/.repo-pattern.json workflow=ecc-native");
+  check(repoPattern.runtime?.localSkills === false || managedSkills, ".repo-pattern/.repo-pattern.json runtime.localSkills=false unless optional skills are managed");
   if (managedSkills) check(audit.hasClaudeSkillsDir, ".claude/skills exists for managed optional skills");
-  check(repoPattern.runtime?.localCommands === false, ".repo-pattern.json runtime.localCommands=false");
-  check(repoPattern.runtime?.localHooks === false, ".repo-pattern.json runtime.localHooks=false");
-  check(repoPattern.runtime?.localScripts === false, ".repo-pattern.json runtime.localScripts=false");
-  check(repoPattern.runtime?.localRules === false, ".repo-pattern.json runtime.localRules=false");
+  check(repoPattern.runtime?.localCommands === false, ".repo-pattern/.repo-pattern.json runtime.localCommands=false");
+  check(repoPattern.runtime?.localHooks === false, ".repo-pattern/.repo-pattern.json runtime.localHooks=false");
+  check(repoPattern.runtime?.localScripts === false, ".repo-pattern/.repo-pattern.json runtime.localScripts=false");
+  check(repoPattern.runtime?.localRules === false, ".repo-pattern/.repo-pattern.json runtime.localRules=false");
 
   const settings = await readJson(path.join(target, ".claude", "settings.json"), {});
   const expectedMcpServers = lock.mcp?.enabledServers || [];
@@ -65,7 +65,7 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   const managedRulesClaimed = lock.ecc?.rulesSyncedBy === "repo-pattern-auto-cache" || appliedRules.length > 0;
   if (managedRulesClaimed) {
     const existingRules = new Set(audit.eccRulePackDirs || []);
-    check(appliedRules.length > 0, ".repo-pattern.lock.json ecc.appliedRules lists synced ECC rule packs");
+    check(appliedRules.length > 0, ".repo-pattern/.repo-pattern.lock.json ecc.appliedRules lists synced ECC rule packs");
     check(audit.hasOnlyEccRulesDir, ".claude/rules/ecc contains only ECC-managed project rules");
     check(audit.hasClaudeEccRulesDir && existingRules.size > 0, ".claude/rules/ecc contains synced ECC rule pack directories");
     check(appliedRules.every((rule) => existingRules.has(rule)), "all locked ECC rule packs exist under .claude/rules/ecc");
@@ -78,6 +78,7 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   }
 
   if (updateLock) {
+    await ensureRepoPatternGitignore(target, { dryRun });
     lock.repoPattern = lock.repoPattern || {};
     lock.repoPattern.lastDoctorRun = new Date().toISOString();
     await writeJson(lockPath, lock, { dryRun });
