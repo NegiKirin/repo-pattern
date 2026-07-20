@@ -7,16 +7,17 @@ import { fileURLToPath } from "node:url";
 import { auditProject, printAudit } from "./lib/audit.mjs";
 import { doctorProject } from "./lib/doctor.mjs";
 import { applyEccPluginSettings } from "./lib/ecc.mjs";
-import { applyMcpValues, mcpSecretPrompt, validateRelativeMcpPath } from "./lib/mcp.mjs";
-import { applyAttributionSetting, provisionProject } from "./lib/provision.mjs";
+import { applyMcpValues, mcpSecretPrompt, persistedMcpValues, validateRelativeMcpPath } from "./lib/mcp.mjs";
+import { applyAttributionSetting, applyLocalSettings, provisionProject } from "./lib/provision.mjs";
 import { printSummary, renderLogo, style } from "./lib/prompt.mjs";
 import { setupRetryOptions } from "./lib/setup.mjs";
 import { applyEccRules, formatEccCloneError } from "./lib/rules.mjs";
-import { applyOptionalSkills, applyPluginSkillSettings, expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills } from "./lib/skills.mjs";
+import { applyOptionalSkills, applyPluginSkillSettings, expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills, OPTIONAL_SKILLS } from "./lib/skills.mjs";
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
 const cliPath = path.join(cliDir, "repo-pattern.mjs");
 const repoRoot = path.dirname(cliDir);
+const secretSentinel = "do-not-persist-anthropic-token";
 
 const mcpServers = {
   context7: {
@@ -60,18 +61,56 @@ assert.deepEqual(applyMcpValues(mcpServers, {
 });
 
 assert.equal(applyMcpValues(mcpServers).filesystem.args[2], ".");
+assert.deepEqual(applyMcpValues({
+  unexpected: { env: { ANTHROPIC_AUTH_TOKEN: "${ANTHROPIC_AUTH_TOKEN}" } }
+}, {
+  ANTHROPIC_AUTH_TOKEN: secretSentinel
+}), {
+  unexpected: { env: { ANTHROPIC_AUTH_TOKEN: "${ANTHROPIC_AUTH_TOKEN}" } }
+});
+assert.deepEqual(persistedMcpValues({
+  CONTEXT7_API_KEY: "context7-key",
+  TAVILY_API_KEY: "tavily-key",
+  ANTHROPIC_AUTH_TOKEN: secretSentinel,
+  OTHER_API_KEY: "other-key"
+}), {
+  CONTEXT7_API_KEY: "context7-key",
+  TAVILY_API_KEY: "tavily-key"
+});
+assert.deepEqual(applyLocalSettings({ env: {
+  EXISTING: "kept",
+  ANTHROPIC_AUTH_TOKEN: secretSentinel
+} }, {
+  ANTHROPIC_BASE_URL: "https://example.com/v1",
+  ANTHROPIC_AUTH_TOKEN: secretSentinel
+}, {
+  CONTEXT7_API_KEY: "context7-key",
+  TAVILY_API_KEY: "tavily-key"
+}), {
+  env: {
+    EXISTING: "kept",
+    ANTHROPIC_BASE_URL: "https://example.com/v1",
+    CONTEXT7_API_KEY: "context7-key",
+    TAVILY_API_KEY: "tavily-key"
+  }
+});
 assert.deepEqual(applyAttributionSetting({ hooks: {} }, { mode: "off" }), { hooks: {}, attribution: { commit: "" } });
 assert.deepEqual(applyAttributionSetting({ attribution: { commit: "" } }, { mode: "on" }), {});
 assert.deepEqual(applyAttributionSetting({ attribution: { pr: "PR" } }, { mode: "custom", commit: "Custom" }), { attribution: { pr: "PR", commit: "Custom" } });
 assert.deepEqual(setupRetryOptions({
   action: "setup",
   mcpConfig: { profile: "web", mcpServers: null },
-  mcpValues: { CONTEXT7_API_KEY: "secret" },
+  mcpValues: {
+    CONTEXT7_API_KEY: "secret",
+    ANTHROPIC_AUTH_TOKEN: secretSentinel
+  },
   ruleConfig: { applyRules: false, ruleMode: "auto", rules: [] },
   optionalSkills: ["nextjs-pattern"],
   localSettingsEnv: {
     ANTHROPIC_BASE_URL: "https://example.com/v1",
-    ANTHROPIC_AUTH_TOKEN: "secret-token"
+    ANTHROPIC_AUTH_TOKEN: secretSentinel,
+    CONTEXT7_API_KEY: "context7-key",
+    TAVILY_API_KEY: "tavily-key"
   },
   attributionConfig: { mode: "off" },
   dryRun: false
@@ -91,8 +130,9 @@ assert.deepEqual(setupRetryOptions({
 });
 assert.deepEqual(applyEccPluginSettings({ enabledPlugins: { other: false } }).enabledPlugins, { other: false, "ecc@ecc": true });
 assert.equal(applyEccPluginSettings().extraKnownMarketplaces.ecc.source.url, "https://github.com/affaan-m/ECC.git");
-assert.deepEqual(normalizeOptionalSkills(["taste", "taste", "document-specialist", "ui-ux-pro-max", "impeccable", "huashu-design", "nextjs-pattern", "fastapi-pattern"]), ["taste", "document-specialist", "ui-ux-pro-max", "impeccable", "huashu-design", "nextjs-pattern", "fastapi-pattern"]);
-assert.deepEqual(invalidOptionalSkills(["taste", "ui-ux-pro-max", "impeccable", "huashu-design", "nextjs-pattern", "fastapi-pattern", "nope"]), ["nope"]);
+const optionalSkillValues = OPTIONAL_SKILLS.map((skill) => skill.value);
+assert.deepEqual(normalizeOptionalSkills(["taste", ...optionalSkillValues]), optionalSkillValues);
+assert.deepEqual(invalidOptionalSkills([...optionalSkillValues, "nope"]), ["nope"]);
 assert.deepEqual(applyPluginSkillSettings({}, [{
   source: "https://github.com/Leonxlnx/taste-skill.git",
   plugin: { marketplace: "taste-skill", name: "taste-skill" }
@@ -132,8 +172,13 @@ assert.deepEqual(expectedOptionalSkillDirs([
     name: "fastapi-pattern",
     source: "https://github.com/NegiKirin/fastapi-pattern.git",
     revision: "3abf484af46765c01a476b2ef61bb211b2b5bab8"
+  },
+  {
+    name: "herdr",
+    source: "https://github.com/ogulcancelik/herdr.git",
+    revision: "9450b168c727e9e4cbee95e6edf4f11cfe6f2154"
   }
-]), ["fastapi-pattern", "huashu-design", "nextjs-pattern"]);
+]), ["fastapi-pattern", "herdr", "huashu-design", "nextjs-pattern"]);
 
 const skillTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-skill-"));
 const originalSkillLog = console.log;
@@ -189,6 +234,10 @@ try {
   console.log = originalSkillLog;
   await fs.rm(dryRunRootCopyTarget, { recursive: true, force: true });
 }
+
+const herdrSkill = OPTIONAL_SKILLS.find((skill) => skill.value === "herdr");
+assert.deepEqual(herdrSkill.includePaths, ["SKILL.md"]);
+assert.equal(herdrSkill.destName, "herdr");
 
 async function writeDoctorFixture(target, { appliedRules = ["typescript"], createRuleDirs = true } = {}) {
   await fs.mkdir(path.join(target, ".claude"), { recursive: true });
@@ -334,8 +383,8 @@ try {
   process.stdout.isTTY = originalStdoutIsTty;
 }
 
-function runCli(args) {
-  return spawnSync(process.execPath, [cliPath, ...args], { cwd: repoRoot, encoding: "utf8" });
+function runCli(args, cwd = repoRoot) {
+  return spawnSync(process.execPath, [cliPath, ...args], { cwd, encoding: "utf8" });
 }
 
 let result = runCli(["help"]);
@@ -362,6 +411,7 @@ assert.match(result.stdout, /impeccable/);
 assert.match(result.stdout, /huashu-design/);
 assert.match(result.stdout, /nextjs-pattern/);
 assert.match(result.stdout, /fastapi-pattern/);
+assert.match(result.stdout, /herdr/);
 
 result = runCli(["audit"]);
 assert.equal(result.status, 0);
@@ -376,6 +426,26 @@ assert.equal(result.status, 1);
 assert.match(result.stderr, /MCP profile not found: nope\. Available profiles: /);
 assert.match(result.stderr, /minimal/);
 assert.match(result.stderr, /web/);
+
+const mcpReuseTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-mcp-reuse-"));
+try {
+  await fs.mkdir(path.join(mcpReuseTarget, ".claude"), { recursive: true });
+  await fs.writeFile(path.join(mcpReuseTarget, ".claude", "settings.local.json"), JSON.stringify({
+    env: {
+      CONTEXT7_API_KEY: "persisted-context7-key",
+      TAVILY_API_KEY: "persisted-tavily-key",
+      ANTHROPIC_AUTH_TOKEN: secretSentinel
+    }
+  }), "utf8");
+  result = runCli(["mcp", "--target", mcpReuseTarget, "--profile", "research", "--yes"]);
+  assert.equal(result.status, 0, result.stderr);
+  const mcpConfigText = await fs.readFile(path.join(mcpReuseTarget, ".mcp.json"), "utf8");
+  assert.match(mcpConfigText, /persisted-context7-key/);
+  assert.match(mcpConfigText, /persisted-tavily-key/);
+  assert.equal(mcpConfigText.includes(secretSentinel), false);
+} finally {
+  await fs.rm(mcpReuseTarget, { recursive: true, force: true });
+}
 
 const packageJson = JSON.parse(await fs.readFile(path.join(repoRoot, "package.json"), "utf8"));
 const gitignore = await fs.readFile(path.join(repoRoot, ".gitignore"), "utf8");
@@ -399,8 +469,21 @@ try {
     sourceRoot: repoRoot,
     target: provisionTemplateTarget,
     profile: "minimal",
-    mcpValues: { CONTEXT7_API_KEY: "redacted-key" }
+    mcpValues: {
+      CONTEXT7_API_KEY: "redacted-key",
+      ANTHROPIC_AUTH_TOKEN: secretSentinel,
+      OTHER_API_KEY: "other-key"
+    },
+    localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: secretSentinel }
   });
+  const localSettingsText = await fs.readFile(path.join(provisionTemplateTarget, ".claude", "settings.local.json"), "utf8");
+  const localSettings = JSON.parse(localSettingsText);
+  const setupLockText = await fs.readFile(path.join(provisionTemplateTarget, ".repo-pattern", ".repo-pattern.lock.json"), "utf8");
+  assert.equal(localSettings.env.CONTEXT7_API_KEY, "redacted-key");
+  assert.equal(localSettingsText.includes(secretSentinel), false);
+  assert.equal(setupLockText.includes(secretSentinel), false);
+  assert.equal("ANTHROPIC_AUTH_TOKEN" in localSettings.env, false);
+  assert.equal("OTHER_API_KEY" in localSettings.env, false);
   const repoConfig = JSON.parse(await fs.readFile(path.join(provisionTemplateTarget, ".repo-pattern", ".repo-pattern.json"), "utf8"));
   assert.equal(repoConfig.mode, "target");
   assert.equal(repoConfig.mcp.profile, "minimal");

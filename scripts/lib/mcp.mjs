@@ -10,6 +10,11 @@ const SECRET_HELP_URLS = {
   CONTEXT7_API_KEY: "https://context7.com/dashboard",
   TAVILY_API_KEY: "https://app.tavily.com/home"
 };
+const PERSISTED_MCP_VALUES = new Set(Object.keys(SECRET_HELP_URLS));
+
+export function persistedMcpValues(values = {}) {
+  return Object.fromEntries(Object.entries(values).filter(([name]) => PERSISTED_MCP_VALUES.has(name)));
+}
 
 export async function listAvailableMcpServers(sourceRoot) {
   const serverDir = path.join(sourceRoot, "mcp", "servers");
@@ -89,7 +94,8 @@ function replacePlaceholders(value, values) {
 }
 
 export function applyMcpValues(mcpServers, values = {}) {
-  return replacePlaceholders(mcpServers, values);
+  const { ANTHROPIC_AUTH_TOKEN: _ignored, ...safeValues } = values;
+  return replacePlaceholders(mcpServers, safeValues);
 }
 
 export async function readMcpConfig({ sourceRoot, profile = "web", mcpServers: selectedServers = null }) {

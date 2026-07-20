@@ -24,7 +24,6 @@
   "env": {
     "ENABLE_TOOL_SEARCH": "auto:5",
     "ANTHROPIC_BASE_URL": "https://example.com/v1",
-    "ANTHROPIC_AUTH_TOKEN": "replace-with-your-token-in-settings.local.json",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-5",

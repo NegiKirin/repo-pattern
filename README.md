@@ -109,7 +109,6 @@ target-project/
 │   ├── .repo-pattern.json
 │   └── .repo-pattern.lock.json
 ```
-```
 
 `repo-pattern` preserves an existing root `CLAUDE.md` and keeps machine-local values out of git.
 
@@ -122,7 +121,7 @@ target-project/
 * `.claude/settings.json` keeps `hooks: {}` and disables commit attribution by default; interactive setup can turn it on or use a custom trailer.
 * No vendored ECC skills, commands, hooks, scripts, or rules are installed unless explicitly requested.
 * Karpathy-inspired Claude Code guidelines are included in `.claude/CLAUDE.md` from `multica-ai/andrej-karpathy-skills` (MIT).
-* Optional external skills are user opt-in only: `--with-skill taste`, `--with-skill document-specialist`, `--with-skill ui-ux-pro-max`, `--with-skill impeccable`, `--with-skill huashu-design`, `--with-skill nextjs-pattern`, `--with-skill fastapi-pattern`, or interactive setup.
+* Optional external skills are user opt-in only: `--with-skill taste`, `--with-skill document-specialist`, `--with-skill ui-ux-pro-max`, `--with-skill impeccable`, `--with-skill huashu-design`, `--with-skill nextjs-pattern`, `--with-skill fastapi-pattern`, `--with-skill herdr`, or interactive setup.
 
 ## External guidance and skills
 
@@ -136,6 +135,7 @@ target-project/
 | `huashu-design` | Optional `.claude/skills/` install via `--with-skill huashu-design` (multimedia scripts may need Playwright/Python/ffmpeg; install can take \~10 minutes, so opt in deliberately) | https://github.com/alchaincyf/huashu-design/ | MIT |
 | `nextjs-pattern` | Optional `.claude/skills/` install via `--with-skill nextjs-pattern` | https://github.com/NegiKirin/nextjs-pattern/ | MIT |
 | `fastapi-pattern` | Optional `.claude/skills/` install via `--with-skill fastapi-pattern` | https://github.com/NegiKirin/fastapi-pattern/ | MIT |
+| `herdr` | Optional `.claude/skills/` install via `--with-skill herdr`; control commands require `HERDR_ENV=1` inside Herdr | https://github.com/ogulcancelik/herdr/ | AGPL-3.0-or-later or commercial |
 
 ## Learn more
 

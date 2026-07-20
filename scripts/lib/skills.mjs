@@ -85,6 +85,18 @@ export const OPTIONAL_SKILLS = [
     license: "MIT",
     installedDirs: ["fastapi-pattern"],
     destName: "fastapi-pattern"
+  },
+  {
+    value: "herdr",
+    label: "herdr",
+    description: "Herdr terminal multiplexer control skill (AGPL-3.0-or-later; user opt-in only)",
+    source: "https://github.com/ogulcancelik/herdr.git",
+    revision: "9450b168c727e9e4cbee95e6edf4f11cfe6f2154",
+    license: "AGPL-3.0-or-later",
+    installedDirs: ["herdr"],
+    includePaths: ["SKILL.md"],
+    destName: "herdr",
+    partialClone: true
   }
 ];
 
