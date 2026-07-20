@@ -1,18 +1,20 @@
 #!/usr/bin/env node
+import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { auditProject, printAudit } from "./lib/audit.mjs";
 import { cleanupProject } from "./lib/cleanup.mjs";
-import { generateMcp } from "./lib/mcp.mjs";
+import { generateMcp, persistedMcpValues } from "./lib/mcp.mjs";
 import { setupEcc } from "./lib/ecc.mjs";
 import { doctorProject } from "./lib/doctor.mjs";
 import { applyEccRules } from "./lib/rules.mjs";
 import { setupProject } from "./lib/setup.mjs";
-import { invalidOptionalSkills } from "./lib/skills.mjs";
+import { invalidOptionalSkills, OPTIONAL_SKILLS } from "./lib/skills.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const sourceRoot = path.resolve(__dirname, "..");
+const optionalSkillNames = OPTIONAL_SKILLS.map((skill) => skill.value).join(", ");
 
 function requiredOptionValue(rest, index, arg) {
   const value = rest[index + 1];
@@ -66,7 +68,7 @@ function parseArgs(argv) {
 
   const invalidSkills = invalidOptionalSkills(options.optionalSkills);
   if (invalidSkills.length > 0) {
-    console.error(`Unknown optional skill(s): ${invalidSkills.join(", ")}. Available: taste, document-specialist, ui-ux-pro-max, impeccable, huashu-design, nextjs-pattern, fastapi-pattern`);
+    console.error(`Unknown optional skill(s): ${invalidSkills.join(", ")}. Available: ${optionalSkillNames}`);
     process.exit(2);
   }
 
@@ -105,10 +107,20 @@ Setup UI:
   --migrate      Take over legacy/local Claude runtime surfaces
   --force        Reapply setup over repo-pattern-managed state
   --with-rules               Opt in to repo-pattern-managed .claude/rules/ecc
-  --with-skill <name>        Opt in to external skills/plugins (taste, document-specialist, ui-ux-pro-max, impeccable, huashu-design, nextjs-pattern, fastapi-pattern)
+  --with-skill <name>        Opt in to external skills/plugins (${optionalSkillNames})
   --with-skills <a,b>        Comma-separated optional skills
   --yes                      Run setup non-interactively
 `);
+}
+
+async function currentMcpValues(target) {
+  try {
+    const settings = JSON.parse(await fs.readFile(path.join(target, ".claude", "settings.local.json"), "utf8"));
+    return persistedMcpValues(settings.env);
+  } catch (error) {
+    if (error.code === "ENOENT") return {};
+    throw error;
+  }
 }
 
 async function main() {
@@ -131,7 +143,7 @@ async function main() {
         await cleanupProject({ sourceRoot, ...options });
         break;
       case "mcp":
-        await generateMcp({ sourceRoot, target: options.target, profile: options.profile, yes: options.yes, dryRun: options.dryRun });
+        await generateMcp({ sourceRoot, target: options.target, profile: options.profile, mcpValues: await currentMcpValues(options.target), yes: options.yes, dryRun: options.dryRun });
         break;
       case "ecc":
         await setupEcc({ sourceRoot, target: options.target, dryRun: options.dryRun });

@@ -59,3 +59,9 @@ Optional skills are not bundled with repo-pattern. When explicitly selected by t
 
 - Source: https://github.com/NegiKirin/fastapi-pattern/
 - License: MIT
+
+### Herdr
+
+- Source: https://github.com/ogulcancelik/herdr/
+- License: AGPL-3.0-or-later or commercial
+- Copyright (c) 2025 Ogulcan Celik and contributors

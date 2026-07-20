@@ -3,10 +3,10 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { auditProject, printAudit } from "./audit.mjs";
 import { detectProject } from "./project-detect.mjs";
-import { provisionProject, updateClaudeAttribution } from "./provision.mjs";
+import { applyLocalSettings, provisionProject, updateClaudeAttribution } from "./provision.mjs";
 import { doctorProject } from "./doctor.mjs";
-import { collectMcpValues, generateMcp, listAvailableMcpServers, readMcpConfig } from "./mcp.mjs";
-import { askConfirm, askPassword, askText, isInteractive, printBox, printLogo, printSummary, selectMany, selectOne, style } from "./prompt.mjs";
+import { collectMcpValues, generateMcp, listAvailableMcpServers, persistedMcpValues, readMcpConfig } from "./mcp.mjs";
+import { askConfirm, askText, isInteractive, printBox, printLogo, printSummary, selectMany, selectOne, style } from "./prompt.mjs";
 import { ECC_RULE_PACKS, selectEccRules } from "./ecc-rules.mjs";
 import { ensureRepoPatternGitignore, isTracked, readJson, readRepoLock, repoLockPath, writeJson } from "./fs-utils.mjs";
 import { applyOptionalSkills, OPTIONAL_SKILLS } from "./skills.mjs";
@@ -38,19 +38,18 @@ function validateUrl(value) {
 
 const LOCAL_SETTINGS_FIELDS = [
   ["ANTHROPIC_BASE_URL", "https://example.com/v1", askText, validateUrl],
-  ["ANTHROPIC_AUTH_TOKEN", "", askPassword, null],
   ["ANTHROPIC_DEFAULT_OPUS_MODEL", "claude-opus-4-8", askText, validateRequired],
   ["ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-sonnet-4-6", askText, validateRequired],
   ["ANTHROPIC_DEFAULT_HAIKU_MODEL", "claude-haiku-4-5", askText, validateRequired]
 ];
-const SECRET_LOCAL_SETTINGS = new Set(["ANTHROPIC_AUTH_TOKEN"]);
+const RETRY_SECRET_LOCAL_SETTINGS = new Set(["ANTHROPIC_AUTH_TOKEN", "CONTEXT7_API_KEY", "TAVILY_API_KEY"]);
 
 function setupLockPath(target) {
   return repoLockPath(target);
 }
 
-function safeLocalSettingsEnv(localSettingsEnv = {}) {
-  return Object.fromEntries(Object.entries(localSettingsEnv).filter(([name]) => !SECRET_LOCAL_SETTINGS.has(name)));
+function safeRetryLocalSettingsEnv(localSettingsEnv = {}) {
+  return Object.fromEntries(Object.entries(localSettingsEnv).filter(([name]) => !RETRY_SECRET_LOCAL_SETTINGS.has(name)));
 }
 
 export function setupRetryOptions({ action, mcpConfig, mcpValues = {}, ruleConfig, optionalSkills, localSettingsEnv, attributionConfig, dryRun }) {
@@ -58,13 +57,13 @@ export function setupRetryOptions({ action, mcpConfig, mcpValues = {}, ruleConfi
     action,
     profile: mcpConfig.profile,
     mcpServers: mcpConfig.mcpServers,
-    mcpValueNames: Object.keys(mcpValues),
+    mcpValueNames: Object.keys(persistedMcpValues(mcpValues)),
     migrate: action === "migrate",
     applyRules: ruleConfig.applyRules,
     ruleMode: ruleConfig.ruleMode,
     rules: ruleConfig.rules,
     optionalSkills,
-    localSettingsEnv: safeLocalSettingsEnv(localSettingsEnv),
+    localSettingsEnv: safeRetryLocalSettingsEnv(localSettingsEnv),
     attributionConfig,
     dryRun
   };
@@ -87,6 +86,13 @@ async function writeSetupStatus(target, setup, { dryRun = false } = {}) {
 async function currentLocalSettingsEnv(target) {
   const settings = await readJson(path.join(target, ".claude", "settings.local.json"), {});
   return settings.env || {};
+}
+
+async function writeLocalMcpValues(target, mcpValues, { dryRun = false } = {}) {
+  const file = path.join(target, ".claude", "settings.local.json");
+  if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local MCP values.");
+  const settings = await readJson(file, {});
+  await writeJson(file, applyLocalSettings(settings, {}, persistedMcpValues(mcpValues)), { dryRun });
 }
 
 function retryRows(setup) {
@@ -161,9 +167,9 @@ async function chooseMcpConfig(sourceRoot, profile) {
   return { profile, mcpServers };
 }
 
-async function chooseMcpValues(sourceRoot, mcpConfig) {
+async function chooseMcpValues(sourceRoot, mcpConfig, values = {}) {
   const { mcpServers } = await readMcpConfig({ sourceRoot, profile: mcpConfig.profile, mcpServers: mcpConfig.mcpServers });
-  return collectMcpValues(mcpServers);
+  return collectMcpValues(mcpServers, { values: persistedMcpValues(values) });
 }
 
 async function chooseRuleConfig(detection) {
@@ -206,7 +212,7 @@ async function chooseLocalSettingsEnv(initialValues = {}) {
   for (const [name, fallback, ask, validate] of LOCAL_SETTINGS_FIELDS) {
     env[name] = await ask(name, { initial: process.env[name] || initialValues[name] || fallback, validate });
   }
-  return env;
+  return { ...env, ...persistedMcpValues(initialValues) };
 }
 
 async function chooseAttributionConfig() {
@@ -289,8 +295,10 @@ async function handleInitialized({ sourceRoot, target, profile, dryRun }) {
     const detection = await detectProject(target);
     const chosenProfile = await chooseProfile(sourceRoot, profile, detection);
     const mcpConfig = await chooseMcpConfig(sourceRoot, chosenProfile);
-    const mcpValues = await chooseMcpValues(sourceRoot, mcpConfig);
+    const localSettingsEnv = await currentLocalSettingsEnv(target);
+    const mcpValues = await chooseMcpValues(sourceRoot, mcpConfig, localSettingsEnv);
     await generateMcp({ sourceRoot, target, profile: mcpConfig.profile, mcpServers: mcpConfig.mcpServers, mcpValues, dryRun });
+    await writeLocalMcpValues(target, mcpValues, { dryRun });
   }
   if (action === "skills") {
     const optionalSkills = await chooseOptionalSkills();
@@ -363,10 +371,11 @@ export async function setupProject({ sourceRoot, target, profile = "web", dryRun
     if (!confirmed) throw new Error("Setup cancelled.");
   }
 
-  const mcpValues = previousOptions ? {} : await chooseMcpValues(sourceRoot, mcpConfig);
+  const currentSettingsEnv = await currentLocalSettingsEnv(target);
+  const mcpValues = previousOptions ? persistedMcpValues(currentSettingsEnv) : await chooseMcpValues(sourceRoot, mcpConfig, currentSettingsEnv);
   const localSettingsEnv = previousOptions
-    ? { ...previousOptions.localSettingsEnv, ...(await currentLocalSettingsEnv(target)) }
-    : await chooseLocalSettingsEnv();
+    ? { ...previousOptions.localSettingsEnv, ...currentSettingsEnv }
+    : await chooseLocalSettingsEnv(currentSettingsEnv);
   const attributionConfig = previousOptions?.attributionConfig || await chooseAttributionConfig();
 
   if (!await confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, attributionConfig, dryRun })) {

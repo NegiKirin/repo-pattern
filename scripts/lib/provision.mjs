@@ -1,7 +1,7 @@
 import path from "node:path";
 import { auditProject, printAudit } from "./audit.mjs";
 import { cleanupProject } from "./cleanup.mjs";
-import { generateMcp } from "./mcp.mjs";
+import { generateMcp, persistedMcpValues } from "./mcp.mjs";
 import { setupEcc } from "./ecc.mjs";
 import { doctorProject } from "./doctor.mjs";
 import { applyEccRules } from "./rules.mjs";
@@ -86,17 +86,20 @@ export async function updateClaudeAttribution({ sourceRoot, target, attributionC
   await appendGitignoreLine(target, ".claude/", { dryRun });
 }
 
-async function writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun }) {
+export function applyLocalSettings(settings, localSettingsEnv, mcpValues = {}) {
+  const env = Object.fromEntries(Object.entries({
+    ...(settings.env || {}),
+    ...localSettingsEnv,
+    ...mcpValues
+  }).filter(([name]) => name !== "ANTHROPIC_AUTH_TOKEN"));
+  return { ...settings, env };
+}
+
+async function writeLocalSettings({ sourceRoot, target, localSettingsEnv, mcpValues, dryRun }) {
   if (!localSettingsEnv) return;
   if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local provider settings.");
   const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.local.example.json"), {});
-  await writeJson(path.join(target, ".claude", "settings.local.json"), {
-    ...template,
-    env: {
-      ...(template.env || {}),
-      ...localSettingsEnv
-    }
-  }, { dryRun });
+  await writeJson(path.join(target, ".claude", "settings.local.json"), applyLocalSettings(template, localSettingsEnv, mcpValues), { dryRun });
   await appendGitignoreLine(target, ".claude/", { dryRun });
 }
 
@@ -131,7 +134,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", mc
   await writeClaudeSettings({ sourceRoot, target, attributionConfig, dryRun });
   await appendGitignoreLine(target, ".claude/", { dryRun });
 
-  await writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun });
+  await writeLocalSettings({ sourceRoot, target, localSettingsEnv, mcpValues: persistedMcpValues(mcpValues), dryRun });
 
   await ensureRepoPatternGitignore(target, { dryRun });
   await writeJson(repoConfigPath(target), await repoPatternConfig(sourceRoot, profile), { dryRun });
