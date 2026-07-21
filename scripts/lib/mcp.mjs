@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { appendGitignoreLine, ensureDir, ensureRepoPatternGitignore, exists, isTracked, readJson, readRepoLock, repoLockPath, writeJson } from "./fs-utils.mjs";
+import { appendGitignoreLine, ensureDir, ensureRepoPatternGitignore, exists, isTracked, readJson, readPrivateJson, readRepoLock, repoLockPath, writeJson, writePrivateJson } from "./fs-utils.mjs";
 import { askPassword, askText, isInteractive, printSummary, style } from "./prompt.mjs";
 
 const PLACEHOLDER_RE = /^\$\{([A-Z0-9_]+)(?::-(.*))?\}$/;
@@ -14,6 +14,22 @@ const PERSISTED_MCP_VALUES = new Set(Object.keys(SECRET_HELP_URLS));
 
 export function persistedMcpValues(values = {}) {
   return Object.fromEntries(Object.entries(values).filter(([name]) => PERSISTED_MCP_VALUES.has(name)));
+}
+
+export function withoutPersistedMcpValues(values = {}) {
+  return Object.fromEntries(Object.entries(values).filter(([name]) => !PERSISTED_MCP_VALUES.has(name)));
+}
+
+export async function readGeneratedMcpValues(target) {
+  const config = await readPrivateJson(path.join(target, ".mcp.json"), {}, { label: ".mcp.json" });
+  const values = {};
+  for (const server of Object.values(config.mcpServers || {})) {
+    if (!server || typeof server !== "object" || Array.isArray(server)) throw new Error(".mcp.json contains an invalid MCP server entry.");
+    for (const [name, value] of Object.entries(server.env || {})) {
+      if (PERSISTED_MCP_VALUES.has(name) && value && !parsePlaceholder(value)) values[name] = value;
+    }
+  }
+  return values;
 }
 
 export async function listAvailableMcpServers(sourceRoot) {
@@ -186,7 +202,7 @@ export async function generateMcp({ sourceRoot, target, profile = "web", mcpServ
   const resolvedMcpServers = applyMcpValues(mcpServers, values);
 
   await ensureDir(target, { dryRun });
-  await writeJson(path.join(target, ".mcp.json"), { mcpServers: resolvedMcpServers }, { dryRun });
+  await writePrivateJson(path.join(target, ".mcp.json"), { mcpServers: resolvedMcpServers }, { dryRun, label: ".mcp.json" });
   await appendGitignoreLine(target, ".mcp.json", { dryRun });
 
   await syncEnabledMcpServers(target, profileServers, { dryRun });

@@ -10,9 +10,7 @@ export async function cleanupProject({ sourceRoot, target, dryRun = false }) {
     ".claude/hooks",
     ".claude/scripts",
     ".claude/rules",
-    ".claude/settings.json",
-    ".claude/settings.local.json",
-    ".mcp.json"
+    ".claude/settings.json"
   ], { dryRun });
 
   const removeList = [

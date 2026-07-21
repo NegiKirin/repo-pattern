@@ -85,7 +85,7 @@ For scripts or CI, use the non-interactive path:
 node scripts/repo-pattern.mjs setup --target ~/Code/my-app --profile web --yes
 ```
 
-Setup first checks `claude --version`, then uses a library-backed terminal wizard. It can auto-detect ECC rules or let you choose rule packs by type, asks for selected MCP API keys/relative paths when needed, then asks for Anthropic provider/model values and writes reusable local values to the target's gitignored `.claude/settings.local.json`. `CONTEXT7_API_KEY` and `TAVILY_API_KEY` are reused on later setup/MCP runs; `ANTHROPIC_AUTH_TOKEN` is never persisted.
+Setup first checks `claude --version`, then uses a library-backed terminal wizard. It can auto-detect ECC rules or let you choose rule packs by type, asks for selected MCP API keys/relative paths when needed, then asks for Anthropic provider/model values. It stores `CONTEXT7_API_KEY` and `TAVILY_API_KEY` only in the target's gitignored `.mcp.json`, and stores `ANTHROPIC_AUTH_TOKEN` with the provider/model values in gitignored `.claude/settings.local.json`. Later setup and MCP runs reuse those files.
 
 Keys:
 
@@ -111,14 +111,14 @@ For non-interactive scripts, use `setup --yes`.
 4. Write `.claude/CLAUDE.md` if missing.
 5. Write `.claude/settings.json` from `.claude.example/settings.example.json`.
 6. In interactive setup, ask whether commit attribution is off, on, or custom.
-7. During `setup`, write gitignored `.claude/settings.local.json` from prompted provider/model values, excluding `ANTHROPIC_AUTH_TOKEN`.
+7. During interactive `setup`, write `ANTHROPIC_AUTH_TOKEN` and the prompted provider/model values to gitignored `.claude/settings.local.json`; remove `CONTEXT7_API_KEY` and `TAVILY_API_KEY` from that file.
 8. Read MCP profiles and server definitions from `repo-pattern`.
-9. In interactive mode, reuse persisted `CONTEXT7_API_KEY`/`TAVILY_API_KEY` values or ask for missing MCP API keys and relative paths when placeholders require them.
-10. Generate `.mcp.json` from the selected profile.
+9. In interactive mode, reuse `CONTEXT7_API_KEY`/`TAVILY_API_KEY` from gitignored `.mcp.json` or ask for missing MCP API keys and relative paths when placeholders require them.
+10. Generate `.mcp.json` from the selected profile, storing entered Context7/Tavily keys as literal server environment values.
 11. Write `.repo-pattern/.repo-pattern.json` from `.repo-pattern.example.json`.
 12. Create `.repo-pattern/.gitignore` with `*`.
 13. Add generated setup files and basic OS/IDE noise to `.gitignore`.
-14. Write `.repo-pattern/.repo-pattern.lock.json`.
+14. Write `.repo-pattern/.repo-pattern.lock.json` without credential values.
 15. Run or attempt ECC setup flow.
 16. During `setup` with rules enabled, apply ECC rules.
 17. Run doctor.
@@ -208,7 +208,7 @@ or regenerate later:
 node scripts/repo-pattern.mjs mcp --target /path/to/project --profile <profile>
 ```
 
-Interactive `setup` asks for selected MCP placeholders such as `CONTEXT7_API_KEY` and `TAVILY_API_KEY`; entered keys are saved in gitignored `.claude/settings.local.json` and reused by later `setup` and `mcp` runs. `ANTHROPIC_AUTH_TOKEN` is never saved there or in repo-pattern setup state. The filesystem MCP server uses the target project root (`.`) as its allowed directory. Other MCP paths, when prompted, must be relative (`src`, `packages/api`); absolute machine paths and `..` are rejected. With `--yes` or non-TTY runs, unresolved secret placeholders stay in `.mcp.json` and the CLI prints the values to fill later.
+Interactive `setup` asks for selected MCP placeholders such as `CONTEXT7_API_KEY` and `TAVILY_API_KEY`, writes entered keys only as literal server environment values in gitignored `.mcp.json`, and reuses them on later `setup` and `mcp` runs. It writes `ANTHROPIC_AUTH_TOKEN` only to gitignored `.claude/settings.local.json`; the token is never substituted into MCP config or written to repo-pattern setup state. Failed setup retries recover credentials from these two files, while the lock stores only non-secret choices and MCP credential names. Setup backups exclude both credential-bearing files. The filesystem MCP server uses the target project root (`.`) as its allowed directory. Other MCP paths, when prompted, must be relative (`src`, `packages/api`); absolute machine paths and `..` are rejected. With `--yes` or non-TTY runs, unresolved secret placeholders stay in `.mcp.json` and the CLI prints the values to fill later.
 
 ---
 
@@ -471,15 +471,14 @@ Local preferences and Anthropic provider/model values should go in:
 `setup` asks for these values and writes the file for you:
 
 ```text
+ANTHROPIC_AUTH_TOKEN
 ANTHROPIC_BASE_URL
 ANTHROPIC_DEFAULT_OPUS_MODEL
 ANTHROPIC_DEFAULT_SONNET_MODEL
 ANTHROPIC_DEFAULT_HAIKU_MODEL
-CONTEXT7_API_KEY (when selected)
-TAVILY_API_KEY (when selected)
 ```
 
-`ANTHROPIC_AUTH_TOKEN` is not requested or persisted by setup; provide it through your shell environment or another secret manager. Do not commit `.claude/settings.local.json`; `setup` adds `.claude/` to `.gitignore`.
+`CONTEXT7_API_KEY` and `TAVILY_API_KEY` are stored only in gitignored `.mcp.json`, never in `.claude/settings.local.json`. Do not commit either credential file; `setup` adds `.claude/` and `.mcp.json` to `.gitignore`. Credential values are not written to repo-pattern locks, backups, tracked files, or package files.
 
 ## 12. Repo-pattern commands
 

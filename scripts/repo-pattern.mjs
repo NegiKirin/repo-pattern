@@ -1,10 +1,9 @@
 #!/usr/bin/env node
-import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { auditProject, printAudit } from "./lib/audit.mjs";
 import { cleanupProject } from "./lib/cleanup.mjs";
-import { generateMcp, persistedMcpValues } from "./lib/mcp.mjs";
+import { generateMcp, readGeneratedMcpValues } from "./lib/mcp.mjs";
 import { setupEcc } from "./lib/ecc.mjs";
 import { doctorProject } from "./lib/doctor.mjs";
 import { applyEccRules } from "./lib/rules.mjs";
@@ -113,16 +112,6 @@ Setup UI:
 `);
 }
 
-async function currentMcpValues(target) {
-  try {
-    const settings = JSON.parse(await fs.readFile(path.join(target, ".claude", "settings.local.json"), "utf8"));
-    return persistedMcpValues(settings.env);
-  } catch (error) {
-    if (error.code === "ENOENT") return {};
-    throw error;
-  }
-}
-
 async function main() {
   const options = parseArgs(process.argv.slice(2));
 
@@ -143,7 +132,7 @@ async function main() {
         await cleanupProject({ sourceRoot, ...options });
         break;
       case "mcp":
-        await generateMcp({ sourceRoot, target: options.target, profile: options.profile, mcpValues: await currentMcpValues(options.target), yes: options.yes, dryRun: options.dryRun });
+        await generateMcp({ sourceRoot, target: options.target, profile: options.profile, mcpValues: await readGeneratedMcpValues(options.target), yes: options.yes, dryRun: options.dryRun });
         break;
       case "ecc":
         await setupEcc({ sourceRoot, target: options.target, dryRun: options.dryRun });

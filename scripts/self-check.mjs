@@ -5,12 +5,14 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { auditProject, printAudit } from "./lib/audit.mjs";
+import { cleanupProject } from "./lib/cleanup.mjs";
 import { doctorProject } from "./lib/doctor.mjs";
-import { applyEccPluginSettings } from "./lib/ecc.mjs";
-import { applyMcpValues, mcpSecretPrompt, persistedMcpValues, validateRelativeMcpPath } from "./lib/mcp.mjs";
+import { applyEccPluginSettings, setupEcc } from "./lib/ecc.mjs";
+import { applyMcpValues, generateMcp, mcpSecretPrompt, persistedMcpValues, readGeneratedMcpValues, validateRelativeMcpPath } from "./lib/mcp.mjs";
 import { applyAttributionSetting, applyLocalSettings, provisionProject } from "./lib/provision.mjs";
+import { writePrivateJson } from "./lib/fs-utils.mjs";
 import { printSummary, renderLogo, style } from "./lib/prompt.mjs";
-import { setupRetryOptions } from "./lib/setup.mjs";
+import { needsLocalSettingsPrompt, setupRetryOptions } from "./lib/setup.mjs";
 import { applyEccRules, formatEccCloneError } from "./lib/rules.mjs";
 import { applyOptionalSkills, applyPluginSkillSettings, expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills, OPTIONAL_SKILLS } from "./lib/skills.mjs";
 
@@ -79,19 +81,16 @@ assert.deepEqual(persistedMcpValues({
 });
 assert.deepEqual(applyLocalSettings({ env: {
   EXISTING: "kept",
-  ANTHROPIC_AUTH_TOKEN: secretSentinel
+  CONTEXT7_API_KEY: "stale-context7-key"
 } }, {
   ANTHROPIC_BASE_URL: "https://example.com/v1",
-  ANTHROPIC_AUTH_TOKEN: secretSentinel
-}, {
-  CONTEXT7_API_KEY: "context7-key",
-  TAVILY_API_KEY: "tavily-key"
+  ANTHROPIC_AUTH_TOKEN: secretSentinel,
+  TAVILY_API_KEY: "stale-tavily-key"
 }), {
   env: {
     EXISTING: "kept",
     ANTHROPIC_BASE_URL: "https://example.com/v1",
-    CONTEXT7_API_KEY: "context7-key",
-    TAVILY_API_KEY: "tavily-key"
+    ANTHROPIC_AUTH_TOKEN: secretSentinel
   }
 });
 assert.deepEqual(applyAttributionSetting({ hooks: {} }, { mode: "off" }), { hooks: {}, attribution: { commit: "" } });
@@ -128,6 +127,28 @@ assert.deepEqual(setupRetryOptions({
   attributionConfig: { mode: "off" },
   dryRun: false
 });
+assert.equal(needsLocalSettingsPrompt({ ANTHROPIC_BASE_URL: "https://example.com/v1" }), true);
+assert.equal(needsLocalSettingsPrompt({
+  ANTHROPIC_AUTH_TOKEN: " ",
+  ANTHROPIC_BASE_URL: "https://example.com/v1",
+  ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-8",
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-4-6",
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-4-5"
+}), true);
+assert.equal(needsLocalSettingsPrompt({
+  ANTHROPIC_AUTH_TOKEN: secretSentinel,
+  ANTHROPIC_BASE_URL: "not-a-url",
+  ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-8",
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-4-6",
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-4-5"
+}), true);
+assert.equal(needsLocalSettingsPrompt({
+  ANTHROPIC_AUTH_TOKEN: secretSentinel,
+  ANTHROPIC_BASE_URL: "https://example.com/v1",
+  ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-8",
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-4-6",
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-4-5"
+}), false);
 assert.deepEqual(applyEccPluginSettings({ enabledPlugins: { other: false } }).enabledPlugins, { other: false, "ecc@ecc": true });
 assert.equal(applyEccPluginSettings().extraKnownMarketplaces.ecc.source.url, "https://github.com/affaan-m/ECC.git");
 const optionalSkillValues = OPTIONAL_SKILLS.map((skill) => skill.value);
@@ -429,12 +450,10 @@ assert.match(result.stderr, /web/);
 
 const mcpReuseTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-mcp-reuse-"));
 try {
-  await fs.mkdir(path.join(mcpReuseTarget, ".claude"), { recursive: true });
-  await fs.writeFile(path.join(mcpReuseTarget, ".claude", "settings.local.json"), JSON.stringify({
-    env: {
-      CONTEXT7_API_KEY: "persisted-context7-key",
-      TAVILY_API_KEY: "persisted-tavily-key",
-      ANTHROPIC_AUTH_TOKEN: secretSentinel
+  await fs.writeFile(path.join(mcpReuseTarget, ".mcp.json"), JSON.stringify({
+    mcpServers: {
+      context7: { env: { CONTEXT7_API_KEY: "persisted-context7-key" } },
+      tavily: { env: { TAVILY_API_KEY: "persisted-tavily-key" } }
     }
   }), "utf8");
   result = runCli(["mcp", "--target", mcpReuseTarget, "--profile", "research", "--yes"]);
@@ -445,6 +464,64 @@ try {
   assert.equal(mcpConfigText.includes(secretSentinel), false);
 } finally {
   await fs.rm(mcpReuseTarget, { recursive: true, force: true });
+}
+
+const setupReuseTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-setup-reuse-"));
+try {
+  await fs.writeFile(path.join(setupReuseTarget, ".mcp.json"), JSON.stringify({
+    mcpServers: { context7: { env: { CONTEXT7_API_KEY: "persisted-setup-key" } } }
+  }), "utf8");
+  result = runCli(["setup", "--target", setupReuseTarget, "--profile", "minimal", "--yes"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(await fs.readFile(path.join(setupReuseTarget, ".mcp.json"), "utf8"), /persisted-setup-key/);
+} finally {
+  await fs.rm(setupReuseTarget, { recursive: true, force: true });
+}
+
+const privateWriteTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-private-write-"));
+try {
+  const privateWritePath = path.join(privateWriteTarget, "settings.local.json");
+  await fs.writeFile(privateWritePath, '{"env":{"kept":"value"}}\n', { mode: 0o600 });
+  await assert.rejects(
+    () => writePrivateJson(privateWritePath, { unsupported: 1n }),
+    /BigInt/
+  );
+  assert.equal(await fs.readFile(privateWritePath, "utf8"), '{"env":{"kept":"value"}}\n');
+} finally {
+  await fs.rm(privateWriteTarget, { recursive: true, force: true });
+}
+
+const mcpSymlinkTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-mcp-symlink-target-"));
+const mcpSymlinkDestination = path.join(os.tmpdir(), `repo-pattern-mcp-symlink-destination-${process.pid}`);
+console.log = () => {};
+try {
+  await fs.writeFile(mcpSymlinkDestination, "unchanged", "utf8");
+  await fs.symlink(mcpSymlinkDestination, path.join(mcpSymlinkTarget, ".mcp.json"));
+  await assert.rejects(
+    () => generateMcp({
+      sourceRoot: repoRoot,
+      target: mcpSymlinkTarget,
+      profile: "minimal",
+      mcpValues: { CONTEXT7_API_KEY: "mcp-symlink-key" },
+      yes: true
+    }),
+    /\.mcp\.json.*symlink/
+  );
+  assert.equal(await fs.readFile(mcpSymlinkDestination, "utf8"), "unchanged");
+  await assert.rejects(
+    () => readGeneratedMcpValues(mcpSymlinkTarget),
+    /\.mcp\.json.*symlink/
+  );
+  await fs.rm(path.join(mcpSymlinkTarget, ".mcp.json"));
+  await fs.writeFile(path.join(mcpSymlinkTarget, ".mcp.json"), '{"mcpServers":{"context7":null}}', "utf8");
+  await assert.rejects(
+    () => readGeneratedMcpValues(mcpSymlinkTarget),
+    /invalid MCP server entry/
+  );
+} finally {
+  console.log = originalLog;
+  await fs.rm(mcpSymlinkTarget, { recursive: true, force: true });
+  await fs.rm(mcpSymlinkDestination, { force: true });
 }
 
 const packageJson = JSON.parse(await fs.readFile(path.join(repoRoot, "package.json"), "utf8"));
@@ -474,15 +551,27 @@ try {
       ANTHROPIC_AUTH_TOKEN: secretSentinel,
       OTHER_API_KEY: "other-key"
     },
-    localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: secretSentinel }
+    localSettingsEnv: {
+      ANTHROPIC_BASE_URL: "https://example.com/v1",
+      ANTHROPIC_AUTH_TOKEN: secretSentinel
+    }
   });
-  const localSettingsText = await fs.readFile(path.join(provisionTemplateTarget, ".claude", "settings.local.json"), "utf8");
+  const localSettingsPath = path.join(provisionTemplateTarget, ".claude", "settings.local.json");
+  const localSettingsText = await fs.readFile(localSettingsPath, "utf8");
   const localSettings = JSON.parse(localSettingsText);
+  assert.equal((await fs.stat(localSettingsPath)).mode & 0o777, 0o600);
   const setupLockText = await fs.readFile(path.join(provisionTemplateTarget, ".repo-pattern", ".repo-pattern.lock.json"), "utf8");
-  assert.equal(localSettings.env.CONTEXT7_API_KEY, "redacted-key");
-  assert.equal(localSettingsText.includes(secretSentinel), false);
+  const mcpConfigPath = path.join(provisionTemplateTarget, ".mcp.json");
+  const mcpConfigText = await fs.readFile(mcpConfigPath, "utf8");
+  assert.equal((await fs.stat(mcpConfigPath)).mode & 0o777, 0o600);
+  assert.equal(localSettings.env.ANTHROPIC_AUTH_TOKEN, secretSentinel);
+  assert.equal(localSettings.env.ANTHROPIC_BASE_URL, "https://example.com/v1");
+  assert.equal("CONTEXT7_API_KEY" in localSettings.env, false);
+  assert.equal("TAVILY_API_KEY" in localSettings.env, false);
+  assert.match(mcpConfigText, /redacted-key/);
+  assert.equal(mcpConfigText.includes(secretSentinel), false);
+  assert.equal(setupLockText.includes("redacted-key"), false);
   assert.equal(setupLockText.includes(secretSentinel), false);
-  assert.equal("ANTHROPIC_AUTH_TOKEN" in localSettings.env, false);
   assert.equal("OTHER_API_KEY" in localSettings.env, false);
   const repoConfig = JSON.parse(await fs.readFile(path.join(provisionTemplateTarget, ".repo-pattern", ".repo-pattern.json"), "utf8"));
   assert.equal(repoConfig.mode, "target");
@@ -495,9 +584,242 @@ try {
   }
   const repoPatternGitignore = (await fs.readFile(path.join(provisionTemplateTarget, ".repo-pattern", ".gitignore"), "utf8")).trim();
   assert.equal(repoPatternGitignore, "*");
+
+  await fs.chmod(localSettingsPath, 0o666);
+  await fs.chmod(mcpConfigPath, 0o666);
+  await provisionProject({
+    sourceRoot: repoRoot,
+    target: provisionTemplateTarget,
+    profile: "minimal",
+    mcpValues: { CONTEXT7_API_KEY: "replacement-key" },
+    localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: "replacement-token" }
+  });
+  assert.equal((await fs.stat(localSettingsPath)).mode & 0o777, 0o600);
+  assert.equal((await fs.stat(mcpConfigPath)).mode & 0o777, 0o600);
+  const [backupName] = await fs.readdir(path.join(provisionTemplateTarget, ".repo-pattern", "backups"));
+  const backupRoot = path.join(provisionTemplateTarget, ".repo-pattern", "backups", backupName);
+  await assert.rejects(() => fs.readFile(path.join(backupRoot, ".mcp.json")), { code: "ENOENT" });
+  await assert.rejects(() => fs.readFile(path.join(backupRoot, ".claude", "settings.local.json")), { code: "ENOENT" });
 } finally {
   console.log = originalLog;
   await fs.rm(provisionTemplateTarget, { recursive: true, force: true });
+}
+
+const symlinkTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-symlink-target-"));
+const symlinkDestination = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-symlink-destination-"));
+console.log = () => {};
+try {
+  await fs.symlink(symlinkDestination, path.join(symlinkTarget, ".claude"), "dir");
+  await assert.rejects(
+    () => provisionProject({
+      sourceRoot: repoRoot,
+      target: symlinkTarget,
+      profile: "minimal",
+      localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: secretSentinel }
+    }),
+    /\.claude.*symlink/
+  );
+  await assert.rejects(
+    () => fs.readFile(path.join(symlinkDestination, "settings.local.json")),
+    { code: "ENOENT" }
+  );
+} finally {
+  console.log = originalLog;
+  await fs.rm(symlinkTarget, { recursive: true, force: true });
+  await fs.rm(symlinkDestination, { recursive: true, force: true });
+}
+
+const settingsSymlinkTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-settings-symlink-target-"));
+const settingsSymlinkDestination = path.join(os.tmpdir(), `repo-pattern-settings-symlink-destination-${process.pid}`);
+console.log = () => {};
+try {
+  await fs.mkdir(path.join(settingsSymlinkTarget, ".claude"));
+  await fs.writeFile(settingsSymlinkDestination, "unchanged", "utf8");
+  await fs.symlink(settingsSymlinkDestination, path.join(settingsSymlinkTarget, ".claude", "settings.local.json"));
+  await assert.rejects(
+    () => provisionProject({
+      sourceRoot: repoRoot,
+      target: settingsSymlinkTarget,
+      profile: "minimal",
+      localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: secretSentinel }
+    }),
+    /settings\.local\.json.*symlink/
+  );
+  assert.equal(await fs.readFile(settingsSymlinkDestination, "utf8"), "unchanged");
+} finally {
+  console.log = originalLog;
+  await fs.rm(settingsSymlinkTarget, { recursive: true, force: true });
+  await fs.rm(settingsSymlinkDestination, { force: true });
+}
+
+const eccSettingsTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-ecc-settings-"));
+console.log = () => {};
+try {
+  const eccSettingsPath = path.join(eccSettingsTarget, ".claude", "settings.local.json");
+  await fs.mkdir(path.dirname(eccSettingsPath));
+  await fs.writeFile(eccSettingsPath, JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: secretSentinel } }), { mode: 0o666 });
+  await setupEcc({ target: eccSettingsTarget });
+  assert.equal((await fs.stat(eccSettingsPath)).mode & 0o777, 0o600);
+  assert.match(await fs.readFile(eccSettingsPath, "utf8"), /do-not-persist-anthropic-token/);
+} finally {
+  console.log = originalLog;
+  await fs.rm(eccSettingsTarget, { recursive: true, force: true });
+}
+
+const eccSymlinkTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-ecc-symlink-target-"));
+const eccSymlinkDestination = path.join(os.tmpdir(), `repo-pattern-ecc-symlink-destination-${process.pid}`);
+console.log = () => {};
+try {
+  await fs.mkdir(path.join(eccSymlinkTarget, ".claude"));
+  await fs.writeFile(eccSymlinkDestination, "not-json", "utf8");
+  await fs.symlink(eccSymlinkDestination, path.join(eccSymlinkTarget, ".claude", "settings.local.json"));
+  await assert.rejects(
+    () => setupEcc({ target: eccSymlinkTarget }),
+    /settings\.local\.json.*symlink/
+  );
+  assert.equal(await fs.readFile(eccSymlinkDestination, "utf8"), "not-json");
+} finally {
+  console.log = originalLog;
+  await fs.rm(eccSymlinkTarget, { recursive: true, force: true });
+  await fs.rm(eccSymlinkDestination, { force: true });
+}
+
+const eccClaudeSymlinkTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-ecc-claude-symlink-target-"));
+const eccClaudeSymlinkDestination = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-ecc-claude-symlink-destination-"));
+console.log = () => {};
+try {
+  await fs.symlink(eccClaudeSymlinkDestination, path.join(eccClaudeSymlinkTarget, ".claude"), "dir");
+  await assert.rejects(
+    () => setupEcc({ target: eccClaudeSymlinkTarget }),
+    /\.claude.*symlink/
+  );
+  await assert.rejects(
+    () => fs.readFile(path.join(eccClaudeSymlinkDestination, "settings.local.json")),
+    { code: "ENOENT" }
+  );
+} finally {
+  console.log = originalLog;
+  await fs.rm(eccClaudeSymlinkTarget, { recursive: true, force: true });
+  await fs.rm(eccClaudeSymlinkDestination, { recursive: true, force: true });
+}
+
+const pluginSettingsTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-plugin-settings-"));
+console.log = () => {};
+try {
+  const pluginSettingsPath = path.join(pluginSettingsTarget, ".claude", "settings.local.json");
+  await fs.mkdir(path.dirname(pluginSettingsPath));
+  await fs.writeFile(pluginSettingsPath, JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: secretSentinel } }), { mode: 0o666 });
+  await applyOptionalSkills({ target: pluginSettingsTarget, skills: ["taste"] });
+  assert.equal((await fs.stat(pluginSettingsPath)).mode & 0o777, 0o600);
+  assert.match(await fs.readFile(pluginSettingsPath, "utf8"), /do-not-persist-anthropic-token/);
+} finally {
+  console.log = originalLog;
+  await fs.rm(pluginSettingsTarget, { recursive: true, force: true });
+}
+
+const pluginSymlinkTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-plugin-symlink-target-"));
+const pluginSymlinkDestination = path.join(os.tmpdir(), `repo-pattern-plugin-symlink-destination-${process.pid}`);
+console.log = () => {};
+try {
+  await fs.mkdir(path.join(pluginSymlinkTarget, ".claude"));
+  await fs.writeFile(pluginSymlinkDestination, "not-json", "utf8");
+  await fs.symlink(pluginSymlinkDestination, path.join(pluginSymlinkTarget, ".claude", "settings.local.json"));
+  await assert.rejects(
+    () => applyOptionalSkills({ target: pluginSymlinkTarget, skills: ["taste"] }),
+    /settings\.local\.json.*symlink/
+  );
+  assert.equal(await fs.readFile(pluginSymlinkDestination, "utf8"), "not-json");
+} finally {
+  console.log = originalLog;
+  await fs.rm(pluginSymlinkTarget, { recursive: true, force: true });
+  await fs.rm(pluginSymlinkDestination, { force: true });
+}
+
+const pluginClaudeSymlinkTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-plugin-claude-symlink-target-"));
+const pluginClaudeSymlinkDestination = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-plugin-claude-symlink-destination-"));
+console.log = () => {};
+try {
+  await fs.symlink(pluginClaudeSymlinkDestination, path.join(pluginClaudeSymlinkTarget, ".claude"), "dir");
+  await assert.rejects(
+    () => applyOptionalSkills({ target: pluginClaudeSymlinkTarget, skills: ["taste"] }),
+    /\.claude.*symlink/
+  );
+  await assert.rejects(
+    () => fs.readFile(path.join(pluginClaudeSymlinkDestination, "settings.local.json")),
+    { code: "ENOENT" }
+  );
+} finally {
+  console.log = originalLog;
+  await fs.rm(pluginClaudeSymlinkTarget, { recursive: true, force: true });
+  await fs.rm(pluginClaudeSymlinkDestination, { recursive: true, force: true });
+}
+
+const cleanupCredentialTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-cleanup-credentials-"));
+console.log = () => {};
+try {
+  await fs.mkdir(path.join(cleanupCredentialTarget, ".claude"), { recursive: true });
+  await fs.writeFile(path.join(cleanupCredentialTarget, ".claude", "settings.json"), "{}", "utf8");
+  await fs.writeFile(path.join(cleanupCredentialTarget, ".claude", "settings.local.json"), JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: secretSentinel } }), "utf8");
+  await fs.writeFile(path.join(cleanupCredentialTarget, ".mcp.json"), JSON.stringify({ mcpServers: { context7: { env: { CONTEXT7_API_KEY: "cleanup-key" } } } }), "utf8");
+  await cleanupProject({ sourceRoot: repoRoot, target: cleanupCredentialTarget });
+  assert.match(await fs.readFile(path.join(cleanupCredentialTarget, ".claude", "settings.local.json"), "utf8"), /do-not-persist-anthropic-token/);
+  assert.match(await fs.readFile(path.join(cleanupCredentialTarget, ".mcp.json"), "utf8"), /cleanup-key/);
+  const [backupName] = await fs.readdir(path.join(cleanupCredentialTarget, ".repo-pattern", "backups"));
+  const backupRoot = path.join(cleanupCredentialTarget, ".repo-pattern", "backups", backupName);
+  await assert.rejects(() => fs.readFile(path.join(backupRoot, ".mcp.json")), { code: "ENOENT" });
+  await assert.rejects(() => fs.readFile(path.join(backupRoot, ".claude", "settings.local.json")), { code: "ENOENT" });
+} finally {
+  console.log = originalLog;
+  await fs.rm(cleanupCredentialTarget, { recursive: true, force: true });
+}
+
+const defaultProvisionTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-default-provision-"));
+console.log = () => {};
+try {
+  await provisionProject({
+    sourceRoot: repoRoot,
+    target: defaultProvisionTarget,
+    profile: "minimal",
+    mcpValues: { CONTEXT7_API_KEY: "default-run-key" }
+  });
+  const mcpConfigText = await fs.readFile(path.join(defaultProvisionTarget, ".mcp.json"), "utf8");
+  const localSettingsText = await fs.readFile(path.join(defaultProvisionTarget, ".claude", "settings.local.json"), "utf8");
+  assert.match(mcpConfigText, /default-run-key/);
+  assert.equal(localSettingsText.includes("default-run-key"), false);
+} finally {
+  console.log = originalLog;
+  await fs.rm(defaultProvisionTarget, { recursive: true, force: true });
+}
+
+const runOnlyTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-run-only-"));
+console.log = () => {};
+try {
+  await provisionProject({
+    sourceRoot: repoRoot,
+    target: runOnlyTarget,
+    profile: "minimal",
+    mcpValues: {
+      CONTEXT7_API_KEY: "run-only-key",
+      ANTHROPIC_AUTH_TOKEN: secretSentinel
+    },
+    localSettingsEnv: {
+      CONTEXT7_API_KEY: "previously-saved-key",
+      ANTHROPIC_AUTH_TOKEN: secretSentinel
+    }
+  });
+  const localSettingsText = await fs.readFile(path.join(runOnlyTarget, ".claude", "settings.local.json"), "utf8");
+  const mcpConfigText = await fs.readFile(path.join(runOnlyTarget, ".mcp.json"), "utf8");
+  const setupLockText = await fs.readFile(path.join(runOnlyTarget, ".repo-pattern", ".repo-pattern.lock.json"), "utf8");
+  assert.equal(localSettingsText.includes("run-only-key"), false);
+  assert.equal(localSettingsText.includes("previously-saved-key"), false);
+  assert.match(localSettingsText, /do-not-persist-anthropic-token/);
+  assert.match(mcpConfigText, /run-only-key/);
+  assert.equal(mcpConfigText.includes(secretSentinel), false);
+  assert.equal(setupLockText.includes("run-only-key"), false);
+  assert.equal(setupLockText.includes(secretSentinel), false);
+} finally {
+  console.log = originalLog;
+  await fs.rm(runOnlyTarget, { recursive: true, force: true });
 }
 
 const trackedLockTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-tracked-lock-"));
