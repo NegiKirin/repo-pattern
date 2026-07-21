@@ -23,6 +23,7 @@
   },
   "env": {
     "ENABLE_TOOL_SEARCH": "auto:5",
+    "CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION": "5",
     "ANTHROPIC_BASE_URL": "https://example.com/v1",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6",

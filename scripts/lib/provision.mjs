@@ -73,9 +73,22 @@ export function applyAttributionSetting(settings, attributionConfig = { mode: "o
   return next;
 }
 
-async function writeClaudeSettings({ sourceRoot, target, attributionConfig, dryRun }) {
+export function applyPermissionSettings(settings, permissionConfig = { bypass: "deny" }) {
+  const permissions = { ...(settings.permissions || {}) };
+  if (permissionConfig.bypass === "allow") {
+    permissions.defaultMode = "bypassPermissions";
+    delete permissions.disableBypassPermissionsMode;
+  } else {
+    permissions.defaultMode = "default";
+    permissions.disableBypassPermissionsMode = "disable";
+  }
+  return { ...settings, permissions };
+}
+
+async function writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun }) {
   const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.example.json"), {});
-  await writeJson(path.join(target, ".claude", "settings.json"), applyAttributionSetting(template, attributionConfig), { dryRun });
+  const settings = applyPermissionSettings(applyAttributionSetting(template, attributionConfig), permissionConfig);
+  await writeJson(path.join(target, ".claude", "settings.json"), settings, { dryRun });
 }
 
 export async function updateClaudeAttribution({ sourceRoot, target, attributionConfig, dryRun }) {
@@ -84,6 +97,15 @@ export async function updateClaudeAttribution({ sourceRoot, target, attributionC
   const current = await readJson(file, null);
   const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.example.json"), {});
   await writeJson(file, applyAttributionSetting(current || template, attributionConfig), { dryRun });
+  await appendGitignoreLine(target, ".claude/", { dryRun });
+}
+
+export async function updateClaudePermissions({ sourceRoot, target, permissionConfig, dryRun }) {
+  if (isTracked(target, ".claude/settings.json")) throw new Error(".claude/settings.json is tracked. Untrack it before writing Claude Code settings.");
+  const file = path.join(target, ".claude", "settings.json");
+  const current = await readJson(file, null);
+  const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.example.json"), {});
+  await writeJson(file, applyPermissionSettings(current || template, permissionConfig), { dryRun });
   await appendGitignoreLine(target, ".claude/", { dryRun });
 }
 
@@ -123,7 +145,7 @@ async function writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun
   await appendGitignoreLine(target, ".claude/", { dryRun });
 }
 
-export async function provisionProject({ sourceRoot, target, profile = "web", mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, attributionConfig = { mode: "off" }, ruleMode = "auto", rules = null, applyRules = false, optionalSkills = [] }) {
+export async function provisionProject({ sourceRoot, target, profile = "web", mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, attributionConfig = { mode: "off" }, permissionConfig = { bypass: "deny" }, ruleMode = "auto", rules = null, applyRules = false, optionalSkills = [] }) {
   printSummary("Provisioning target", [["Target", target]]);
   await rejectClaudeSymlink(target, { dryRun });
   const audit = await auditProject(target);
@@ -152,7 +174,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", mc
     { dryRun }
   );
 
-  await writeClaudeSettings({ sourceRoot, target, attributionConfig, dryRun });
+  await writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun });
   await appendGitignoreLine(target, ".claude/", { dryRun });
 
   await writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun });

@@ -3,7 +3,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { auditProject, printAudit } from "./audit.mjs";
 import { detectProject } from "./project-detect.mjs";
-import { provisionProject, updateClaudeAttribution } from "./provision.mjs";
+import { provisionProject, updateClaudeAttribution, updateClaudePermissions } from "./provision.mjs";
 import { doctorProject } from "./doctor.mjs";
 import { collectMcpValues, generateMcp, listAvailableMcpServers, persistedMcpValues, readGeneratedMcpValues, readMcpConfig } from "./mcp.mjs";
 import { askConfirm, askPassword, askText, isInteractive, printBox, printLogo, printSummary, selectMany, selectOne, style } from "./prompt.mjs";
@@ -36,7 +36,12 @@ function validateUrl(value) {
   }
 }
 
+function validatePositiveInteger(value) {
+  return /^[1-9]\d*$/.test(String(value)) ? true : "Use a positive whole number.";
+}
+
 const LOCAL_SETTINGS_FIELDS = [
+  ["CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION", "5", askText, validatePositiveInteger],
   ["ANTHROPIC_AUTH_TOKEN", "", askPassword, validateRequired],
   ["ANTHROPIC_BASE_URL", "https://example.com/v1", askText, validateUrl],
   ["ANTHROPIC_DEFAULT_OPUS_MODEL", "claude-opus-4-8", askText, validateRequired],
@@ -53,7 +58,7 @@ function safeRetryLocalSettingsEnv(localSettingsEnv = {}) {
   return Object.fromEntries(Object.entries(localSettingsEnv).filter(([name]) => !RETRY_SECRET_LOCAL_SETTINGS.has(name)));
 }
 
-export function setupRetryOptions({ action, mcpConfig, mcpValues = {}, ruleConfig, optionalSkills, localSettingsEnv, attributionConfig, dryRun }) {
+export function setupRetryOptions({ action, mcpConfig, mcpValues = {}, ruleConfig, optionalSkills, localSettingsEnv, attributionConfig, permissionConfig = { bypass: "deny" }, dryRun }) {
   return {
     action,
     profile: mcpConfig.profile,
@@ -66,6 +71,7 @@ export function setupRetryOptions({ action, mcpConfig, mcpValues = {}, ruleConfi
     optionalSkills,
     localSettingsEnv: safeRetryLocalSettingsEnv(localSettingsEnv),
     attributionConfig,
+    permissionConfig,
     dryRun
   };
 }
@@ -73,7 +79,12 @@ export function setupRetryOptions({ action, mcpConfig, mcpValues = {}, ruleConfi
 function setupOptionsFromLock(lock) {
   const setup = lock?.setup;
   if (!["failed", "running"].includes(setup?.status)) return null;
-  return setup.options || null;
+  const options = setup.options || null;
+  if (!options) return null;
+  return {
+    ...options,
+    permissionConfig: options.permissionConfig?.bypass === "allow" ? { bypass: "allow" } : { bypass: "deny" }
+  };
 }
 
 async function writeSetupStatus(target, setup, { dryRun = false } = {}) {
@@ -103,6 +114,7 @@ function retryRows(setup) {
     ["MCP values", options.mcpValueNames?.length ? options.mcpValueNames.join(", ") : "none"],
     ["Rules", options.applyRules ? options.rules.join(", ") : "none"],
     ["Optional skills", options.optionalSkills?.length ? options.optionalSkills.join(", ") : "none"],
+    ["Bypass permissions", options.permissionConfig?.bypass === "allow" ? "allowed by default" : "disabled"],
     ["Commit attribution", attributionSummary(options.attributionConfig || { mode: "off" })],
     ["Dry-run", options.dryRun ? "yes" : "no"]
   ];
@@ -147,7 +159,7 @@ async function checkClaudeCode() {
 
 async function chooseProfile(sourceRoot, profile, detection) {
   return selectOne({
-    message: "Step 1/5 — Choose MCP profile",
+    message: "Step 1/6 — Choose MCP profile",
     options: await profileOptions(sourceRoot),
     initialValue: suggestedProfile(detection, profile)
   });
@@ -172,7 +184,7 @@ async function chooseMcpValues(sourceRoot, mcpConfig, values = {}) {
 async function chooseRuleConfig(detection) {
   const autoRules = selectEccRules(detection);
   const ruleMode = await selectOne({
-    message: "Step 2/5 — Choose ECC rule detection mode",
+    message: "Step 2/6 — Choose ECC rule detection mode",
     options: [
       { value: "auto", label: "auto", description: `detect from project (${autoRules.join(", ")})` },
       { value: "manual", label: "manual", description: "choose rule packs by type" },
@@ -197,7 +209,7 @@ async function chooseRuleConfig(detection) {
 
 async function chooseOptionalSkills(initialValues = []) {
   return selectMany({
-    message: "Step 3/5 — Optional external skills",
+    message: "Step 3/6 — Optional external skills",
     options: OPTIONAL_SKILLS,
     initialValues
   });
@@ -208,7 +220,7 @@ export function needsLocalSettingsPrompt(values = {}) {
 }
 
 async function chooseLocalSettingsEnv(initialValues = {}) {
-  printBox("Step 4/5 — Local Claude provider settings", ["These values are written to .claude/settings.local.json and gitignored."]);
+  printBox("Step 4/6 — Local Claude provider settings", ["These values are written to .claude/settings.local.json and gitignored."]);
   const env = {};
   for (const [name, fallback, ask, validate] of LOCAL_SETTINGS_FIELDS) {
     env[name] = await ask(name, { initial: process.env[name] || initialValues[name] || fallback, validate });
@@ -216,8 +228,21 @@ async function chooseLocalSettingsEnv(initialValues = {}) {
   return env;
 }
 
+async function choosePermissionConfig() {
+  return {
+    bypass: await selectOne({
+      message: "Step 5/6 — Allow bypass permissions mode?",
+      options: [
+        { value: "deny", label: "No", description: "disable bypass permissions mode" },
+        { value: "allow", label: "Yes", description: "default to bypassPermissions" }
+      ],
+      initialValue: "deny"
+    })
+  };
+}
+
 async function chooseAttributionConfig() {
-  printBox("Step 5/5 — Claude Code commit attribution", ["Controls .claude/settings.json attribution.commit."]);
+  printBox("Step 6/6 — Claude Code commit attribution", ["Controls .claude/settings.json attribution.commit."]);
   const mode = await selectOne({
     message: "Commit attribution?",
     options: [
@@ -243,7 +268,7 @@ function attributionSummary(attributionConfig) {
   return "off (commit: \"\")";
 }
 
-async function confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig, optionalSkills, localSettingsEnv, attributionConfig, dryRun }) {
+async function confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig, optionalSkills, localSettingsEnv, attributionConfig, permissionConfig, dryRun }) {
   const hasLocalSkill = optionalSkills.some((name) => !OPTIONAL_SKILLS.find((skill) => skill.value === name)?.plugin);
   printSummary("Setup summary", [
     ["Action", action],
@@ -255,10 +280,12 @@ async function confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig
     ["Optional skills", optionalSkills.length ? optionalSkills.join(", ") : "none"],
     ["Local settings", ".claude/settings.local.json"],
     ["Base URL", localSettingsEnv.ANTHROPIC_BASE_URL],
+    ["Subagent session limit", localSettingsEnv.CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION],
     ["Opus", localSettingsEnv.ANTHROPIC_DEFAULT_OPUS_MODEL],
     ["Sonnet", localSettingsEnv.ANTHROPIC_DEFAULT_SONNET_MODEL],
     ["Haiku", localSettingsEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL],
     ["Auth token", style("dim", "[hidden]")],
+    ["Bypass permissions", permissionConfig.bypass === "allow" ? "allowed by default" : "disabled"],
     ["Commit attribution", attributionSummary(attributionConfig)],
     ["Dry-run", dryRun ? "yes" : "no"],
     ["Will write", `CLAUDE.md (if missing), .claude/CLAUDE.md, .claude/settings.json, .claude/settings.local.json, .mcp.json, .repo-pattern/.repo-pattern.json, .repo-pattern/.repo-pattern.lock.json${optionalSkills.length ? ", optional skill/plugin config" : ""}${hasLocalSkill ? ", .claude/skills" : ""}`],
@@ -285,6 +312,7 @@ async function handleInitialized({ sourceRoot, target, profile, dryRun }) {
       { value: "doctor", label: "Run doctor" },
       { value: "mcp", label: "Regenerate MCP profile" },
       { value: "skills", label: "Add optional skills" },
+      { value: "permissions", label: "Configure bypass permissions" },
       { value: "attribution", label: "Update commit attribution" },
       { value: "exit", label: "Exit" }
     ],
@@ -309,6 +337,10 @@ async function handleInitialized({ sourceRoot, target, profile, dryRun }) {
   if (action === "skills") {
     const optionalSkills = await chooseOptionalSkills();
     await applyOptionalSkills({ target, skills: optionalSkills, dryRun });
+    if (!dryRun) await doctorProject(target, { updateLock: true, dryRun });
+  }
+  if (action === "permissions") {
+    await updateClaudePermissions({ sourceRoot, target, permissionConfig: await choosePermissionConfig(), dryRun });
     if (!dryRun) await doctorProject(target, { updateLock: true, dryRun });
   }
   if (action === "attribution") {
@@ -389,17 +421,18 @@ export async function setupProject({ sourceRoot, target, profile = "web", dryRun
 
   const currentSettingsEnv = await currentLocalSettingsEnv(target);
   const mcpValues = await chooseMcpValues(sourceRoot, mcpConfig, await readGeneratedMcpValues(target));
-  const retryLocalSettingsEnv = { ...previousOptions?.localSettingsEnv, ...currentSettingsEnv };
+  const retryLocalSettingsEnv = { CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: "5", ...previousOptions?.localSettingsEnv, ...currentSettingsEnv };
   const localSettingsEnv = previousOptions && !needsLocalSettingsPrompt(retryLocalSettingsEnv)
     ? retryLocalSettingsEnv
     : await chooseLocalSettingsEnv(retryLocalSettingsEnv);
+  const permissionConfig = previousOptions?.permissionConfig || await choosePermissionConfig();
   const attributionConfig = previousOptions?.attributionConfig || await chooseAttributionConfig();
 
-  if (!await confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, attributionConfig, dryRun })) {
+  if (!await confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, attributionConfig, permissionConfig, dryRun })) {
     throw new Error("Setup cancelled.");
   }
 
-  const retryOptions = setupRetryOptions({ action, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, attributionConfig, dryRun });
+  const retryOptions = setupRetryOptions({ action, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, attributionConfig, permissionConfig, dryRun });
   await writeSetupStatus(target, { status: "running", startedAt: new Date().toISOString(), failedStep: null, error: null, options: retryOptions }, { dryRun });
   try {
     await provisionProject({
@@ -416,7 +449,8 @@ export async function setupProject({ sourceRoot, target, profile = "web", dryRun
       applyRules: ruleConfig.applyRules,
       optionalSkills: selectedOptionalSkills,
       localSettingsEnv,
-      attributionConfig
+      attributionConfig,
+      permissionConfig
     });
     await writeSetupStatus(target, { status: "succeeded", succeededAt: new Date().toISOString(), failedStep: null, error: null, options: retryOptions }, { dryRun });
   } catch (error) {

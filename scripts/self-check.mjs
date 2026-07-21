@@ -9,7 +9,7 @@ import { cleanupProject } from "./lib/cleanup.mjs";
 import { doctorProject } from "./lib/doctor.mjs";
 import { applyEccPluginSettings, setupEcc } from "./lib/ecc.mjs";
 import { applyMcpValues, generateMcp, mcpSecretPrompt, persistedMcpValues, readGeneratedMcpValues, validateRelativeMcpPath } from "./lib/mcp.mjs";
-import { applyAttributionSetting, applyLocalSettings, provisionProject } from "./lib/provision.mjs";
+import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, provisionProject, updateClaudePermissions } from "./lib/provision.mjs";
 import { writePrivateJson } from "./lib/fs-utils.mjs";
 import { printSummary, renderLogo, style } from "./lib/prompt.mjs";
 import { needsLocalSettingsPrompt, setupRetryOptions } from "./lib/setup.mjs";
@@ -96,6 +96,12 @@ assert.deepEqual(applyLocalSettings({ env: {
 assert.deepEqual(applyAttributionSetting({ hooks: {} }, { mode: "off" }), { hooks: {}, attribution: { commit: "" } });
 assert.deepEqual(applyAttributionSetting({ attribution: { commit: "" } }, { mode: "on" }), {});
 assert.deepEqual(applyAttributionSetting({ attribution: { pr: "PR" } }, { mode: "custom", commit: "Custom" }), { attribution: { pr: "PR", commit: "Custom" } });
+assert.deepEqual(applyPermissionSettings({ permissions: { deny: ["Read(.env)"] } }, { bypass: "allow" }), {
+  permissions: { deny: ["Read(.env)"], defaultMode: "bypassPermissions" }
+});
+assert.deepEqual(applyPermissionSettings({ permissions: { defaultMode: "bypassPermissions" } }, { bypass: "deny" }), {
+  permissions: { defaultMode: "default", disableBypassPermissionsMode: "disable" }
+});
 assert.deepEqual(setupRetryOptions({
   action: "setup",
   mcpConfig: { profile: "web", mcpServers: null },
@@ -108,6 +114,7 @@ assert.deepEqual(setupRetryOptions({
   localSettingsEnv: {
     ANTHROPIC_BASE_URL: "https://example.com/v1",
     ANTHROPIC_AUTH_TOKEN: secretSentinel,
+    CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: "5",
     CONTEXT7_API_KEY: "context7-key",
     TAVILY_API_KEY: "tavily-key"
   },
@@ -123,11 +130,23 @@ assert.deepEqual(setupRetryOptions({
   ruleMode: "auto",
   rules: [],
   optionalSkills: ["nextjs-pattern"],
-  localSettingsEnv: { ANTHROPIC_BASE_URL: "https://example.com/v1" },
+  localSettingsEnv: {
+    ANTHROPIC_BASE_URL: "https://example.com/v1",
+    CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: "5"
+  },
   attributionConfig: { mode: "off" },
+  permissionConfig: { bypass: "deny" },
   dryRun: false
 });
 assert.equal(needsLocalSettingsPrompt({ ANTHROPIC_BASE_URL: "https://example.com/v1" }), true);
+assert.equal(needsLocalSettingsPrompt({
+  CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: "0",
+  ANTHROPIC_AUTH_TOKEN: secretSentinel,
+  ANTHROPIC_BASE_URL: "https://example.com/v1",
+  ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-8",
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-4-6",
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-4-5"
+}), true);
 assert.equal(needsLocalSettingsPrompt({
   ANTHROPIC_AUTH_TOKEN: " ",
   ANTHROPIC_BASE_URL: "https://example.com/v1",
@@ -145,6 +164,7 @@ assert.equal(needsLocalSettingsPrompt({
 assert.equal(needsLocalSettingsPrompt({
   ANTHROPIC_AUTH_TOKEN: secretSentinel,
   ANTHROPIC_BASE_URL: "https://example.com/v1",
+  CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: "5",
   ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-8",
   ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-4-6",
   ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-4-5"
@@ -553,12 +573,15 @@ try {
     },
     localSettingsEnv: {
       ANTHROPIC_BASE_URL: "https://example.com/v1",
-      ANTHROPIC_AUTH_TOKEN: secretSentinel
-    }
+      ANTHROPIC_AUTH_TOKEN: secretSentinel,
+      CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: "7"
+    },
+    permissionConfig: { bypass: "allow" }
   });
   const localSettingsPath = path.join(provisionTemplateTarget, ".claude", "settings.local.json");
   const localSettingsText = await fs.readFile(localSettingsPath, "utf8");
   const localSettings = JSON.parse(localSettingsText);
+  const settings = JSON.parse(await fs.readFile(path.join(provisionTemplateTarget, ".claude", "settings.json"), "utf8"));
   assert.equal((await fs.stat(localSettingsPath)).mode & 0o777, 0o600);
   const setupLockText = await fs.readFile(path.join(provisionTemplateTarget, ".repo-pattern", ".repo-pattern.lock.json"), "utf8");
   const mcpConfigPath = path.join(provisionTemplateTarget, ".mcp.json");
@@ -566,6 +589,9 @@ try {
   assert.equal((await fs.stat(mcpConfigPath)).mode & 0o777, 0o600);
   assert.equal(localSettings.env.ANTHROPIC_AUTH_TOKEN, secretSentinel);
   assert.equal(localSettings.env.ANTHROPIC_BASE_URL, "https://example.com/v1");
+  assert.equal(localSettings.env.CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION, "7");
+  assert.equal(settings.permissions.defaultMode, "bypassPermissions");
+  assert.equal("disableBypassPermissionsMode" in settings.permissions, false);
   assert.equal("CONTEXT7_API_KEY" in localSettings.env, false);
   assert.equal("TAVILY_API_KEY" in localSettings.env, false);
   assert.match(mcpConfigText, /redacted-key/);
@@ -783,9 +809,17 @@ try {
     mcpValues: { CONTEXT7_API_KEY: "default-run-key" }
   });
   const mcpConfigText = await fs.readFile(path.join(defaultProvisionTarget, ".mcp.json"), "utf8");
-  const localSettingsText = await fs.readFile(path.join(defaultProvisionTarget, ".claude", "settings.local.json"), "utf8");
+  const settingsPath = path.join(defaultProvisionTarget, ".claude", "settings.json");
+  const settings = JSON.parse(await fs.readFile(settingsPath, "utf8"));
   assert.match(mcpConfigText, /default-run-key/);
-  assert.equal(localSettingsText.includes("default-run-key"), false);
+  assert.equal(settings.permissions.defaultMode, "default");
+  assert.equal(settings.permissions.disableBypassPermissionsMode, "disable");
+  const localSettings = JSON.parse(await fs.readFile(path.join(defaultProvisionTarget, ".claude", "settings.local.json"), "utf8"));
+  assert.equal("env" in localSettings, false);
+  await updateClaudePermissions({ sourceRoot: repoRoot, target: defaultProvisionTarget, permissionConfig: { bypass: "allow" } });
+  const updatedSettings = JSON.parse(await fs.readFile(settingsPath, "utf8"));
+  assert.equal(updatedSettings.permissions.defaultMode, "bypassPermissions");
+  assert.equal("disableBypassPermissionsMode" in updatedSettings.permissions, false);
 } finally {
   console.log = originalLog;
   await fs.rm(defaultProvisionTarget, { recursive: true, force: true });
