@@ -1,11 +1,12 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import { auditProject, printAudit } from "./audit.mjs";
 import { cleanupProject } from "./cleanup.mjs";
-import { generateMcp, persistedMcpValues } from "./mcp.mjs";
+import { generateMcp, withoutPersistedMcpValues } from "./mcp.mjs";
 import { setupEcc } from "./ecc.mjs";
 import { doctorProject } from "./doctor.mjs";
 import { applyEccRules } from "./rules.mjs";
-import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, ensureRepoPatternGitignore, isTracked, readJson, removePath, repoConfigPath, repoLockPath, writeJson, writeIfMissing } from "./fs-utils.mjs";
+import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, ensureRepoPatternGitignore, isTracked, readJson, removePath, repoConfigPath, repoLockPath, writeJson, writeIfMissing, writePrivateJson } from "./fs-utils.mjs";
 import { printSummary, style } from "./prompt.mjs";
 import { applyOptionalSkills } from "./skills.mjs";
 
@@ -86,25 +87,45 @@ export async function updateClaudeAttribution({ sourceRoot, target, attributionC
   await appendGitignoreLine(target, ".claude/", { dryRun });
 }
 
-export function applyLocalSettings(settings, localSettingsEnv, mcpValues = {}) {
-  const env = Object.fromEntries(Object.entries({
-    ...(settings.env || {}),
-    ...localSettingsEnv,
-    ...mcpValues
-  }).filter(([name]) => name !== "ANTHROPIC_AUTH_TOKEN"));
-  return { ...settings, env };
+export function applyLocalSettings(settings, localSettingsEnv) {
+  return {
+    ...settings,
+    env: withoutPersistedMcpValues({
+      ...(settings.env || {}),
+      ...localSettingsEnv
+    })
+  };
 }
 
-async function writeLocalSettings({ sourceRoot, target, localSettingsEnv, mcpValues, dryRun }) {
+async function rejectClaudeSymlink(target, { dryRun = false } = {}) {
+  if (dryRun) return;
+  let stat;
+  try {
+    stat = await fs.lstat(path.join(target, ".claude"));
+  } catch (error) {
+    if (error.code === "ENOENT") return;
+    throw error;
+  }
+  if (stat.isSymbolicLink()) throw new Error(".claude must not be a symlink.");
+}
+
+async function writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun }) {
   if (!localSettingsEnv) return;
   if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local provider settings.");
+  const claudeDir = path.join(target, ".claude");
+  await rejectClaudeSymlink(target, { dryRun });
   const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.local.example.json"), {});
-  await writeJson(path.join(target, ".claude", "settings.local.json"), applyLocalSettings(template, localSettingsEnv, mcpValues), { dryRun });
+  const file = path.join(claudeDir, "settings.local.json");
+  await writePrivateJson(file, applyLocalSettings(template, localSettingsEnv), {
+    dryRun,
+    label: ".claude/settings.local.json"
+  });
   await appendGitignoreLine(target, ".claude/", { dryRun });
 }
 
 export async function provisionProject({ sourceRoot, target, profile = "web", mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, attributionConfig = { mode: "off" }, ruleMode = "auto", rules = null, applyRules = false, optionalSkills = [] }) {
   printSummary("Provisioning target", [["Target", target]]);
+  await rejectClaudeSymlink(target, { dryRun });
   const audit = await auditProject(target);
   printAudit(audit);
 
@@ -115,7 +136,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", mc
   if (audit.state === "LEGACY_VENDOR") {
     await cleanupProject({ sourceRoot, target, dryRun });
   } else {
-    await backupPaths(target, ["CLAUDE.md", ".claude", ".mcp.json", ".repo-pattern.json", ".repo-pattern.lock.json"], { dryRun });
+    await backupPaths(target, ["CLAUDE.md", ".claude/CLAUDE.md", ".claude/settings.json", ".claude/rules", ".claude/skills", ".claude/commands", ".claude/hooks", ".claude/scripts", ".repo-pattern.json", ".repo-pattern.lock.json"], { dryRun });
   }
 
   if (isTracked(target, ".claude/settings.json")) throw new Error(".claude/settings.json is tracked. Untrack it before writing Claude Code settings.");
@@ -134,7 +155,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", mc
   await writeClaudeSettings({ sourceRoot, target, attributionConfig, dryRun });
   await appendGitignoreLine(target, ".claude/", { dryRun });
 
-  await writeLocalSettings({ sourceRoot, target, localSettingsEnv, mcpValues: persistedMcpValues(mcpValues), dryRun });
+  await writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun });
 
   await ensureRepoPatternGitignore(target, { dryRun });
   await writeJson(repoConfigPath(target), await repoPatternConfig(sourceRoot, profile), { dryRun });

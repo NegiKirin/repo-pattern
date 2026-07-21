@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
@@ -62,6 +63,31 @@ export async function readJson(file, fallback = null) {
   return JSON.parse(text);
 }
 
+export async function readPrivateJson(file, fallback = null, { label = path.basename(file), parentLabel = null } = {}) {
+  const parent = path.dirname(file);
+  if (parentLabel) {
+    try {
+      if ((await fs.lstat(parent)).isSymbolicLink()) throw new Error(`${parentLabel} must not be a symlink.`);
+    } catch (error) {
+      if (error.code === "ENOENT") return fallback;
+      throw error;
+    }
+  }
+  let handle;
+  try {
+    handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch (error) {
+    if (error.code === "ENOENT") return fallback;
+    if (error.code === "ELOOP") throw new Error(`${label} must not be a symlink.`);
+    throw error;
+  }
+  try {
+    return JSON.parse(await handle.readFile("utf8"));
+  } finally {
+    await handle.close();
+  }
+}
+
 export async function writeJson(file, data, { dryRun = false } = {}) {
   if (dryRun) {
     console.log(`[dry-run] write JSON ${file}`);
@@ -69,6 +95,43 @@ export async function writeJson(file, data, { dryRun = false } = {}) {
   }
   await ensureDir(path.dirname(file));
   await fs.writeFile(file, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+}
+
+export async function writePrivateJson(file, data, { dryRun = false, label = path.basename(file), parentLabel = null } = {}) {
+  if (dryRun) {
+    console.log(`[dry-run] write JSON ${file}`);
+    return;
+  }
+  const parent = path.dirname(file);
+  if (parentLabel) {
+    let parentStat = null;
+    try {
+      parentStat = await fs.lstat(parent);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    if (parentStat?.isSymbolicLink()) throw new Error(`${parentLabel} must not be a symlink.`);
+  }
+  await ensureDir(parent);
+  let stat = null;
+  try {
+    stat = await fs.lstat(file);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  if (stat?.isSymbolicLink()) throw new Error(`${label} must not be a symlink.`);
+  const current = typeof data === "function"
+    ? await readPrivateJson(file, {}, { label, parentLabel })
+    : null;
+  const content = `${JSON.stringify(typeof data === "function" ? data(current) : data, null, 2)}\n`;
+  const tempDir = await fs.mkdtemp(path.join(parent, `.${path.basename(file)}-`));
+  const tempFile = path.join(tempDir, path.basename(file));
+  try {
+    await fs.writeFile(tempFile, content, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    await fs.rename(tempFile, file);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
 }
 
 export async function copyRecursive(src, dest, { dryRun = false } = {}) {

@@ -2,7 +2,7 @@ import { execFile, execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, ensureRepoPatternGitignore, exists, isTracked, readJson, readRepoConfig, readRepoLock, removePath, repoConfigPath, repoLockPath, writeJson } from "./fs-utils.mjs";
+import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, ensureRepoPatternGitignore, exists, isTracked, readJson, readRepoConfig, readRepoLock, removePath, repoConfigPath, repoLockPath, writeJson, writePrivateJson } from "./fs-utils.mjs";
 import { isInteractive, printSummary, withSpinner } from "./prompt.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -146,7 +146,11 @@ async function writePluginSkillSettings({ target, skills, dryRun }) {
   if (skills.length === 0) return;
   if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local plugin settings.");
   const file = path.join(target, ".claude", "settings.local.json");
-  await writeJson(file, applyPluginSkillSettings(await readJson(file, {}), skills), { dryRun });
+  await writePrivateJson(file, (settings) => applyPluginSkillSettings(settings, skills), {
+    dryRun,
+    label: ".claude/settings.local.json",
+    parentLabel: ".claude"
+  });
   await appendGitignoreLine(target, ".claude/", { dryRun });
 }
 

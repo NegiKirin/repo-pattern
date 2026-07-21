@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import path from "node:path";
-import { appendGitignoreLine, ensureRepoPatternGitignore, isTracked, readJson, readRepoLock, repoLockPath, writeJson } from "./fs-utils.mjs";
+import { appendGitignoreLine, ensureRepoPatternGitignore, isTracked, readJson, readRepoLock, repoLockPath, writeJson, writePrivateJson } from "./fs-utils.mjs";
 import { printSummary } from "./prompt.mjs";
 
 const ECC_PLUGIN_ID = "ecc@ecc";
@@ -36,7 +36,11 @@ function hasEccPlugin() {
 async function writeEccLocalSettings({ target, dryRun }) {
   if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local plugin settings.");
   const file = path.join(target, ".claude", "settings.local.json");
-  await writeJson(file, applyEccPluginSettings(await readJson(file, {})), { dryRun });
+  await writePrivateJson(file, applyEccPluginSettings, {
+    dryRun,
+    label: ".claude/settings.local.json",
+    parentLabel: ".claude"
+  });
   await appendGitignoreLine(target, ".claude/", { dryRun });
 }
 
