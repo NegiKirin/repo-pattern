@@ -9,14 +9,14 @@
 
 **A clean Claude Code setup and migrator in one command.**
 
-`repo-pattern` initializes or migrates a project into an ECC-first (Everything Claude Code) workspace with safe defaults, MCP profiles, and zero vendored runtime clutter.
+`repo-pattern` initializes or migrates a project into an ECC or gstack Claude Code workspace with safe defaults, MCP profiles, and zero vendored runtime clutter.
 
 ## Why use it?
 
 * **Start fast** — generate `.claude/`, `.mcp.json`, and repo-pattern metadata.
 * **Stay clean** — no local skills, commands, hooks, scripts, or duplicated templates by default.
 * **Use MCP profiles** — choose `minimal`, `web`, `backend`, `research`, `full`, or `custom`.
-* **ECC-first** — `setup` runs or attempts Everything Claude Code setup automatically.
+* **Explicit pipeline** — choose ECC (default) or the upstream global gstack installer.
 * **Migrate safely** — audit, cleanup, doctor, and `setup --migrate` are built in.
 
 ## Install
@@ -44,8 +44,11 @@ npx repo-pattern setup
 Scriptable setup:
 
 ```bash
-npx repo-pattern setup --profile web --yes
+npx repo-pattern setup --profile web --setup-pipeline ecc --yes
+npx repo-pattern setup --profile web --setup-pipeline gstack --yes
 ```
+
+ECC remains the default. gstack setup uses its upstream global checkout at `~/.claude/skills/gstack` and requires Git and Bun v1.0+. On Windows, it also requires Node.js and Git Bash or WSL.
 
 Migrate an existing project:
 
@@ -73,7 +76,8 @@ Common options:
 ```bash
 --target /path/to/project  # default: current directory
 --profile web              # default MCP profile
---with-rules               # opt in to .claude/rules/ecc
+--setup-pipeline ecc        # ecc (default) or gstack
+--with-rules               # opt in to .claude/rules/ecc; ECC only
 --with-skill ui-ux-pro-max # optional UI/UX skill; requires Python 3.x
 --with-skills nextjs-pattern,fastapi-pattern # optional framework pattern skills
 --migrate                  # take over legacy/local Claude runtime surfaces
@@ -128,6 +132,7 @@ target-project/
 | Name | Integrated as | Source | License |
 |----|----|----|----|
 | `karpathy-guidelines` | Built-in `.claude/CLAUDE.md` guidance | https://github.com/multica-ai/andrej-karpathy-skills | MIT |
+| `gstack` | Global setup pipeline via `--setup-pipeline gstack` | https://github.com/garrytan/gstack | MIT |
 | `taste` | Optional Claude Code plugin via `--with-skill taste` | https://github.com/Leonxlnx/taste-skill/ | MIT |
 | `document-specialist` | Optional `.claude/skills/` install via `--with-skill document-specialist` | https://github.com/SpillwaveSolutions/document-specialist-skill/ | NOASSERTION — no upstream license declared during review on 2026-07-06 |
 | `ui-ux-pro-max` | Optional Claude Code plugin via `--with-skill ui-ux-pro-max` | https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/ | MIT |

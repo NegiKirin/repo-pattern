@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { exists, isTracked, readJson, readRepoConfig } from "./fs-utils.mjs";
+import { exists, isTracked, readJson, readRepoConfig, readRepoLock } from "./fs-utils.mjs";
 import { printBox, style } from "./prompt.mjs";
 import { expectedOptionalSkillDirs } from "./skills.mjs";
 
@@ -40,6 +40,7 @@ async function listDirNames(dir) {
 export async function auditProject(target) {
   const settings = await readJson(path.join(target, ".claude", "settings.json"), {});
   const repoPattern = await readRepoConfig(target, null);
+  const lock = await readRepoLock(target, {});
 
   const actualSkillDirs = await listDirNames(path.join(target, ".claude", "skills"));
   const expectedSkillDirs = expectedOptionalSkillDirs(repoPattern?.optionalSkills || []);
@@ -82,17 +83,19 @@ export async function auditProject(target) {
     result.hasClaudeCommandsDir ||
     result.hasClaudeHooksDir ||
     result.hasClaudeScriptsDir ||
-    (result.hasClaudeRulesDir && !result.hasOnlyEccRulesDir)
+    (result.hasClaudeRulesDir && (repoPattern?.workflow === "gstack" || !result.hasOnlyEccRulesDir))
   );
 
+  const setupComplete = repoPattern?.workflow !== "gstack" || lock.gstack?.status === "installed";
   if (!result.hasClaudeDir && !result.hasMcpJson && !result.hasRepoPatternJson) {
     result.state = "EMPTY";
   } else if (
     result.hasRepoPatternJson &&
-    result.repoPattern?.workflow === "ecc-native" &&
+    ["ecc-native", "gstack"].includes(result.repoPattern?.workflow) &&
+    setupComplete &&
     !legacy
   ) {
-    result.state = "ECC_NATIVE_MINIMAL";
+    result.state = result.repoPattern.workflow === "gstack" ? "GSTACK_MINIMAL" : "ECC_NATIVE_MINIMAL";
   } else if (legacy) {
     result.state = "LEGACY_VENDOR";
   } else {
@@ -121,7 +124,8 @@ export function printAudit(audit) {
     [audit.hasClaudeCommandsDir, ".claude/commands present"],
     [audit.hasClaudeHooksDir, ".claude/hooks present"],
     [audit.hasClaudeScriptsDir, ".claude/scripts present"],
-    [audit.hasClaudeRulesDir && !audit.hasOnlyEccRulesDir, "non-ECC .claude/rules present"]
+    [audit.hasClaudeRulesDir && audit.repoPattern?.workflow === "gstack", ".claude/rules is incompatible with gstack"],
+    [audit.hasClaudeRulesDir && audit.repoPattern?.workflow !== "gstack" && !audit.hasOnlyEccRulesDir, "non-ECC .claude/rules present"]
   ].filter(([bad]) => bad);
 
   if (issues.length > 0) {

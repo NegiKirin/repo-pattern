@@ -58,9 +58,10 @@ function safeRetryLocalSettingsEnv(localSettingsEnv = {}) {
   return Object.fromEntries(Object.entries(localSettingsEnv).filter(([name]) => !RETRY_SECRET_LOCAL_SETTINGS.has(name)));
 }
 
-export function setupRetryOptions({ action, mcpConfig, mcpValues = {}, ruleConfig, optionalSkills, localSettingsEnv, attributionConfig, permissionConfig = { bypass: "deny" }, dryRun }) {
+export function setupRetryOptions({ action, setupPipeline, mcpConfig, mcpValues = {}, ruleConfig, optionalSkills, localSettingsEnv, attributionConfig, permissionConfig = { bypass: "deny" }, dryRun }) {
   return {
     action,
+    setupPipeline,
     profile: mcpConfig.profile,
     mcpServers: mcpConfig.mcpServers,
     mcpValueNames: Object.keys(persistedMcpValues(mcpValues)),
@@ -109,6 +110,7 @@ function retryRows(setup) {
     ["Status", setup.status],
     ["Failed step", setup.failedStep || "unknown"],
     ["Error", setup.error || "unknown"],
+    ["Setup pipeline", options.setupPipeline || "ecc"],
     ["Profile", options.profile || "web"],
     ["MCP servers", options.mcpServers?.join(", ") || "from profile"],
     ["MCP values", options.mcpValueNames?.length ? options.mcpValueNames.join(", ") : "none"],
@@ -181,7 +183,19 @@ async function chooseMcpValues(sourceRoot, mcpConfig, values = {}) {
   return collectMcpValues(mcpServers, { values: persistedMcpValues(values) });
 }
 
-async function chooseRuleConfig(detection) {
+async function chooseSetupPipeline(initialValue = "ecc") {
+  return selectOne({
+    message: "Choose setup pipeline",
+    options: [
+      { value: "ecc", label: "ECC", description: "Claude Code plugin with optional project rules" },
+      { value: "gstack", label: "gstack", description: "global skills install; requires Git and Bun" }
+    ],
+    initialValue
+  });
+}
+
+async function chooseRuleConfig(detection, setupPipeline) {
+  if (setupPipeline === "gstack") return { applyRules: false, ruleMode: "auto", rules: [] };
   const autoRules = selectEccRules(detection);
   const ruleMode = await selectOne({
     message: "Step 2/6 — Choose ECC rule detection mode",
@@ -268,10 +282,11 @@ function attributionSummary(attributionConfig) {
   return "off (commit: \"\")";
 }
 
-async function confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig, optionalSkills, localSettingsEnv, attributionConfig, permissionConfig, dryRun }) {
+async function confirmSummary({ action, setupPipeline, target, mcpConfig, mcpValues, ruleConfig, optionalSkills, localSettingsEnv, attributionConfig, permissionConfig, dryRun }) {
   const hasLocalSkill = optionalSkills.some((name) => !OPTIONAL_SKILLS.find((skill) => skill.value === name)?.plugin);
   printSummary("Setup summary", [
     ["Action", action],
+    ["Setup pipeline", setupPipeline],
     ["Target", target],
     ["Profile", mcpConfig.profile],
     ["MCP servers", mcpConfig.mcpServers?.join(", ") || "from profile"],
@@ -304,7 +319,7 @@ async function confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig
 }
 
 async function handleInitialized({ sourceRoot, target, profile, dryRun }) {
-  printBox("Already initialized", ["This target already looks like repo-pattern ECC-native setup."]);
+  printBox("Already initialized", ["This target already looks like a repo-pattern setup."]);
 
   const action = await selectOne({
     message: "What do you want to do?",
@@ -349,18 +364,20 @@ async function handleInitialized({ sourceRoot, target, profile, dryRun }) {
   }
 }
 
-export async function setupProject({ sourceRoot, target, profile = "web", dryRun = false, force = false, migrate = false, yes = false, applyRules = false, optionalSkills = [] }) {
+export async function setupProject({ sourceRoot, target, profile = "web", setupPipeline = "ecc", dryRun = false, force = false, migrate = false, yes = false, applyRules = false, optionalSkills = [] }) {
+  if (!["ecc", "gstack"].includes(setupPipeline)) throw new Error(`Unknown setup pipeline: ${setupPipeline}. Available: ecc, gstack`);
   if (!isInteractive()) {
     if (!yes) throw new Error("setup requires an interactive terminal, or pass --yes for scriptable mode.");
     if (profile === "custom") throw new Error("setup --yes cannot use the custom profile; choose a named profile.");
 
     const audit = await auditProject(target);
-    if (audit.state === "ECC_NATIVE_MINIMAL" && !force && optionalSkills.length === 0) {
+    const expectedState = setupPipeline === "gstack" ? "GSTACK_MINIMAL" : "ECC_NATIVE_MINIMAL";
+    if (audit.state === expectedState && !force && optionalSkills.length === 0) {
       await doctorProject(target, { dryRun });
       return;
     }
 
-    if (audit.state === "ECC_NATIVE_MINIMAL" && optionalSkills.length > 0) {
+    if (audit.state === expectedState && optionalSkills.length > 0) {
       await applyOptionalSkills({ target, skills: optionalSkills, dryRun });
       if (!dryRun) await doctorProject(target, { updateLock: true, dryRun });
       return;
@@ -370,6 +387,7 @@ export async function setupProject({ sourceRoot, target, profile = "web", dryRun
       sourceRoot,
       target,
       profile,
+      setupPipeline,
       mcpValues: await readGeneratedMcpValues(target),
       dryRun,
       force,
@@ -385,13 +403,14 @@ export async function setupProject({ sourceRoot, target, profile = "web", dryRun
 
   const previousOptions = await choosePreviousSetupOptions(target);
   const detection = await detectProject(target);
+  const selectedSetupPipeline = previousOptions?.setupPipeline || await chooseSetupPipeline(setupPipeline);
   const chosenProfile = previousOptions?.profile || await chooseProfile(sourceRoot, profile, detection);
   const mcpConfig = previousOptions
     ? { profile: previousOptions.profile, mcpServers: previousOptions.mcpServers }
     : await chooseMcpConfig(sourceRoot, chosenProfile);
-  const ruleConfig = previousOptions
+  const ruleConfig = previousOptions && selectedSetupPipeline === "ecc"
     ? { applyRules: previousOptions.applyRules, ruleMode: previousOptions.ruleMode, rules: previousOptions.rules }
-    : await chooseRuleConfig(detection);
+    : await chooseRuleConfig(detection, selectedSetupPipeline);
   const selectedOptionalSkills = previousOptions?.optionalSkills || await chooseOptionalSkills(optionalSkills);
 
   const audit = await auditProject(target);
@@ -401,7 +420,8 @@ export async function setupProject({ sourceRoot, target, profile = "web", dryRun
     throw new Error("Target has legacy/local Claude runtime surfaces. Re-run setup with --migrate, not --force.");
   }
 
-  if (audit.state === "ECC_NATIVE_MINIMAL") {
+  const expectedState = selectedSetupPipeline === "gstack" ? "GSTACK_MINIMAL" : "ECC_NATIVE_MINIMAL";
+  if (audit.state === expectedState) {
     if (selectedOptionalSkills.length > 0) {
       await applyOptionalSkills({ target, skills: selectedOptionalSkills, dryRun });
       if (!dryRun) await doctorProject(target, { updateLock: true, dryRun });
@@ -428,17 +448,18 @@ export async function setupProject({ sourceRoot, target, profile = "web", dryRun
   const permissionConfig = previousOptions?.permissionConfig || await choosePermissionConfig();
   const attributionConfig = previousOptions?.attributionConfig || await chooseAttributionConfig();
 
-  if (!await confirmSummary({ action, target, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, attributionConfig, permissionConfig, dryRun })) {
+  if (!await confirmSummary({ action, setupPipeline: selectedSetupPipeline, target, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, attributionConfig, permissionConfig, dryRun })) {
     throw new Error("Setup cancelled.");
   }
 
-  const retryOptions = setupRetryOptions({ action, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, attributionConfig, permissionConfig, dryRun });
+  const retryOptions = setupRetryOptions({ action, setupPipeline: selectedSetupPipeline, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, attributionConfig, permissionConfig, dryRun });
   await writeSetupStatus(target, { status: "running", startedAt: new Date().toISOString(), failedStep: null, error: null, options: retryOptions }, { dryRun });
   try {
     await provisionProject({
       sourceRoot,
       target,
       profile: mcpConfig.profile,
+      setupPipeline: selectedSetupPipeline,
       mcpServers: mcpConfig.mcpServers,
       mcpValues,
       dryRun,
