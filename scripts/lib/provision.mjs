@@ -62,7 +62,7 @@ async function repoPatternConfig(sourceRoot, profile, setupPipeline) {
   };
 }
 
-function lockConfig(profile, setupPipeline, pipelineStatus = {}) {
+function lockConfig(profile, setupPipeline, pipelineStatus = {}, planTuneHooks = false) {
   const status = typeof pipelineStatus === "string" ? { ecc: pipelineStatus, gstack: pipelineStatus } : pipelineStatus;
   const eccStatus = status.ecc || "not-run";
   const gstackStatus = status.gstack || "not-run";
@@ -91,6 +91,7 @@ function lockConfig(profile, setupPipeline, pipelineStatus = {}) {
       gstack: {
         installMode: "global",
         source: "https://github.com/garrytan/gstack.git",
+        planTuneHooks,
         status: gstackStatus,
         syncedAt: gstackStatus === "installed" ? new Date().toISOString() : null
       }
@@ -193,8 +194,9 @@ async function writeLocalSettings({ sourceRoot, target, localSettingsEnv = {}, d
   await appendGitignoreLine(target, ".claude/", { dryRun });
 }
 
-export async function provisionProject({ sourceRoot, target, profile = "web", setupPipeline = "ecc", mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, attributionConfig = { mode: "off" }, permissionConfig = { bypass: "deny" }, ruleMode = "auto", rules = null, applyRules = false, optionalSkills = [] }) {
+export async function provisionProject({ sourceRoot, target, profile = "web", setupPipeline = "ecc", planTuneHooks = false, mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, attributionConfig = { mode: "off" }, permissionConfig = { bypass: "deny" }, ruleMode = "auto", rules = null, applyRules = false, optionalSkills = [] }) {
   if (!SETUP_PIPELINES.includes(setupPipeline)) throw new Error(`Unknown setup pipeline: ${setupPipeline}. Available: ${SETUP_PIPELINES.join(", ")}`);
+  if (planTuneHooks && !usesGstack(setupPipeline)) throw new Error("--with-plan-tune-hooks requires --setup-pipeline gstack or both.");
   printSummary("Provisioning target", [["Target", target]]);
   await rejectClaudeSymlink(target, { dryRun });
   const audit = await auditProject(target);
@@ -206,7 +208,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
   if (isTracked(target, ".claude/settings.json")) throw new Error(".claude/settings.json is tracked. Untrack it before writing Claude Code settings.");
   if (isTracked(target, ".repo-pattern/.repo-pattern.lock.json") || isTracked(target, ".repo-pattern.lock.json")) throw new Error("repo-pattern lock is tracked. Untrack it before writing local setup state.");
 
-  const gstackStatus = usesGstack(setupPipeline) ? await setupGstack({ target, dryRun }) : null;
+  const gstackStatus = usesGstack(setupPipeline) ? await setupGstack({ target, dryRun, planTuneHooks }) : null;
 
   if (audit.state === "LEGACY_VENDOR") {
     await cleanupProject({ sourceRoot, target, dryRun });
@@ -241,7 +243,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
     await removePath(path.join(target, ".claude", "rules"), { dryRun });
   }
   await writeJson(repoConfigPath(target), await repoPatternConfig(sourceRoot, profile, setupPipeline), { dryRun });
-  await writeJson(lockPath, lockConfig(profile, setupPipeline, { ecc: eccStatus, gstack: gstackStatus }), { dryRun });
+  await writeJson(lockPath, lockConfig(profile, setupPipeline, { ecc: eccStatus, gstack: gstackStatus }, planTuneHooks), { dryRun });
   await ensureRepoPatternGitignore(target, { dryRun });
   if (usesEcc(setupPipeline) && applyRules) await applyEccRules({ target, dryRun, ruleMode, rules });
   if (optionalSkills.length > 0) await applyOptionalSkills({ target, skills: optionalSkills, dryRun });
@@ -267,6 +269,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
     ["Target", target],
     ["Setup pipeline", setupPipeline],
     ["Pipeline scope", setupPipelineScope(setupPipeline)],
+    ...(usesGstack(setupPipeline) ? [["Plan-tune hooks", planTuneHooks ? "installed in ~/.claude/settings.json" : "not installed"]] : []),
     ["Profile", profile],
     [dryRun ? "Would write" : "Written", `CLAUDE.md (if missing), .claude/, .mcp.json, .repo-pattern/.repo-pattern.json, .repo-pattern/.repo-pattern.lock.json${optionalSkills.length ? ", optional skill/plugin config" : ""}`],
     ["Doctor", dryRun ? "skipped (dry-run)" : style("success", "passed")],

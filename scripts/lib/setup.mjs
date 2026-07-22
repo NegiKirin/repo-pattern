@@ -53,10 +53,11 @@ function safeRetryLocalSettingsEnv(localSettingsEnv = {}) {
   return Object.fromEntries(Object.entries(localSettingsEnv).filter(([name]) => !RETRY_SECRET_LOCAL_SETTINGS.has(name)));
 }
 
-export function setupRetryOptions({ action, setupPipeline, mcpConfig, mcpValues = {}, ruleConfig, optionalSkills, localSettingsEnv, attributionConfig, permissionConfig = { bypass: "deny" }, dryRun }) {
+export function setupRetryOptions({ action, setupPipeline, planTuneHooks = false, mcpConfig, mcpValues = {}, ruleConfig, optionalSkills, localSettingsEnv, attributionConfig, permissionConfig = { bypass: "deny" }, dryRun }) {
   return {
     action,
     setupPipeline,
+    planTuneHooks,
     profile: mcpConfig.profile,
     mcpServers: mcpConfig.mcpServers,
     mcpValueNames: Object.keys(persistedMcpValues(mcpValues)),
@@ -106,6 +107,7 @@ function retryRows(setup) {
     ["Failed step", setup.failedStep || "unknown"],
     ["Error", setup.error || "unknown"],
     ["Setup pipeline", options.setupPipeline || "ecc"],
+    ...(usesGstack(options.setupPipeline) ? [["Plan-tune hooks", options.planTuneHooks ? "installed in ~/.claude/settings.json" : "not installed"]] : []),
     ["Profile", options.profile || "web"],
     ["MCP servers", options.mcpServers?.join(", ") || "from profile"],
     ["MCP values", options.mcpValueNames?.length ? options.mcpValueNames.join(", ") : "none"],
@@ -198,6 +200,10 @@ function usesEcc(setupPipeline) {
   return setupPipeline === "ecc" || setupPipeline === "both";
 }
 
+function usesGstack(setupPipeline) {
+  return setupPipeline === "gstack" || setupPipeline === "both";
+}
+
 function expectedSetupState(setupPipeline) {
   return {
     ecc: "ECC_NATIVE_MINIMAL",
@@ -216,6 +222,18 @@ async function chooseSetupPipeline(initialValue = "ecc") {
     ],
     initialValues: pipelineValues(initialValue)
   }));
+}
+
+async function choosePlanTuneHooks(setupPipeline, initialValue = false) {
+  if (setupPipeline !== "gstack" && setupPipeline !== "both") return false;
+  return selectOne({
+    message: "Install gstack plan-tune hooks?",
+    options: [
+      { value: false, label: "No", description: "keep ~/.claude/settings.json unchanged by gstack" },
+      { value: true, label: "Yes", description: "add gstack PreToolUse and PostToolUse hooks to ~/.claude/settings.json" }
+    ],
+    initialValue
+  });
 }
 
 async function chooseRuleConfig(detection, setupPipeline) {
@@ -306,12 +324,13 @@ function attributionSummary(attributionConfig) {
   return "off (commit: \"\")";
 }
 
-async function confirmSummary({ action, setupPipeline, target, mcpConfig, mcpValues, ruleConfig, optionalSkills, localSettingsEnv, attributionConfig, permissionConfig, dryRun }) {
+async function confirmSummary({ action, setupPipeline, planTuneHooks, target, mcpConfig, mcpValues, ruleConfig, optionalSkills, localSettingsEnv, attributionConfig, permissionConfig, dryRun }) {
   const hasLocalSkill = optionalSkills.some((name) => !OPTIONAL_SKILLS.find((skill) => skill.value === name)?.plugin);
   printSummary("Setup summary", [
     ["Action", action],
     ["Setup pipeline", setupPipeline],
     ["Pipeline scope", setupPipelineScope(setupPipeline)],
+    ...(usesGstack(setupPipeline) ? [["Plan-tune hooks", planTuneHooks ? "will add PreToolUse/PostToolUse hooks to ~/.claude/settings.json" : "not installed"]] : []),
     ["Target", target],
     ["Profile", mcpConfig.profile],
     ["MCP servers", mcpConfig.mcpServers?.join(", ") || "from profile"],
@@ -389,8 +408,9 @@ async function handleInitialized({ sourceRoot, target, profile, dryRun }) {
   }
 }
 
-export async function setupProject({ sourceRoot, target, profile = "web", setupPipeline = "ecc", dryRun = false, force = false, migrate = false, yes = false, applyRules = false, optionalSkills = [] }) {
+export async function setupProject({ sourceRoot, target, profile = "web", setupPipeline = "ecc", planTuneHooks = false, dryRun = false, force = false, migrate = false, yes = false, applyRules = false, optionalSkills = [] }) {
   if (!SETUP_PIPELINES.includes(setupPipeline)) throw new Error(`Unknown setup pipeline: ${setupPipeline}. Available: ${SETUP_PIPELINES.join(", ")}`);
+  if (planTuneHooks && !["gstack", "both"].includes(setupPipeline)) throw new Error("--with-plan-tune-hooks requires --setup-pipeline gstack or both.");
   if (!isInteractive()) {
     if (!yes) throw new Error("setup requires an interactive terminal, or pass --yes for scriptable mode.");
     if (profile === "custom") throw new Error("setup --yes cannot use the custom profile; choose a named profile.");
@@ -417,6 +437,7 @@ export async function setupProject({ sourceRoot, target, profile = "web", setupP
       dryRun,
       force,
       migrate,
+      planTuneHooks,
       applyRules,
       optionalSkills
     });
@@ -430,6 +451,7 @@ export async function setupProject({ sourceRoot, target, profile = "web", setupP
   const detection = await detectProject(target);
   const selectedSetupPipeline = previousOptions?.setupPipeline || await chooseSetupPipeline(setupPipeline);
   if (!SETUP_PIPELINES.includes(selectedSetupPipeline)) throw new Error(`Unknown setup pipeline: ${selectedSetupPipeline}. Available: ${SETUP_PIPELINES.join(", ")}`);
+  const selectedPlanTuneHooks = previousOptions?.planTuneHooks ?? await choosePlanTuneHooks(selectedSetupPipeline, planTuneHooks);
   const chosenProfile = previousOptions?.profile || await chooseProfile(sourceRoot, profile, detection);
   const mcpConfig = previousOptions
     ? { profile: previousOptions.profile, mcpServers: previousOptions.mcpServers }
@@ -479,11 +501,11 @@ export async function setupProject({ sourceRoot, target, profile = "web", setupP
   const permissionConfig = previousOptions?.permissionConfig || await choosePermissionConfig();
   const attributionConfig = previousOptions?.attributionConfig || await chooseAttributionConfig();
 
-  if (!await confirmSummary({ action, setupPipeline: selectedSetupPipeline, target, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, attributionConfig, permissionConfig, dryRun })) {
+  if (!await confirmSummary({ action, setupPipeline: selectedSetupPipeline, planTuneHooks: selectedPlanTuneHooks, target, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, attributionConfig, permissionConfig, dryRun })) {
     throw new Error("Setup cancelled.");
   }
 
-  const retryOptions = setupRetryOptions({ action, setupPipeline: selectedSetupPipeline, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, attributionConfig, permissionConfig, dryRun });
+  const retryOptions = setupRetryOptions({ action, setupPipeline: selectedSetupPipeline, planTuneHooks: selectedPlanTuneHooks, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, attributionConfig, permissionConfig, dryRun });
   await writeSetupStatus(target, { status: "running", startedAt: new Date().toISOString(), failedStep: null, error: null, options: retryOptions }, { dryRun });
   try {
     await provisionProject({
@@ -491,6 +513,7 @@ export async function setupProject({ sourceRoot, target, profile = "web", setupP
       target,
       profile: mcpConfig.profile,
       setupPipeline: selectedSetupPipeline,
+      planTuneHooks: selectedPlanTuneHooks,
       mcpServers: mcpConfig.mcpServers,
       mcpValues,
       dryRun,

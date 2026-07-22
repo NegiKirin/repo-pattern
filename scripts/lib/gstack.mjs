@@ -20,8 +20,12 @@ export function isValidBunInstaller(source) {
     !text.includes("\0") &&
     BUN_INSTALLER_MARKERS.every((marker) => text.includes(marker));
 }
-const GSTACK_SETUP_ARGS = ["--quiet", "--no-plan-tune-hooks"];
+const GSTACK_SETUP_ARGS = ["--quiet"];
 const GSTACK_DIAGNOSTIC_MAX_CHARS = 4000;
+
+export function gstackSetupArgs(planTuneHooks = false) {
+  return [...GSTACK_SETUP_ARGS, planTuneHooks ? "--plan-tune-hooks" : "--no-plan-tune-hooks"];
+}
 const GSTACK_SETUP_MAX_BUFFER = 16 * 1024 * 1024;
 
 function run(command, args, options = {}) {
@@ -137,18 +141,24 @@ function redactedGstackDiagnostic(error) {
   return summary.slice(0, GSTACK_DIAGNOSTIC_MAX_CHARS);
 }
 
-export function gstackSummaryRows() {
-  return [["Scope", "user-global ~/.claude/skills/gstack"], ["Status", "ready"]];
+export function gstackSummaryRows(planTuneHooks = false) {
+  return [
+    ["Scope", "user-global ~/.claude/skills/gstack"],
+    ["Plan-tune hooks", planTuneHooks ? "installed in ~/.claude/settings.json" : "not installed"],
+    ["Status", "ready"]
+  ];
 }
 
 export function runGstackSetup({
   platform = process.platform,
   bun,
+  planTuneHooks = false,
   run: runCommand = run,
   log = console.error
 }) {
   const command = platform === "win32" ? "bash" : "./setup";
-  const args = platform === "win32" ? ["./setup", ...GSTACK_SETUP_ARGS] : GSTACK_SETUP_ARGS;
+  const setupArgs = gstackSetupArgs(planTuneHooks);
+  const args = platform === "win32" ? ["./setup", ...setupArgs] : setupArgs;
   try {
     runCommand(command, args, {
       cwd: GSTACK_DIR,
@@ -163,7 +173,7 @@ export function runGstackSetup({
   }
 }
 
-export async function setupGstack({ target, dryRun = false }) {
+export async function setupGstack({ target, dryRun = false, planTuneHooks = false }) {
   if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local plugin settings.");
 
   let status = "installed";
@@ -189,7 +199,7 @@ export async function setupGstack({ target, dryRun = false }) {
       console.log("Using existing gstack checkout");
     }
     console.log("Running gstack setup");
-    console.log(`[dry-run] cd ${GSTACK_DIR} && ./setup ${GSTACK_SETUP_ARGS.join(" ")}`);
+    console.log(`[dry-run] cd ${GSTACK_DIR} && ./setup ${gstackSetupArgs(planTuneHooks).join(" ")}`);
     status = "dry-run";
   } else {
     const runSetup = async () => {
@@ -201,7 +211,7 @@ export async function setupGstack({ target, dryRun = false }) {
       } else if (!isInteractive()) {
         console.log("Using existing gstack checkout");
       }
-      runGstackSetup({ bun });
+      runGstackSetup({ bun, planTuneHooks });
     };
     if (isInteractive()) await withSpinner("Installing global gstack", runSetup);
     else {
@@ -209,7 +219,7 @@ export async function setupGstack({ target, dryRun = false }) {
       console.log("Running gstack setup");
       await runSetup();
     }
-    printSummary("gstack", gstackSummaryRows());
+    printSummary("gstack", gstackSummaryRows(planTuneHooks));
   }
 
   return status;

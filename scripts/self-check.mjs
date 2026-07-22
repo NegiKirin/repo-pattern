@@ -136,6 +136,7 @@ assert.deepEqual(setupRetryOptions({
 }), {
   action: "setup",
   setupPipeline: "gstack",
+  planTuneHooks: false,
   profile: "web",
   mcpServers: null,
   mcpValueNames: ["CONTEXT7_API_KEY"],
@@ -481,6 +482,10 @@ result = runCli(["setup", "--setup-pipeline", "nope", "--yes"]);
 assert.equal(result.status, 2);
 assert.match(result.stderr, /Unknown setup pipeline: nope\. Available: ecc, gstack/);
 
+result = runCli(["setup", "--setup-pipeline", "ecc", "--with-plan-tune-hooks", "--yes"]);
+assert.equal(result.status, 2);
+assert.match(result.stderr, /--with-plan-tune-hooks requires --setup-pipeline gstack or both/);
+
 result = runCli(["help"]);
 assert.equal(result.status, 0);
 assert.match(result.stdout, /--setup-pipeline <ecc\|gstack\|both\|none>/);
@@ -488,6 +493,7 @@ assert.match(result.stdout, /ecc: project-scoped ECC/);
 assert.match(result.stdout, /gstack: user-scoped\/global at ~\/\.claude\/skills\/gstack/);
 assert.match(result.stdout, /both: project-scoped ECC \+ user-scoped\/global gstack/);
 assert.match(result.stdout, /none: base project metadata only/);
+assert.match(result.stdout, /--with-plan-tune-hooks/);
 assert.match(result.stdout, /--with-skill <name>/);
 assert.match(result.stdout, /ui-ux-pro-max/);
 assert.match(result.stdout, /impeccable/);
@@ -555,6 +561,16 @@ try {
   await fs.rm(gstackSetupTarget, { recursive: true, force: true });
 }
 
+const gstackHooksSetupTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-hooks-setup-"));
+try {
+  result = runCli(["setup", "--target", gstackHooksSetupTarget, "--profile", "minimal", "--setup-pipeline", "gstack", "--with-plan-tune-hooks", "--yes", "--dry-run"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /\.\/setup --quiet --plan-tune-hooks/);
+  assert.match(result.stdout, /Plan-tune hooks\s+installed in ~\/\.claude\/settings\.json/);
+} finally {
+  await fs.rm(gstackHooksSetupTarget, { recursive: true, force: true });
+}
+
 const privateWriteTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-private-write-"));
 try {
   const privateWritePath = path.join(privateWriteTarget, "settings.local.json");
@@ -620,6 +636,12 @@ assert.deepEqual(gstackEnvironment("bun", { PATH: "/usr/bin" }), { PATH: "/usr/b
 assert.deepEqual(gstackEnvironment("/home/test/.bun/bin/bun", { PATH: "/usr/bin" }), { PATH: `/home/test/.bun/bin${path.delimiter}/usr/bin` });
 assert.deepEqual(gstackSummaryRows(), [
   ["Scope", "user-global ~/.claude/skills/gstack"],
+  ["Plan-tune hooks", "not installed"],
+  ["Status", "ready"]
+]);
+assert.deepEqual(gstackSummaryRows(true), [
+  ["Scope", "user-global ~/.claude/skills/gstack"],
+  ["Plan-tune hooks", "installed in ~/.claude/settings.json"],
   ["Status", "ready"]
 ]);
 
@@ -637,6 +659,16 @@ runGstackSetup({
 assert.deepEqual(gstackSetupCalls[0].args, ["--quiet", "--no-plan-tune-hooks"]);
 assert.deepEqual(gstackSetupCalls[0].options.stdio, ["ignore", "pipe", "pipe"]);
 assert.deepEqual(gstackSetupLogs, []);
+
+runGstackSetup({
+  platform: "linux",
+  bun: "bun",
+  planTuneHooks: true,
+  run(command, args) {
+    gstackSetupCalls.push({ command, args });
+  }
+});
+assert.deepEqual(gstackSetupCalls[1].args, ["--quiet", "--plan-tune-hooks"]);
 
 const gstackCredentialFixture = ["example", "credential", "value"].join("-");
 const gstackFailure = Object.assign(new Error("setup failed"), {
@@ -818,6 +850,10 @@ await assert.rejects(
   () => provisionProject({ sourceRoot: repoRoot, target: os.tmpdir(), setupPipeline: "invalid", dryRun: true }),
   /Unknown setup pipeline: invalid/
 );
+await assert.rejects(
+  () => provisionProject({ sourceRoot: repoRoot, target: os.tmpdir(), setupPipeline: "ecc", planTuneHooks: true, dryRun: true }),
+  /--with-plan-tune-hooks requires --setup-pipeline gstack or both/
+);
 
 const bothProvisionTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-both-provision-"));
 console.log = () => {};
@@ -829,6 +865,7 @@ try {
     target: bothProvisionTarget,
     profile: "minimal",
     setupPipeline: "both",
+    planTuneHooks: true,
     localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: secretSentinel }
   });
   const repoConfig = JSON.parse(await fs.readFile(path.join(bothProvisionTarget, ".repo-pattern", ".repo-pattern.json"), "utf8"));
@@ -838,6 +875,7 @@ try {
   assert.equal(lock.setupPipeline, "both");
   assert.equal(lock.ecc.status, "installed");
   assert.equal(lock.gstack.status, "installed");
+  assert.equal(lock.gstack.planTuneHooks, true);
   assert.equal(localSettings.enabledPlugins["ecc@ecc"], true);
   assert.equal((await auditProject(bothProvisionTarget)).state, "ECC_GSTACK_MINIMAL");
   await doctorProject(bothProvisionTarget);
@@ -912,6 +950,7 @@ try {
   assert.equal("ecc" in repoConfig, false);
   assert.equal(lock.setupPipeline, "gstack");
   assert.equal(lock.gstack.status, "installed");
+  assert.equal(lock.gstack.planTuneHooks, false);
   assert.equal("ecc" in lock, false);
   const gstackLocalSettings = JSON.parse(await fs.readFile(path.join(gstackProvisionTarget, ".claude", "settings.local.json"), "utf8"));
   assert.equal(gstackLocalSettings.enabledPlugins["ecc@ecc"], undefined);
