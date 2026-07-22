@@ -808,6 +808,7 @@ await assert.rejects(
 const bothProvisionTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-both-provision-"));
 console.log = () => {};
 try {
+  process.env.REPO_PATTERN_ECC_SETUP_CMD = "true";
   process.env.REPO_PATTERN_GSTACK_SETUP_CMD = "true";
   await provisionProject({
     sourceRoot: repoRoot,
@@ -827,6 +828,7 @@ try {
   assert.equal((await auditProject(bothProvisionTarget)).state, "ECC_GSTACK_MINIMAL");
   await doctorProject(bothProvisionTarget);
 } finally {
+  delete process.env.REPO_PATTERN_ECC_SETUP_CMD;
   delete process.env.REPO_PATTERN_GSTACK_SETUP_CMD;
   console.log = originalLog;
   await fs.rm(bothProvisionTarget, { recursive: true, force: true });
