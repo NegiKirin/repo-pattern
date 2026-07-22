@@ -439,8 +439,7 @@ export async function setupProject({ sourceRoot, target, profile = "web", setupP
   const localSettingsTemplate = await readJson(path.join(sourceRoot, ".claude.example", "settings.local.example.json"), {});
   const defaultOverrides = Object.fromEntries([
     "CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION",
-    "CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY",
-    "workflowSizeGuideline"
+    "CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY"
   ].filter((name) => process.env[name]).map((name) => [name, process.env[name]]));
   const retryLocalSettingsEnv = { ...localSettingsTemplate.env, ...previousOptions?.localSettingsEnv, ...currentSettingsEnv, ...defaultOverrides };
   const localSettingsEnv = previousOptions && !needsLocalSettingsPrompt(retryLocalSettingsEnv)

@@ -10,6 +10,7 @@
   "showTurnDuration": true,
   "spinnerTipsEnabled": true,
   "fileCheckpointingEnabled": true,
+  "workflowSizeGuideline": "small",
   "enabledPlugins": {
     "ecc@ecc": true
   },
@@ -25,7 +26,6 @@
     "ENABLE_TOOL_SEARCH": "auto:5",
     "CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION": "4",
     "CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY": "2",
-    "workflowSizeGuideline": "small",
     "ANTHROPIC_BASE_URL": "https://example.com/v1",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6",
