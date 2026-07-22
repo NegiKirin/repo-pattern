@@ -117,6 +117,10 @@ Options:
   --profile <name>                 MCP profile for scriptable commands. Default: web
   --setup-pipeline <ecc|gstack|both|none>
                                   Setup pipeline. Default: ecc
+                                  ecc: project-scoped ECC
+                                  gstack: user-scoped/global at ~/.claude/skills/gstack
+                                  both: project-scoped ECC + user-scoped/global gstack
+                                  none: base project metadata only
 
 Setup UI:
   setup uses ↑/↓ to move, Space to toggle MCP/rules choices, Enter to confirm, Esc/Ctrl+C to cancel

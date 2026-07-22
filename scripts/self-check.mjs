@@ -8,9 +8,9 @@ import { auditProject, printAudit } from "./lib/audit.mjs";
 import { cleanupProject } from "./lib/cleanup.mjs";
 import { doctorProject } from "./lib/doctor.mjs";
 import { applyEccPluginSettings, setupEcc } from "./lib/ecc.mjs";
-import { ensureBun, gstackEnvironment, removeEccPluginSettings, setupGstack } from "./lib/gstack.mjs";
+import { ensureBun, gstackEnvironment, removeEccPluginSettings, runGstackSetup, setupGstack } from "./lib/gstack.mjs";
 import { applyMcpValues, generateMcp, mcpSecretPrompt, persistedMcpValues, readGeneratedMcpValues, validateRelativeMcpPath } from "./lib/mcp.mjs";
-import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, provisionProject, updateClaudePermissions } from "./lib/provision.mjs";
+import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, provisionProject, setupPipelineScope, updateClaudePermissions } from "./lib/provision.mjs";
 import { writePrivateJson } from "./lib/fs-utils.mjs";
 import { printSummary, renderLogo, style } from "./lib/prompt.mjs";
 import { needsLocalSettingsPrompt, setupProject, setupRetryOptions } from "./lib/setup.mjs";
@@ -151,6 +151,17 @@ assert.deepEqual(setupRetryOptions({
   attributionConfig: { mode: "off" },
   permissionConfig: { bypass: "deny" },
   dryRun: false
+});
+assert.deepEqual({
+  ecc: setupPipelineScope("ecc"),
+  gstack: setupPipelineScope("gstack"),
+  both: setupPipelineScope("both"),
+  none: setupPipelineScope("none")
+}, {
+  ecc: "project-scoped ECC",
+  gstack: "user-scoped/global gstack at ~/.claude/skills/gstack",
+  both: "project-scoped ECC + user-scoped/global gstack at ~/.claude/skills/gstack",
+  none: "writes only base project metadata"
 });
 assert.equal(needsLocalSettingsPrompt({ ANTHROPIC_BASE_URL: "https://example.com/v1" }), true);
 assert.equal(needsLocalSettingsPrompt({
@@ -473,6 +484,10 @@ assert.match(result.stderr, /Unknown setup pipeline: nope\. Available: ecc, gsta
 result = runCli(["help"]);
 assert.equal(result.status, 0);
 assert.match(result.stdout, /--setup-pipeline <ecc\|gstack\|both\|none>/);
+assert.match(result.stdout, /ecc: project-scoped ECC/);
+assert.match(result.stdout, /gstack: user-scoped\/global at ~\/\.claude\/skills\/gstack/);
+assert.match(result.stdout, /both: project-scoped ECC \+ user-scoped\/global gstack/);
+assert.match(result.stdout, /none: base project metadata only/);
 assert.match(result.stdout, /--with-skill <name>/);
 assert.match(result.stdout, /ui-ux-pro-max/);
 assert.match(result.stdout, /impeccable/);
@@ -533,7 +548,8 @@ try {
   assert.match(result.stdout, /Checking gstack prerequisites/);
   assert.match(result.stdout, /Cloning gstack|Using existing gstack checkout/);
   assert.match(result.stdout, /Running gstack setup/);
-  assert.match(result.stdout, /\.\/setup/);
+  assert.match(result.stdout, /\.\/setup --quiet --no-plan-tune-hooks/);
+  assert.match(result.stdout, /Pipeline scope\s+user-scoped\/global gstack at ~\/\.claude\/skills\/gstack/);
   assert.doesNotMatch(result.stdout, /Install ECC inside Claude Code/);
 } finally {
   await fs.rm(gstackSetupTarget, { recursive: true, force: true });
@@ -602,6 +618,46 @@ assert(gitignoreLines.includes(".claude/"));
 
 assert.deepEqual(gstackEnvironment("bun", { PATH: "/usr/bin" }), { PATH: "/usr/bin" });
 assert.deepEqual(gstackEnvironment("/home/test/.bun/bin/bun", { PATH: "/usr/bin" }), { PATH: `/home/test/.bun/bin${path.delimiter}/usr/bin` });
+
+const gstackSetupCalls = [];
+const gstackSetupLogs = [];
+runGstackSetup({
+  platform: "linux",
+  bun: "bun",
+  run(command, args, options) {
+    gstackSetupCalls.push({ command, args, options });
+    return "generated skill output\ninstallation detail\n";
+  },
+  log: (message) => gstackSetupLogs.push(message)
+});
+assert.deepEqual(gstackSetupCalls[0].args, ["--quiet", "--no-plan-tune-hooks"]);
+assert.deepEqual(gstackSetupCalls[0].options.stdio, ["ignore", "pipe", "pipe"]);
+assert.deepEqual(gstackSetupLogs, []);
+
+const gstackCredentialFixture = ["example", "credential", "value"].join("-");
+const gstackFailure = Object.assign(new Error("setup failed"), {
+  stdout: Buffer.from("routine output\n"),
+  stderr: Buffer.from(`${"warning: repeated diagnostic line\n".repeat(300)}fatal: setup could not complete\nAuthorization: Bearer ${gstackCredentialFixture}\nAPI_TOKEN=${gstackCredentialFixture}\ncorrect the prerequisite and retry\n`)
+});
+let gstackFailureLog = "";
+assert.throws(() => runGstackSetup({
+  platform: "win32",
+  bun: "bun",
+  run(command, args) {
+    assert.equal(command, "bash");
+    assert.deepEqual(args, ["./setup", "--quiet", "--no-plan-tune-hooks"]);
+    throw gstackFailure;
+  },
+  log: (message) => { gstackFailureLog += `${message}\n`; }
+}), /gstack setup failed; review the diagnostics above and rerun setup/);
+assert.match(gstackFailureLog, /Upstream reported a setup failure/);
+assert.match(gstackFailureLog, /A required prerequisite is missing or invalid/);
+assert.match(gstackFailureLog, /Correct the reported prerequisite and rerun setup/);
+assert.match(gstackFailureLog, /Upstream output: \[redacted\]/);
+assert.doesNotMatch(gstackFailureLog, /routine output/);
+assert.doesNotMatch(gstackFailureLog, /fatal: setup could not complete/);
+assert.doesNotMatch(gstackFailureLog, new RegExp(gstackCredentialFixture));
+assert(gstackFailureLog.length <= 4200);
 
 const bunInstallCommands = [];
 let bunCheckCount = 0;
@@ -807,6 +863,7 @@ try {
   result = runCli(["setup", "--target", setupBothDryRunTarget, "--setup-pipeline", "both", "--yes", "--dry-run"]);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Setup pipeline\s+both/);
+  assert.match(result.stdout, /Pipeline scope\s+project-scoped ECC \+ user-scoped\/global gstack at\s+~\/\.claude\/skills\/gstack/);
 } finally {
   await fs.rm(setupBothDryRunTarget, { recursive: true, force: true });
 }

@@ -10,6 +10,9 @@ const GSTACK_DIR = path.join(os.homedir(), ".claude", "skills", "gstack");
 const BUN_INSTALLER_URL = "https://bun.sh/install";
 const BUN_INSTALLER_MAX_BYTES = 1024 * 1024;
 const BUN_INSTALLER_MARKERS = ["#!/usr/bin/env bash", "BUN_INSTALL", "github.com/oven-sh/bun/releases"];
+const GSTACK_SETUP_ARGS = ["--quiet", "--no-plan-tune-hooks"];
+const GSTACK_DIAGNOSTIC_MAX_CHARS = 4000;
+const GSTACK_SETUP_MAX_BUFFER = 16 * 1024 * 1024;
 
 function run(command, args, options = {}) {
   return execFileSync(command, args, { encoding: "utf8", ...options });
@@ -103,6 +106,49 @@ export function gstackEnvironment(bun, environment = process.env) {
   return { ...environment, PATH: `${path.dirname(bun)}${path.delimiter}${environment.PATH || ""}` };
 }
 
+function redactedGstackDiagnostic(error) {
+  const output = [error.stderr, error.stdout]
+    .map((value) => String(value || "").slice(-65536))
+    .join("\n");
+  const diagnostics = [
+    "Upstream output: [redacted].",
+    ...(Number.isInteger(error.status) ? [`Exit code: ${error.status}.`] : []),
+    ...(/\b(?:bun)\b/i.test(output) ? ["Bun prerequisite or installation failed."] : []),
+    ...(/\b(?:git|clone|checkout)\b/i.test(output) ? ["Git checkout or repository operation failed."] : []),
+    ...(/\b(?:network|download|fetch|connection|dns|tls|certificate)\b/i.test(output) ? ["Network or download operation failed."] : []),
+    ...(/\b(?:permission|denied|access)\b/i.test(output) ? ["Permission or access check failed."] : []),
+    ...(/\b(?:missing|required|not found|prerequisite)\b/i.test(output) ? ["A required prerequisite is missing or invalid."] : []),
+    ...(/\b(?:unsupported)\b/i.test(output) ? ["The current environment is unsupported."] : []),
+    ...(/\b(?:settings?|hooks?)\b/i.test(output) ? ["Claude Code settings or hook setup failed."] : []),
+    ...(/\b(?:error|fatal|fail(?:ed|ure)?)\b/i.test(output) ? ["Upstream reported a setup failure."] : []),
+    ...(/\b(?:retry|rerun)\b/i.test(output) ? ["Correct the reported prerequisite and rerun setup."] : [])
+  ];
+  const summary = diagnostics.length > 0 ? diagnostics.join("\n") : "No safe upstream diagnostic was available.";
+  return summary.slice(0, GSTACK_DIAGNOSTIC_MAX_CHARS);
+}
+
+export function runGstackSetup({
+  platform = process.platform,
+  bun,
+  run: runCommand = run,
+  log = console.error
+}) {
+  const command = platform === "win32" ? "bash" : "./setup";
+  const args = platform === "win32" ? ["./setup", ...GSTACK_SETUP_ARGS] : GSTACK_SETUP_ARGS;
+  try {
+    runCommand(command, args, {
+      cwd: GSTACK_DIR,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: gstackEnvironment(bun),
+      maxBuffer: GSTACK_SETUP_MAX_BUFFER
+    });
+  } catch (error) {
+    log("gstack setup diagnostics (redacted):");
+    log(redactedGstackDiagnostic(error));
+    throw new Error("gstack setup failed; review the diagnostics above and rerun setup.");
+  }
+}
+
 export async function setupGstack({ target, dryRun = false }) {
   if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local plugin settings.");
 
@@ -129,7 +175,7 @@ export async function setupGstack({ target, dryRun = false }) {
       console.log("Using existing gstack checkout");
     }
     console.log("Running gstack setup");
-    console.log(`[dry-run] cd ${GSTACK_DIR} && ./setup`);
+    console.log(`[dry-run] cd ${GSTACK_DIR} && ./setup ${GSTACK_SETUP_ARGS.join(" ")}`);
     status = "dry-run";
   } else {
     console.log("Checking gstack prerequisites");
@@ -142,12 +188,8 @@ export async function setupGstack({ target, dryRun = false }) {
       console.log("Using existing gstack checkout");
     }
     console.log("Running gstack setup");
-    execFileSync(process.platform === "win32" ? "bash" : "./setup", process.platform === "win32" ? ["./setup"] : [], {
-      cwd: GSTACK_DIR,
-      stdio: "inherit",
-      env: gstackEnvironment(bun)
-    });
-    printSummary("gstack", [["Status", "installed for Claude Code"]]);
+    runGstackSetup({ bun });
+    printSummary("gstack", [["Status", "installed globally for Claude Code"]]);
   }
 
   return status;

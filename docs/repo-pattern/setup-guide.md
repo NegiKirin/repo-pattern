@@ -15,7 +15,14 @@ node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --se
 node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --setup-pipeline gstack --yes
 ```
 
-ECC is the default. gstack uses its upstream global installer at `~/.claude/skills/gstack` and requires Git and Bun v1.0+. When Bun is missing on Linux or macOS, setup downloads the official installer over TLS, validates it, and installs Bun automatically. On unsupported systems, install Bun manually before setup.
+Pipeline scope is explicit:
+
+- `ecc` (default) — project-scoped ECC.
+- `gstack` — user-scoped/global gstack at `~/.claude/skills/gstack`.
+- `both` — project-scoped ECC plus user-scoped/global gstack.
+- `none` — base project metadata only.
+
+gstack requires Git and Bun v1.0+. When Bun is missing on Linux or macOS, setup downloads the official installer over TLS, validates it, and installs Bun automatically. On unsupported systems, install Bun manually before setup. Its upstream setup runs with `--quiet --no-plan-tune-hooks`, preventing settings diff previews and hook confirmation waits during automated setup. Routine upstream logs are suppressed; failures report a bounded, secret-redacted diagnostic summary.
 
 Use this when you want to initialize a new project with:
 

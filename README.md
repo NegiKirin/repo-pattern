@@ -48,7 +48,14 @@ npx repo-pattern setup --profile web --setup-pipeline ecc --yes
 npx repo-pattern setup --profile web --setup-pipeline gstack --yes
 ```
 
-ECC remains the default. gstack setup uses its upstream global checkout at `~/.claude/skills/gstack` and requires Git and Bun v1.0+. When Bun is missing on Linux or macOS, setup downloads the official installer over TLS, validates it, and installs Bun automatically. On unsupported systems, install Bun manually before setup.
+Pipeline scope is explicit:
+
+- `ecc` (default) — project-scoped ECC.
+- `gstack` — user-scoped/global gstack at `~/.claude/skills/gstack`.
+- `both` — project-scoped ECC plus user-scoped/global gstack.
+- `none` — base project metadata only.
+
+gstack requires Git and Bun v1.0+. When Bun is missing on Linux or macOS, setup downloads the official installer over TLS, validates it, and installs Bun automatically. On unsupported systems, install Bun manually before setup. Its upstream setup runs with `--quiet --no-plan-tune-hooks`, so automated setup does not show settings diffs or wait for hook confirmation.
 
 Migrate an existing project:
 
@@ -76,7 +83,7 @@ Common options:
 ```bash
 --target /path/to/project  # default: current directory
 --profile web              # default MCP profile
---setup-pipeline ecc        # ecc (default) or gstack
+--setup-pipeline ecc        # ecc (default), gstack, both, or none
 --with-rules               # opt in to .claude/rules/ecc; ECC only
 --with-skill ui-ux-pro-max # optional UI/UX skill; requires Python 3.x
 --with-skills nextjs-pattern,fastapi-pattern # optional framework pattern skills
