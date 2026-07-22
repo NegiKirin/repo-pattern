@@ -36,12 +36,7 @@ function validateUrl(value) {
   }
 }
 
-function validatePositiveInteger(value) {
-  return /^[1-9]\d*$/.test(String(value)) ? true : "Use a positive whole number.";
-}
-
 const LOCAL_SETTINGS_FIELDS = [
-  ["CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION", "5", askText, validatePositiveInteger],
   ["ANTHROPIC_AUTH_TOKEN", "", askPassword, validateRequired],
   ["ANTHROPIC_BASE_URL", "https://example.com/v1", askText, validateUrl],
   ["ANTHROPIC_DEFAULT_OPUS_MODEL", "claude-opus-4-8", askText, validateRequired],
@@ -235,7 +230,7 @@ export function needsLocalSettingsPrompt(values = {}) {
 
 async function chooseLocalSettingsEnv(initialValues = {}) {
   printBox("Step 4/6 — Local Claude provider settings", ["These values are written to .claude/settings.local.json and gitignored."]);
-  const env = {};
+  const env = { ...initialValues };
   for (const [name, fallback, ask, validate] of LOCAL_SETTINGS_FIELDS) {
     env[name] = await ask(name, { initial: process.env[name] || initialValues[name] || fallback, validate });
   }
@@ -441,7 +436,13 @@ export async function setupProject({ sourceRoot, target, profile = "web", setupP
 
   const currentSettingsEnv = await currentLocalSettingsEnv(target);
   const mcpValues = await chooseMcpValues(sourceRoot, mcpConfig, await readGeneratedMcpValues(target));
-  const retryLocalSettingsEnv = { CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: "5", ...previousOptions?.localSettingsEnv, ...currentSettingsEnv };
+  const localSettingsTemplate = await readJson(path.join(sourceRoot, ".claude.example", "settings.local.example.json"), {});
+  const defaultOverrides = Object.fromEntries([
+    "CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION",
+    "CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY",
+    "workflowSizeGuideline"
+  ].filter((name) => process.env[name]).map((name) => [name, process.env[name]]));
+  const retryLocalSettingsEnv = { ...localSettingsTemplate.env, ...previousOptions?.localSettingsEnv, ...currentSettingsEnv, ...defaultOverrides };
   const localSettingsEnv = previousOptions && !needsLocalSettingsPrompt(retryLocalSettingsEnv)
     ? retryLocalSettingsEnv
     : await chooseLocalSettingsEnv(retryLocalSettingsEnv);
