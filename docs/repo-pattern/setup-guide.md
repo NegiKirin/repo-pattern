@@ -15,7 +15,7 @@ node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --se
 node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --setup-pipeline gstack --yes
 ```
 
-ECC is the default. gstack uses its upstream global installer at `~/.claude/skills/gstack` and requires Git and Bun v1.0+. On Windows, it also requires Node.js and Git Bash or WSL.
+ECC is the default. gstack uses its upstream global installer at `~/.claude/skills/gstack` and requires Git and Bun v1.0+. When Bun is missing on Linux or macOS, setup downloads the official installer over TLS, validates it, and installs Bun automatically. On unsupported systems, install Bun manually before setup.
 
 Use this when you want to initialize a new project with:
 
