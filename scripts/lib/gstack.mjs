@@ -3,13 +3,23 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { appendGitignoreLine, ensureDir, exists, isTracked, writePrivateJson } from "./fs-utils.mjs";
-import { printSummary } from "./prompt.mjs";
+import { isInteractive, printSummary, withSpinner } from "./prompt.mjs";
 
 const GSTACK_REPOSITORY = "https://github.com/garrytan/gstack.git";
 const GSTACK_DIR = path.join(os.homedir(), ".claude", "skills", "gstack");
 const BUN_INSTALLER_URL = "https://bun.sh/install";
+const BUN_INSTALLER_MIN_BYTES = 1024;
 const BUN_INSTALLER_MAX_BYTES = 1024 * 1024;
-const BUN_INSTALLER_MARKERS = ["#!/usr/bin/env bash", "BUN_INSTALL", "github.com/oven-sh/bun/releases"];
+const BUN_INSTALLER_MARKERS = ["#!/usr/bin/env bash", "set -euo pipefail", "install_env=BUN_INSTALL", "github_repo=\"$GITHUB/oven-sh/bun\"", "bun_uri=$github_repo/releases/latest/download/bun-$target.zip"];
+
+export function isValidBunInstaller(source) {
+  const text = Buffer.isBuffer(source) ? source.toString("utf8") : String(source);
+  return source.length >= BUN_INSTALLER_MIN_BYTES &&
+    source.length <= BUN_INSTALLER_MAX_BYTES &&
+    text.startsWith("#!/usr/bin/env bash\n") &&
+    !text.includes("\0") &&
+    BUN_INSTALLER_MARKERS.every((marker) => text.includes(marker));
+}
 const GSTACK_SETUP_ARGS = ["--quiet", "--no-plan-tune-hooks"];
 const GSTACK_DIAGNOSTIC_MAX_CHARS = 4000;
 const GSTACK_SETUP_MAX_BUFFER = 16 * 1024 * 1024;
@@ -59,7 +69,7 @@ export async function ensureBun({
       BUN_INSTALLER_URL
     ], { stdio: "inherit" });
     const source = await readFile(installer);
-    if (source.length === 0 || source.length > BUN_INSTALLER_MAX_BYTES || !BUN_INSTALLER_MARKERS.every((marker) => source.includes(marker))) {
+    if (!isValidBunInstaller(source)) {
       throw new Error("Downloaded Bun installer failed content validation; it was not executed.");
     }
     runCommand("bash", ["-n", installer], { stdio: "ignore" });
@@ -127,6 +137,10 @@ function redactedGstackDiagnostic(error) {
   return summary.slice(0, GSTACK_DIAGNOSTIC_MAX_CHARS);
 }
 
+export function gstackSummaryRows() {
+  return [["Scope", "user-global ~/.claude/skills/gstack"], ["Status", "ready"]];
+}
+
 export function runGstackSetup({
   platform = process.platform,
   bun,
@@ -178,18 +192,24 @@ export async function setupGstack({ target, dryRun = false }) {
     console.log(`[dry-run] cd ${GSTACK_DIR} && ./setup ${GSTACK_SETUP_ARGS.join(" ")}`);
     status = "dry-run";
   } else {
-    console.log("Checking gstack prerequisites");
-    const bun = await ensureBun();
-    if (!validateGstackCheckout()) {
-      console.log("Cloning gstack");
-      await ensureDir(path.dirname(GSTACK_DIR));
-      execFileSync("git", ["clone", "--single-branch", "--depth", "1", GSTACK_REPOSITORY, GSTACK_DIR], { stdio: "inherit" });
-    } else {
-      console.log("Using existing gstack checkout");
+    const runSetup = async () => {
+      const bun = await ensureBun();
+      if (!validateGstackCheckout()) {
+        console.log("Cloning gstack");
+        await ensureDir(path.dirname(GSTACK_DIR));
+        execFileSync("git", ["clone", "--single-branch", "--depth", "1", GSTACK_REPOSITORY, GSTACK_DIR], { stdio: "inherit" });
+      } else if (!isInteractive()) {
+        console.log("Using existing gstack checkout");
+      }
+      runGstackSetup({ bun });
+    };
+    if (isInteractive()) await withSpinner("Installing global gstack", runSetup);
+    else {
+      console.log("Checking gstack prerequisites");
+      console.log("Running gstack setup");
+      await runSetup();
     }
-    console.log("Running gstack setup");
-    runGstackSetup({ bun });
-    printSummary("gstack", [["Status", "installed globally for Claude Code"]]);
+    printSummary("gstack", gstackSummaryRows());
   }
 
   return status;
