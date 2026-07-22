@@ -77,25 +77,33 @@ export async function auditProject(target) {
 
   const allowSourceSkills = repoPattern?.mode === "template";
   const allowManagedSkills = repoPattern?.runtime?.localSkills === true && Array.isArray(repoPattern?.optionalSkills) && result.hasOnlyManagedSkills;
+  const workflow = repoPattern?.workflow;
+  const usesEcc = workflow === "ecc-native" || workflow === "ecc-gstack";
+  const usesGstack = workflow === "gstack" || workflow === "ecc-gstack";
   const legacy = (
     result.hasSettingsHooks ||
     (result.hasClaudeSkillsDir && !allowSourceSkills && !allowManagedSkills) ||
     result.hasClaudeCommandsDir ||
     result.hasClaudeHooksDir ||
     result.hasClaudeScriptsDir ||
-    (result.hasClaudeRulesDir && (repoPattern?.workflow === "gstack" || !result.hasOnlyEccRulesDir))
+    (result.hasClaudeRulesDir && (repoPattern ? (!usesEcc || !result.hasOnlyEccRulesDir) : !result.hasOnlyEccRulesDir))
   );
 
-  const setupComplete = repoPattern?.workflow !== "gstack" || lock.gstack?.status === "installed";
+  const setupComplete = !usesGstack || lock.gstack?.status === "installed";
   if (!result.hasClaudeDir && !result.hasMcpJson && !result.hasRepoPatternJson) {
     result.state = "EMPTY";
   } else if (
     result.hasRepoPatternJson &&
-    ["ecc-native", "gstack"].includes(result.repoPattern?.workflow) &&
+    ["ecc-native", "gstack", "ecc-gstack", "none"].includes(result.repoPattern?.workflow) &&
     setupComplete &&
     !legacy
   ) {
-    result.state = result.repoPattern.workflow === "gstack" ? "GSTACK_MINIMAL" : "ECC_NATIVE_MINIMAL";
+    result.state = {
+      "ecc-native": "ECC_NATIVE_MINIMAL",
+      gstack: "GSTACK_MINIMAL",
+      "ecc-gstack": "ECC_GSTACK_MINIMAL",
+      none: "NO_PIPELINE_MINIMAL"
+    }[result.repoPattern.workflow];
   } else if (legacy) {
     result.state = "LEGACY_VENDOR";
   } else {
@@ -124,8 +132,8 @@ export function printAudit(audit) {
     [audit.hasClaudeCommandsDir, ".claude/commands present"],
     [audit.hasClaudeHooksDir, ".claude/hooks present"],
     [audit.hasClaudeScriptsDir, ".claude/scripts present"],
-    [audit.hasClaudeRulesDir && audit.repoPattern?.workflow === "gstack", ".claude/rules is incompatible with gstack"],
-    [audit.hasClaudeRulesDir && audit.repoPattern?.workflow !== "gstack" && !audit.hasOnlyEccRulesDir, "non-ECC .claude/rules present"]
+    [audit.hasClaudeRulesDir && !["ecc-native", "ecc-gstack"].includes(audit.repoPattern?.workflow), ".claude/rules is incompatible with this setup pipeline"],
+    [audit.hasClaudeRulesDir && ["ecc-native", "ecc-gstack"].includes(audit.repoPattern?.workflow) && !audit.hasOnlyEccRulesDir, "non-ECC .claude/rules present"]
   ].filter(([bad]) => bad);
 
   if (issues.length > 0) {

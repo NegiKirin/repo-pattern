@@ -14,7 +14,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const sourceRoot = path.resolve(__dirname, "..");
 const optionalSkillNames = OPTIONAL_SKILLS.map((skill) => skill.value).join(", ");
-const setupPipelineNames = ["ecc", "gstack"];
+const setupPipelineNames = ["ecc", "gstack", "both", "none"];
 
 function requiredOptionValue(rest, index, arg) {
   const value = rest[index + 1];
@@ -79,8 +79,8 @@ function parseArgs(argv) {
     process.exit(2);
   }
 
-  if (options.setupPipeline === "gstack" && options.applyRules) {
-    console.error("--with-rules requires --setup-pipeline ecc.");
+  if (!["ecc", "both"].includes(options.setupPipeline) && options.applyRules) {
+    console.error("--with-rules requires --setup-pipeline ecc or both.");
     process.exit(2);
   }
 
@@ -96,6 +96,8 @@ Usage:
   repo-pattern setup
   repo-pattern setup --profile web --setup-pipeline ecc --yes
   repo-pattern setup --profile web --setup-pipeline gstack --yes
+  repo-pattern setup --profile web --setup-pipeline both --yes
+  repo-pattern setup --profile web --setup-pipeline none --yes
   repo-pattern setup --profile web --migrate --yes
   repo-pattern setup --with-skill taste --yes
   repo-pattern setup --with-skill ui-ux-pro-max --yes  # requires Python 3.x
@@ -113,7 +115,8 @@ Advanced:
 Options:
   --target <path>                  Target project path. Default: .
   --profile <name>                 MCP profile for scriptable commands. Default: web
-  --setup-pipeline <ecc|gstack>    Setup pipeline. Default: ecc
+  --setup-pipeline <ecc|gstack|both|none>
+                                  Setup pipeline. Default: ecc
 
 Setup UI:
   setup uses ↑/↓ to move, Space to toggle MCP/rules choices, Enter to confirm, Esc/Ctrl+C to cancel
