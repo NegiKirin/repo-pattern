@@ -21,6 +21,17 @@ const cliDir = path.dirname(fileURLToPath(import.meta.url));
 const cliPath = path.join(cliDir, "repo-pattern.mjs");
 const repoRoot = path.dirname(cliDir);
 const secretSentinel = "do-not-persist-anthropic-token";
+const localSettingsTemplate = JSON.parse(await fs.readFile(path.join(repoRoot, ".claude.example", "settings.local.example.json"), "utf8"));
+
+assert.deepEqual({
+  CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: localSettingsTemplate.env.CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION,
+  CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: localSettingsTemplate.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY,
+  workflowSizeGuideline: localSettingsTemplate.env.workflowSizeGuideline
+}, {
+  CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: "4",
+  CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: "2",
+  workflowSizeGuideline: "small"
+});
 
 const mcpServers = {
   context7: {
@@ -149,7 +160,7 @@ assert.equal(needsLocalSettingsPrompt({
   ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-8",
   ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-4-6",
   ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-4-5"
-}), true);
+}), false);
 assert.equal(needsLocalSettingsPrompt({
   ANTHROPIC_AUTH_TOKEN: " ",
   ANTHROPIC_BASE_URL: "https://example.com/v1",
@@ -717,7 +728,9 @@ try {
   assert.equal(lock.setupPipeline, "gstack");
   assert.equal(lock.gstack.status, "installed");
   assert.equal("ecc" in lock, false);
-  assert.equal((await fs.readFile(path.join(gstackProvisionTarget, ".claude", "settings.local.json"), "utf8")).includes("ecc@ecc"), false);
+  const gstackLocalSettings = JSON.parse(await fs.readFile(path.join(gstackProvisionTarget, ".claude", "settings.local.json"), "utf8"));
+  assert.equal(gstackLocalSettings.enabledPlugins["ecc@ecc"], undefined);
+  assert.equal(gstackLocalSettings.env.ANTHROPIC_AUTH_TOKEN, secretSentinel);
   await assert.rejects(() => fs.access(path.join(gstackProvisionTarget, ".claude", "rules")), { code: "ENOENT" });
   assert.equal((await auditProject(gstackProvisionTarget)).state, "GSTACK_MINIMAL");
   await doctorProject(gstackProvisionTarget);
@@ -758,6 +771,8 @@ try {
   assert.equal(localSettings.env.ANTHROPIC_AUTH_TOKEN, secretSentinel);
   assert.equal(localSettings.env.ANTHROPIC_BASE_URL, "https://example.com/v1");
   assert.equal(localSettings.env.CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION, "7");
+  assert.equal(localSettings.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY, "2");
+  assert.equal(localSettings.env.workflowSizeGuideline, "small");
   assert.equal(settings.permissions.defaultMode, "bypassPermissions");
   assert.equal("disableBypassPermissionsMode" in settings.permissions, false);
   assert.equal("CONTEXT7_API_KEY" in localSettings.env, false);
@@ -983,7 +998,15 @@ try {
   assert.equal(settings.permissions.defaultMode, "default");
   assert.equal(settings.permissions.disableBypassPermissionsMode, "disable");
   const localSettings = JSON.parse(await fs.readFile(path.join(defaultProvisionTarget, ".claude", "settings.local.json"), "utf8"));
-  assert.equal("env" in localSettings, false);
+  assert.deepEqual({
+    CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: localSettings.env.CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION,
+    CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: localSettings.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY,
+    workflowSizeGuideline: localSettings.env.workflowSizeGuideline
+  }, {
+    CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: "4",
+    CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: "2",
+    workflowSizeGuideline: "small"
+  });
   await updateClaudePermissions({ sourceRoot: repoRoot, target: defaultProvisionTarget, permissionConfig: { bypass: "allow" } });
   const updatedSettings = JSON.parse(await fs.readFile(settingsPath, "utf8"));
   assert.equal(updatedSettings.permissions.defaultMode, "bypassPermissions");

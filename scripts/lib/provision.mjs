@@ -146,14 +146,17 @@ async function rejectClaudeSymlink(target, { dryRun = false } = {}) {
   if (stat.isSymbolicLink()) throw new Error(".claude must not be a symlink.");
 }
 
-async function writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun }) {
-  if (!localSettingsEnv) return;
+async function writeLocalSettings({ sourceRoot, target, localSettingsEnv = {}, dryRun }) {
   if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local provider settings.");
   const claudeDir = path.join(target, ".claude");
   await rejectClaudeSymlink(target, { dryRun });
   const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.local.example.json"), {});
   const file = path.join(claudeDir, "settings.local.json");
-  await writePrivateJson(file, applyLocalSettings(template, localSettingsEnv), {
+  await writePrivateJson(file, (current) => applyLocalSettings({
+    ...template,
+    ...current,
+    env: { ...(template.env || {}), ...(current.env || {}) }
+  }, localSettingsEnv), {
     dryRun,
     label: ".claude/settings.local.json"
   });
