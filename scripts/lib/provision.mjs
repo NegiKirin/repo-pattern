@@ -28,6 +28,15 @@ function usesGstack(setupPipeline) {
   return setupPipeline === "gstack" || setupPipeline === "both";
 }
 
+export function setupPipelineScope(setupPipeline) {
+  return {
+    ecc: "project-scoped ECC",
+    gstack: "user-scoped/global gstack at ~/.claude/skills/gstack",
+    both: "project-scoped ECC + user-scoped/global gstack at ~/.claude/skills/gstack",
+    none: "writes only base project metadata"
+  }[setupPipeline];
+}
+
 function workflowName(setupPipeline) {
   return {
     ecc: "ecc-native",
@@ -257,6 +266,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
     ["Status", dryRun ? `preview only; ${pendingText}` : pendingText],
     ["Target", target],
     ["Setup pipeline", setupPipeline],
+    ["Pipeline scope", setupPipelineScope(setupPipeline)],
     ["Profile", profile],
     [dryRun ? "Would write" : "Written", `CLAUDE.md (if missing), .claude/, .mcp.json, .repo-pattern/.repo-pattern.json, .repo-pattern/.repo-pattern.lock.json${optionalSkills.length ? ", optional skill/plugin config" : ""}`],
     ["Doctor", dryRun ? "skipped (dry-run)" : style("success", "passed")],

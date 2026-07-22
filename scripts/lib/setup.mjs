@@ -3,7 +3,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { auditProject, printAudit } from "./audit.mjs";
 import { detectProject } from "./project-detect.mjs";
-import { provisionProject, updateClaudeAttribution, updateClaudePermissions } from "./provision.mjs";
+import { provisionProject, setupPipelineScope, updateClaudeAttribution, updateClaudePermissions } from "./provision.mjs";
 import { doctorProject } from "./doctor.mjs";
 import { collectMcpValues, generateMcp, listAvailableMcpServers, persistedMcpValues, readGeneratedMcpValues, readMcpConfig } from "./mcp.mjs";
 import { askConfirm, askPassword, askText, isInteractive, printBox, printLogo, printSummary, selectMany, selectOne, style } from "./prompt.mjs";
@@ -211,8 +211,8 @@ async function chooseSetupPipeline(initialValue = "ecc") {
   return selectedPipeline(await selectMany({
     message: "Choose setup pipeline",
     options: [
-      { value: "ecc", label: "ECC", description: "Claude Code plugin with optional project rules" },
-      { value: "gstack", label: "gstack", description: "global skills install; requires Git and Bun" }
+      { value: "ecc", label: "ECC", description: "project-scoped plugin with optional project rules" },
+      { value: "gstack", label: "gstack", description: "user-scoped/global at ~/.claude/skills/gstack; requires Git and Bun" }
     ],
     initialValues: pipelineValues(initialValue)
   }));
@@ -311,6 +311,7 @@ async function confirmSummary({ action, setupPipeline, target, mcpConfig, mcpVal
   printSummary("Setup summary", [
     ["Action", action],
     ["Setup pipeline", setupPipeline],
+    ["Pipeline scope", setupPipelineScope(setupPipeline)],
     ["Target", target],
     ["Profile", mcpConfig.profile],
     ["MCP servers", mcpConfig.mcpServers?.join(", ") || "from profile"],
