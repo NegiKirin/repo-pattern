@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "model": "opus",
+  "model": "sonnet",
   "fallbackModel": ["sonnet", "haiku"],
   "effortLevel": "high",
   "alwaysThinkingEnabled": true,
@@ -26,6 +26,8 @@
     "ENABLE_TOOL_SEARCH": "auto:5",
     "CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION": "4",
     "CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY": "2",
+    "MAX_THINKING_TOKENS": "10000",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "haiku",
     "ANTHROPIC_BASE_URL": "https://example.com/v1",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6",
