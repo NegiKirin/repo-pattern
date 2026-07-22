@@ -14,6 +14,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const sourceRoot = path.resolve(__dirname, "..");
 const optionalSkillNames = OPTIONAL_SKILLS.map((skill) => skill.value).join(", ");
+const setupPipelineNames = ["ecc", "gstack"];
 
 function requiredOptionValue(rest, index, arg) {
   const value = rest[index + 1];
@@ -34,6 +35,7 @@ function parseArgs(argv) {
     command: command || "help",
     target: ".",
     profile: "web",
+    setupPipeline: "ecc",
     dryRun: false,
     force: false,
     migrate: false,
@@ -46,6 +48,7 @@ function parseArgs(argv) {
     const arg = rest[i];
     if (arg === "--target") options.target = requiredOptionValue(rest, i++, arg);
     else if (arg === "--profile") options.profile = requiredOptionValue(rest, i++, arg);
+    else if (arg === "--setup-pipeline") options.setupPipeline = requiredOptionValue(rest, i++, arg);
     else if (arg === "--dry-run") options.dryRun = true;
     else if (arg === "--force") options.force = true;
     else if (arg === "--migrate") options.migrate = true;
@@ -65,9 +68,19 @@ function parseArgs(argv) {
     process.exit(2);
   }
 
+  if (!setupPipelineNames.includes(options.setupPipeline)) {
+    console.error(`Unknown setup pipeline: ${options.setupPipeline}. Available: ${setupPipelineNames.join(", ")}`);
+    process.exit(2);
+  }
+
   const invalidSkills = invalidOptionalSkills(options.optionalSkills);
   if (invalidSkills.length > 0) {
     console.error(`Unknown optional skill(s): ${invalidSkills.join(", ")}. Available: ${optionalSkillNames}`);
+    process.exit(2);
+  }
+
+  if (options.setupPipeline === "gstack" && options.applyRules) {
+    console.error("--with-rules requires --setup-pipeline ecc.");
     process.exit(2);
   }
 
@@ -76,12 +89,13 @@ function parseArgs(argv) {
 }
 
 function help() {
-  console.log(`repo-pattern — minimal ECC-first Claude Code setup
+  console.log(`repo-pattern — minimal Claude Code setup
 
 Usage:
   repo-pattern help
   repo-pattern setup
-  repo-pattern setup --profile web --yes
+  repo-pattern setup --profile web --setup-pipeline ecc --yes
+  repo-pattern setup --profile web --setup-pipeline gstack --yes
   repo-pattern setup --profile web --migrate --yes
   repo-pattern setup --with-skill taste --yes
   repo-pattern setup --with-skill ui-ux-pro-max --yes  # requires Python 3.x
@@ -97,8 +111,9 @@ Advanced:
   repo-pattern cleanup
 
 Options:
-  --target <path>   Target project path. Default: .
-  --profile <name>  MCP profile for scriptable commands. Default: web
+  --target <path>                  Target project path. Default: .
+  --profile <name>                 MCP profile for scriptable commands. Default: web
+  --setup-pipeline <ecc|gstack>    Setup pipeline. Default: ecc
 
 Setup UI:
   setup uses ↑/↓ to move, Space to toggle MCP/rules choices, Enter to confirm, Esc/Ctrl+C to cancel

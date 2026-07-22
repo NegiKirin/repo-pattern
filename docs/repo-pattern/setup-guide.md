@@ -11,14 +11,17 @@ Use `setup` when you want an arrow-key UI for profile choice, optional ECC rules
 Use scriptable `setup --yes` when you already know the exact options:
 
 ```bash
-node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --yes
+node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --setup-pipeline ecc --yes
+node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --setup-pipeline gstack --yes
 ```
+
+ECC is the default. gstack uses its upstream global installer at `~/.claude/skills/gstack` and requires Git and Bun v1.0+. On Windows, it also requires Node.js and Git Bash or WSL.
 
 Use this when you want to initialize a new project with:
 
 ```text
 minimal Claude Code setup
-+ ECC setup flow
++ selected ECC or gstack setup flow
 + MCP profile
 + generated .mcp.json
 + repo-pattern metadata
@@ -119,8 +122,8 @@ For non-interactive scripts, use `setup --yes`.
 12. Create `.repo-pattern/.gitignore` with `*`.
 13. Add generated setup files and basic OS/IDE noise to `.gitignore`.
 14. Write `.repo-pattern/.repo-pattern.lock.json` without credential values.
-15. Run or attempt ECC setup flow.
-16. During `setup` with rules enabled, apply ECC rules.
+15. Run the selected setup pipeline: ECC setup after generation, or the global gstack installer after target preflight succeeds.
+16. During ECC `setup` with rules enabled, apply ECC rules.
 17. Run doctor.
 ```
 
@@ -496,6 +499,7 @@ Behavior:
 EMPTY/PARTIAL       → recommends setup
 LEGACY_VENDOR       → recommends migrate and requires confirmation
 ECC_NATIVE_MINIMAL  → offers doctor, MCP regeneration, or exit
+GSTACK_MINIMAL      → offers doctor, MCP regeneration, or exit
 ```
 
 Interactive mode uses ↑/↓ to move, Space to toggle MCP/rules choices, Enter to confirm. It writes `.claude/settings.local.json` and adds that path to the target `.gitignore`. Use `setup --yes` for CI/scripts.
@@ -517,8 +521,8 @@ It performs:
 ```text
 minimal Claude setup
 MCP generation
-ECC setup flow
-optional ECC rules sync
+selected ECC or gstack setup flow
+optional ECC rules sync for ECC
 doctor check
 ```
 
@@ -540,6 +544,7 @@ Possible states:
 EMPTY
 PARTIAL
 ECC_NATIVE_MINIMAL
+GSTACK_MINIMAL
 LEGACY_VENDOR
 ```
 
@@ -578,7 +583,7 @@ unmanaged local Claude runtime surfaces are absent
 settings hooks are empty
 .mcp.json has no hardcoded machine path
 .repo-pattern/.repo-pattern.json is valid
-ECC setup status is recorded
+the selected ECC or gstack setup status is recorded
 ```
 
 Run this after setup or after changing MCP profiles.
