@@ -82,7 +82,8 @@ export function applyAttributionSetting(settings, attributionConfig = { mode: "o
 
   next.attribution = {
     ...(next.attribution || {}),
-    commit: attributionConfig.mode === "custom" ? attributionConfig.commit : ""
+    commit: attributionConfig.mode === "custom" ? attributionConfig.commit : "",
+    ...(attributionConfig.mode === "off" ? { pr: "" } : {})
   };
   return next;
 }
