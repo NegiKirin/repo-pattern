@@ -36,6 +36,7 @@ function parseArgs(argv) {
     target: ".",
     profile: "web",
     setupPipeline: "ecc",
+    planTuneHooks: false,
     dryRun: false,
     force: false,
     migrate: false,
@@ -49,6 +50,7 @@ function parseArgs(argv) {
     if (arg === "--target") options.target = requiredOptionValue(rest, i++, arg);
     else if (arg === "--profile") options.profile = requiredOptionValue(rest, i++, arg);
     else if (arg === "--setup-pipeline") options.setupPipeline = requiredOptionValue(rest, i++, arg);
+    else if (arg === "--with-plan-tune-hooks") options.planTuneHooks = true;
     else if (arg === "--dry-run") options.dryRun = true;
     else if (arg === "--force") options.force = true;
     else if (arg === "--migrate") options.migrate = true;
@@ -84,6 +86,11 @@ function parseArgs(argv) {
     process.exit(2);
   }
 
+  if (options.planTuneHooks && !["gstack", "both"].includes(options.setupPipeline)) {
+    console.error("--with-plan-tune-hooks requires --setup-pipeline gstack or both.");
+    process.exit(2);
+  }
+
   options.target = path.resolve(process.cwd(), options.target);
   return options;
 }
@@ -96,6 +103,7 @@ Usage:
   repo-pattern setup
   repo-pattern setup --profile web --setup-pipeline ecc --yes
   repo-pattern setup --profile web --setup-pipeline gstack --yes
+  repo-pattern setup --profile web --setup-pipeline gstack --with-plan-tune-hooks --yes
   repo-pattern setup --profile web --setup-pipeline both --yes
   repo-pattern setup --profile web --setup-pipeline none --yes
   repo-pattern setup --profile web --migrate --yes
@@ -121,6 +129,8 @@ Options:
                                   gstack: user-scoped/global at ~/.claude/skills/gstack
                                   both: project-scoped ECC + user-scoped/global gstack
                                   none: base project metadata only
+  --with-plan-tune-hooks          Add gstack PreToolUse/PostToolUse hooks to ~/.claude/settings.json
+                                  Requires --setup-pipeline gstack or both. Default: not installed
 
 Setup UI:
   setup uses ↑/↓ to move, Space to toggle MCP/rules choices, Enter to confirm, Esc/Ctrl+C to cancel
