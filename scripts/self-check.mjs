@@ -8,7 +8,7 @@ import { auditProject, printAudit } from "./lib/audit.mjs";
 import { cleanupProject } from "./lib/cleanup.mjs";
 import { doctorProject } from "./lib/doctor.mjs";
 import { applyEccPluginSettings, setupEcc } from "./lib/ecc.mjs";
-import { ensureBun, gstackEnvironment, removeEccPluginSettings, runGstackSetup, setupGstack } from "./lib/gstack.mjs";
+import { ensureBun, gstackEnvironment, gstackSummaryRows, isValidBunInstaller, removeEccPluginSettings, runGstackSetup, setupGstack } from "./lib/gstack.mjs";
 import { applyMcpValues, generateMcp, mcpSecretPrompt, persistedMcpValues, readGeneratedMcpValues, validateRelativeMcpPath } from "./lib/mcp.mjs";
 import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, provisionProject, setupPipelineScope, updateClaudePermissions } from "./lib/provision.mjs";
 import { writePrivateJson } from "./lib/fs-utils.mjs";
@@ -618,6 +618,10 @@ assert(gitignoreLines.includes(".claude/"));
 
 assert.deepEqual(gstackEnvironment("bun", { PATH: "/usr/bin" }), { PATH: "/usr/bin" });
 assert.deepEqual(gstackEnvironment("/home/test/.bun/bin/bun", { PATH: "/usr/bin" }), { PATH: `/home/test/.bun/bin${path.delimiter}/usr/bin` });
+assert.deepEqual(gstackSummaryRows(), [
+  ["Scope", "user-global ~/.claude/skills/gstack"],
+  ["Status", "ready"]
+]);
 
 const gstackSetupCalls = [];
 const gstackSetupLogs = [];
@@ -659,6 +663,16 @@ assert.doesNotMatch(gstackFailureLog, /fatal: setup could not complete/);
 assert.doesNotMatch(gstackFailureLog, new RegExp(gstackCredentialFixture));
 assert(gstackFailureLog.length <= 4200);
 
+const validBunInstaller = Buffer.from(`#!/usr/bin/env bash
+set -euo pipefail
+install_env=BUN_INSTALL
+github_repo="\$GITHUB/oven-sh/bun"
+bun_uri=\$github_repo/releases/latest/download/bun-\$target.zip
+${"# Bun installer\n".repeat(80)}`);
+assert.equal(isValidBunInstaller(validBunInstaller), true);
+assert.equal(isValidBunInstaller(Buffer.from("<!doctype html><title>502 Bad Gateway</title>")), false);
+assert.equal(isValidBunInstaller(Buffer.from("#!/usr/bin/env bash\nset -euo pipefail\n")), false);
+
 const bunInstallCommands = [];
 let bunCheckCount = 0;
 let removedBunInstaller = false;
@@ -673,7 +687,7 @@ const installedBun = await ensureBun({
     return "";
   },
   mkdtemp: async () => "/tmp/repo-pattern-bun-installer",
-  readFile: async () => Buffer.from("#!/usr/bin/env bash\nBUN_INSTALL=\"${BUN_INSTALL:-$HOME/.bun}\"\nhttps://github.com/oven-sh/bun/releases\n"),
+  readFile: async () => validBunInstaller,
   rm: async () => { removedBunInstaller = true; }
 });
 assert.equal(installedBun, "/home/test/.bun/bin/bun");
@@ -694,7 +708,7 @@ await assert.rejects(() => ensureBun({
     return "";
   },
   mkdtemp: async () => "/tmp/repo-pattern-invalid-bun-installer",
-  readFile: async () => Buffer.from("not Bun"),
+  readFile: async () => Buffer.from("<!doctype html><title>502 Bad Gateway</title>"),
   rm: async () => {}
 }), /failed content validation/);
 
