@@ -23,15 +23,15 @@ const repoRoot = path.dirname(cliDir);
 const secretSentinel = "do-not-persist-anthropic-token";
 const localSettingsTemplate = JSON.parse(await fs.readFile(path.join(repoRoot, ".claude.example", "settings.local.example.json"), "utf8"));
 
+assert.equal(localSettingsTemplate.workflowSizeGuideline, "small");
 assert.deepEqual({
   CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: localSettingsTemplate.env.CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION,
-  CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: localSettingsTemplate.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY,
-  workflowSizeGuideline: localSettingsTemplate.env.workflowSizeGuideline
+  CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: localSettingsTemplate.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY
 }, {
   CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: "4",
-  CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: "2",
-  workflowSizeGuideline: "small"
+  CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: "2"
 });
+assert.equal("workflowSizeGuideline" in localSettingsTemplate.env, false);
 
 const mcpServers = {
   context7: {
@@ -709,6 +709,7 @@ console.log = () => {};
 try {
   await fs.mkdir(path.join(gstackProvisionTarget, ".claude", "rules", "ecc", "typescript"), { recursive: true });
   await fs.writeFile(path.join(gstackProvisionTarget, ".claude", "settings.local.json"), JSON.stringify({
+    workflowSizeGuideline: "large",
     env: { ANTHROPIC_AUTH_TOKEN: secretSentinel },
     enabledPlugins: { "ecc@ecc": true },
     extraKnownMarketplaces: { ecc: { source: { source: "git", url: "https://github.com/affaan-m/ECC.git" } } }
@@ -730,6 +731,7 @@ try {
   assert.equal("ecc" in lock, false);
   const gstackLocalSettings = JSON.parse(await fs.readFile(path.join(gstackProvisionTarget, ".claude", "settings.local.json"), "utf8"));
   assert.equal(gstackLocalSettings.enabledPlugins["ecc@ecc"], undefined);
+  assert.equal(gstackLocalSettings.workflowSizeGuideline, "large");
   assert.equal(gstackLocalSettings.env.ANTHROPIC_AUTH_TOKEN, secretSentinel);
   await assert.rejects(() => fs.access(path.join(gstackProvisionTarget, ".claude", "rules")), { code: "ENOENT" });
   assert.equal((await auditProject(gstackProvisionTarget)).state, "GSTACK_MINIMAL");
@@ -770,9 +772,10 @@ try {
   assert.equal((await fs.stat(mcpConfigPath)).mode & 0o777, 0o600);
   assert.equal(localSettings.env.ANTHROPIC_AUTH_TOKEN, secretSentinel);
   assert.equal(localSettings.env.ANTHROPIC_BASE_URL, "https://example.com/v1");
+  assert.equal(localSettings.workflowSizeGuideline, "small");
   assert.equal(localSettings.env.CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION, "7");
   assert.equal(localSettings.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY, "2");
-  assert.equal(localSettings.env.workflowSizeGuideline, "small");
+  assert.equal("workflowSizeGuideline" in localSettings.env, false);
   assert.equal(settings.permissions.defaultMode, "bypassPermissions");
   assert.equal("disableBypassPermissionsMode" in settings.permissions, false);
   assert.equal("CONTEXT7_API_KEY" in localSettings.env, false);
@@ -998,15 +1001,15 @@ try {
   assert.equal(settings.permissions.defaultMode, "default");
   assert.equal(settings.permissions.disableBypassPermissionsMode, "disable");
   const localSettings = JSON.parse(await fs.readFile(path.join(defaultProvisionTarget, ".claude", "settings.local.json"), "utf8"));
+  assert.equal(localSettings.workflowSizeGuideline, "small");
   assert.deepEqual({
     CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: localSettings.env.CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION,
-    CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: localSettings.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY,
-    workflowSizeGuideline: localSettings.env.workflowSizeGuideline
+    CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: localSettings.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY
   }, {
     CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: "4",
-    CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: "2",
-    workflowSizeGuideline: "small"
+    CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: "2"
   });
+  assert.equal("workflowSizeGuideline" in localSettings.env, false);
   await updateClaudePermissions({ sourceRoot: repoRoot, target: defaultProvisionTarget, permissionConfig: { bypass: "allow" } });
   const updatedSettings = JSON.parse(await fs.readFile(settingsPath, "utf8"));
   assert.equal(updatedSettings.permissions.defaultMode, "bypassPermissions");

@@ -125,13 +125,11 @@ export async function updateClaudePermissions({ sourceRoot, target, permissionCo
 }
 
 export function applyLocalSettings(settings, localSettingsEnv) {
-  return {
-    ...settings,
-    env: withoutPersistedMcpValues({
-      ...(settings.env || {}),
-      ...localSettingsEnv
-    })
-  };
+  const env = Object.fromEntries(Object.entries(withoutPersistedMcpValues({
+    ...(settings.env || {}),
+    ...localSettingsEnv
+  })).filter(([name]) => name !== "workflowSizeGuideline"));
+  return { ...settings, env };
 }
 
 async function rejectClaudeSymlink(target, { dryRun = false } = {}) {

@@ -6,21 +6,7 @@
   },
   "permissions": {
     "deny": [
-      "Read(.env)",
-      "Read(.env.*)",
-      "Read(**/.env)",
-      "Read(**/.env.*)",
-      "Read(secrets/**)",
-      "Read(private/**)",
-      "Read(**/*.pem)",
-      "Read(**/*.key)",
-      "Read(**/id_rsa)",
-      "Read(**/id_ed25519)",
-      "Read(~/.ssh/**)",
-      "Read(~/.aws/**)",
-      "Read(~/.config/gcloud/**)",
-      "Bash(rm -rf /)",
-      "Bash(rm -rf ~)"
+      "Agent(claude)"
     ],
     "ask": [
       "Bash(git push *)",
