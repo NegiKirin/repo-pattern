@@ -8,7 +8,7 @@ import { auditProject, printAudit } from "./lib/audit.mjs";
 import { cleanupProject } from "./lib/cleanup.mjs";
 import { doctorProject } from "./lib/doctor.mjs";
 import { applyEccPluginSettings, setupEcc } from "./lib/ecc.mjs";
-import { removeEccPluginSettings, setupGstack } from "./lib/gstack.mjs";
+import { ensureBun, gstackEnvironment, removeEccPluginSettings, setupGstack } from "./lib/gstack.mjs";
 import { applyMcpValues, generateMcp, mcpSecretPrompt, persistedMcpValues, readGeneratedMcpValues, validateRelativeMcpPath } from "./lib/mcp.mjs";
 import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, provisionProject, updateClaudePermissions } from "./lib/provision.mjs";
 import { writePrivateJson } from "./lib/fs-utils.mjs";
@@ -600,17 +600,47 @@ assert(!gitignoreLines.includes(".repo-pattern.json"));
 assert(!gitignoreLines.includes(".repo-pattern.lock.json"));
 assert(gitignoreLines.includes(".claude/"));
 
-const missingBunTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-missing-bun-"));
-const originalPath = process.env.PATH;
-console.log = () => {};
-try {
-  process.env.PATH = "";
-  await assert.rejects(() => setupGstack({ target: missingBunTarget }), /Bun is required/);
-} finally {
-  process.env.PATH = originalPath;
-  console.log = originalLog;
-  await fs.rm(missingBunTarget, { recursive: true, force: true });
-}
+assert.deepEqual(gstackEnvironment("bun", { PATH: "/usr/bin" }), { PATH: "/usr/bin" });
+assert.deepEqual(gstackEnvironment("/home/test/.bun/bin/bun", { PATH: "/usr/bin" }), { PATH: `/home/test/.bun/bin${path.delimiter}/usr/bin` });
+
+const bunInstallCommands = [];
+let bunCheckCount = 0;
+let removedBunInstaller = false;
+const installedBun = await ensureBun({
+  platform: "linux",
+  homedir: "/home/test",
+  tmpdir: "/tmp",
+  run(command, args, options) {
+    bunInstallCommands.push({ command, args, options });
+    if (command === "bun" && bunCheckCount++ === 0) throw Object.assign(new Error("missing"), { code: "ENOENT" });
+    if (command === "/home/test/.bun/bin/bun") return "1.2.0\n";
+    return "";
+  },
+  mkdtemp: async () => "/tmp/repo-pattern-bun-installer",
+  readFile: async () => Buffer.from("#!/usr/bin/env bash\nBUN_INSTALL=\"${BUN_INSTALL:-$HOME/.bun}\"\nhttps://github.com/oven-sh/bun/releases\n"),
+  rm: async () => { removedBunInstaller = true; }
+});
+assert.equal(installedBun, "/home/test/.bun/bin/bun");
+assert.deepEqual(bunInstallCommands[1].args, [
+  "--fail", "--show-error", "--silent", "--location",
+  "--proto", "=https", "--proto-redir", "=https", "--tlsv1.2",
+  "--max-filesize", "1048576", "--output", "/tmp/repo-pattern-bun-installer/install.sh",
+  "https://bun.sh/install"
+]);
+assert.deepEqual(bunInstallCommands[2].args, ["-n", "/tmp/repo-pattern-bun-installer/install.sh"]);
+assert.deepEqual(bunInstallCommands[3].args, ["/tmp/repo-pattern-bun-installer/install.sh"]);
+assert.equal(removedBunInstaller, true);
+await assert.rejects(() => ensureBun({ platform: "win32", run: () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); } }), /automatic Bun installation is supported only on Linux and macOS/);
+await assert.rejects(() => ensureBun({
+  platform: "linux",
+  run(command) {
+    if (command === "bun") throw Object.assign(new Error("missing"), { code: "ENOENT" });
+    return "";
+  },
+  mkdtemp: async () => "/tmp/repo-pattern-invalid-bun-installer",
+  readFile: async () => Buffer.from("not Bun"),
+  rm: async () => {}
+}), /failed content validation/);
 
 const failedGstackTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-failed-"));
 console.log = () => {};

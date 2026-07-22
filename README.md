@@ -48,7 +48,7 @@ npx repo-pattern setup --profile web --setup-pipeline ecc --yes
 npx repo-pattern setup --profile web --setup-pipeline gstack --yes
 ```
 
-ECC remains the default. gstack setup uses its upstream global checkout at `~/.claude/skills/gstack` and requires Git and Bun v1.0+. On Windows, it also requires Node.js and Git Bash or WSL.
+ECC remains the default. gstack setup uses its upstream global checkout at `~/.claude/skills/gstack` and requires Git and Bun v1.0+. When Bun is missing on Linux or macOS, setup downloads the official installer over TLS, validates it, and installs Bun automatically. On unsupported systems, install Bun manually before setup.
 
 Migrate an existing project:
 
