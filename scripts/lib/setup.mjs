@@ -178,19 +178,48 @@ async function chooseMcpValues(sourceRoot, mcpConfig, values = {}) {
   return collectMcpValues(mcpServers, { values: persistedMcpValues(values) });
 }
 
+const SETUP_PIPELINES = ["ecc", "gstack", "both", "none"];
+
+function selectedPipeline(values = []) {
+  const selected = new Set(values);
+  if (selected.has("ecc") && selected.has("gstack")) return "both";
+  if (selected.has("gstack")) return "gstack";
+  if (selected.has("ecc")) return "ecc";
+  return "none";
+}
+
+function pipelineValues(setupPipeline = "ecc") {
+  if (setupPipeline === "both") return ["ecc", "gstack"];
+  if (setupPipeline === "none") return [];
+  return [setupPipeline];
+}
+
+function usesEcc(setupPipeline) {
+  return setupPipeline === "ecc" || setupPipeline === "both";
+}
+
+function expectedSetupState(setupPipeline) {
+  return {
+    ecc: "ECC_NATIVE_MINIMAL",
+    gstack: "GSTACK_MINIMAL",
+    both: "ECC_GSTACK_MINIMAL",
+    none: "NO_PIPELINE_MINIMAL"
+  }[setupPipeline];
+}
+
 async function chooseSetupPipeline(initialValue = "ecc") {
-  return selectOne({
+  return selectedPipeline(await selectMany({
     message: "Choose setup pipeline",
     options: [
       { value: "ecc", label: "ECC", description: "Claude Code plugin with optional project rules" },
       { value: "gstack", label: "gstack", description: "global skills install; requires Git and Bun" }
     ],
-    initialValue
-  });
+    initialValues: pipelineValues(initialValue)
+  }));
 }
 
 async function chooseRuleConfig(detection, setupPipeline) {
-  if (setupPipeline === "gstack") return { applyRules: false, ruleMode: "auto", rules: [] };
+  if (!usesEcc(setupPipeline)) return { applyRules: false, ruleMode: "auto", rules: [] };
   const autoRules = selectEccRules(detection);
   const ruleMode = await selectOne({
     message: "Step 2/6 — Choose ECC rule detection mode",
@@ -360,13 +389,13 @@ async function handleInitialized({ sourceRoot, target, profile, dryRun }) {
 }
 
 export async function setupProject({ sourceRoot, target, profile = "web", setupPipeline = "ecc", dryRun = false, force = false, migrate = false, yes = false, applyRules = false, optionalSkills = [] }) {
-  if (!["ecc", "gstack"].includes(setupPipeline)) throw new Error(`Unknown setup pipeline: ${setupPipeline}. Available: ecc, gstack`);
+  if (!SETUP_PIPELINES.includes(setupPipeline)) throw new Error(`Unknown setup pipeline: ${setupPipeline}. Available: ${SETUP_PIPELINES.join(", ")}`);
   if (!isInteractive()) {
     if (!yes) throw new Error("setup requires an interactive terminal, or pass --yes for scriptable mode.");
     if (profile === "custom") throw new Error("setup --yes cannot use the custom profile; choose a named profile.");
 
     const audit = await auditProject(target);
-    const expectedState = setupPipeline === "gstack" ? "GSTACK_MINIMAL" : "ECC_NATIVE_MINIMAL";
+    const expectedState = expectedSetupState(setupPipeline);
     if (audit.state === expectedState && !force && optionalSkills.length === 0) {
       await doctorProject(target, { dryRun });
       return;
@@ -399,11 +428,12 @@ export async function setupProject({ sourceRoot, target, profile = "web", setupP
   const previousOptions = await choosePreviousSetupOptions(target);
   const detection = await detectProject(target);
   const selectedSetupPipeline = previousOptions?.setupPipeline || await chooseSetupPipeline(setupPipeline);
+  if (!SETUP_PIPELINES.includes(selectedSetupPipeline)) throw new Error(`Unknown setup pipeline: ${selectedSetupPipeline}. Available: ${SETUP_PIPELINES.join(", ")}`);
   const chosenProfile = previousOptions?.profile || await chooseProfile(sourceRoot, profile, detection);
   const mcpConfig = previousOptions
     ? { profile: previousOptions.profile, mcpServers: previousOptions.mcpServers }
     : await chooseMcpConfig(sourceRoot, chosenProfile);
-  const ruleConfig = previousOptions && selectedSetupPipeline === "ecc"
+  const ruleConfig = previousOptions && usesEcc(selectedSetupPipeline)
     ? { applyRules: previousOptions.applyRules, ruleMode: previousOptions.ruleMode, rules: previousOptions.rules }
     : await chooseRuleConfig(detection, selectedSetupPipeline);
   const selectedOptionalSkills = previousOptions?.optionalSkills || await chooseOptionalSkills(optionalSkills);
@@ -415,7 +445,7 @@ export async function setupProject({ sourceRoot, target, profile = "web", setupP
     throw new Error("Target has legacy/local Claude runtime surfaces. Re-run setup with --migrate, not --force.");
   }
 
-  const expectedState = selectedSetupPipeline === "gstack" ? "GSTACK_MINIMAL" : "ECC_NATIVE_MINIMAL";
+  const expectedState = expectedSetupState(selectedSetupPipeline);
   if (audit.state === expectedState) {
     if (selectedOptionalSkills.length > 0) {
       await applyOptionalSkills({ target, skills: selectedOptionalSkills, dryRun });

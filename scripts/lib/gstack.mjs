@@ -26,6 +26,14 @@ function validateGstackCheckout() {
   return true;
 }
 
+function requireBun() {
+  try {
+    execFileSync("bun", ["--version"], { stdio: "ignore" });
+  } catch {
+    throw new Error("Bun is required for gstack setup. Install Bun v1.0+ and rerun setup.");
+  }
+}
+
 export async function removeEccPluginSettings({ target, dryRun = false }) {
   if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local plugin settings.");
   await writePrivateJson(path.join(target, ".claude", "settings.local.json"), withoutEccPlugin, {
@@ -54,14 +62,27 @@ export async function setupGstack({ target, dryRun = false }) {
       });
     }
   } else if (dryRun) {
-    if (!exists(GSTACK_DIR)) console.log(`[dry-run] git clone --single-branch --depth 1 ${GSTACK_REPOSITORY} ${GSTACK_DIR}`);
+    console.log("Checking gstack prerequisites");
+    if (!exists(GSTACK_DIR)) {
+      console.log("Cloning gstack");
+      console.log(`[dry-run] git clone --single-branch --depth 1 ${GSTACK_REPOSITORY} ${GSTACK_DIR}`);
+    } else {
+      console.log("Using existing gstack checkout");
+    }
+    console.log("Running gstack setup");
     console.log(`[dry-run] cd ${GSTACK_DIR} && ./setup`);
     status = "dry-run";
   } else {
+    console.log("Checking gstack prerequisites");
+    requireBun();
     if (!validateGstackCheckout()) {
+      console.log("Cloning gstack");
       await ensureDir(path.dirname(GSTACK_DIR));
       execFileSync("git", ["clone", "--single-branch", "--depth", "1", GSTACK_REPOSITORY, GSTACK_DIR], { stdio: "inherit" });
+    } else {
+      console.log("Using existing gstack checkout");
     }
+    console.log("Running gstack setup");
     execFileSync(process.platform === "win32" ? "bash" : "./setup", process.platform === "win32" ? ["./setup"] : [], { cwd: GSTACK_DIR, stdio: "inherit" });
     printSummary("gstack", [["Status", "installed for Claude Code"]]);
   }

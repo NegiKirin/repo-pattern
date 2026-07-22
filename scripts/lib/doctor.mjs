@@ -33,7 +33,8 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   check(!audit.hasClaudeCommandsDir, ".claude/commands does not exist");
   check(!audit.hasClaudeHooksDir, ".claude/hooks does not exist");
   check(!audit.hasClaudeScriptsDir, ".claude/scripts does not exist");
-  check(!audit.hasClaudeRulesDir || (audit.repoPattern?.workflow !== "gstack" && audit.hasOnlyEccRulesDir), audit.repoPattern?.workflow === "gstack" ? ".claude/rules does not exist for gstack" : "no non-ECC .claude/rules");
+  const usesEcc = audit.repoPattern?.workflow === "ecc-native" || audit.repoPattern?.workflow === "ecc-gstack";
+  check(!audit.hasClaudeRulesDir || (usesEcc && audit.hasOnlyEccRulesDir), usesEcc ? "no non-ECC .claude/rules" : ".claude/rules does not exist for this setup pipeline");
   check(audit.hasClaudeDir, ".claude exists");
   check(!audit.hasSettingsHooks, ".claude/settings.json hooks is {}");
   check(!isTracked(target, ".claude/settings.json"), ".claude/settings.json is not tracked");
@@ -44,8 +45,13 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   check(audit.hasRepoPatternJson, ".repo-pattern/.repo-pattern.json exists");
 
   const repoPattern = audit.repoPattern || {};
-  const setupPipeline = repoPattern.workflow === "gstack" ? "gstack" : "ecc";
-  check(["ecc-native", "gstack"].includes(repoPattern.workflow), ".repo-pattern/.repo-pattern.json workflow is ecc-native or gstack");
+  const setupPipeline = {
+    "ecc-native": "ecc",
+    gstack: "gstack",
+    "ecc-gstack": "both",
+    none: "none"
+  }[repoPattern.workflow] || "ecc";
+  check(["ecc-native", "gstack", "ecc-gstack", "none"].includes(repoPattern.workflow), ".repo-pattern/.repo-pattern.json workflow is ecc-native, gstack, ecc-gstack, or none");
   check(repoPattern.runtime?.localSkills === false || managedSkills, ".repo-pattern/.repo-pattern.json runtime.localSkills=false unless optional skills are managed");
   if (managedSkills) check(audit.hasClaudeSkillsDir, ".claude/skills exists for managed optional skills");
   check(repoPattern.runtime?.localCommands === false, ".repo-pattern/.repo-pattern.json runtime.localCommands=false");
@@ -71,9 +77,11 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
     check(audit.hasClaudeEccRulesDir && existingRules.size > 0, ".claude/rules/ecc contains synced ECC rule pack directories");
     check(appliedRules.every((rule) => existingRules.has(rule)), "all locked ECC rule packs exist under .claude/rules/ecc");
   }
-  if (setupPipeline === "gstack") check(lock.gstack?.status === "installed", ".repo-pattern/.repo-pattern.lock.json gstack.status=installed");
-  infoRows.push(`${setupPipeline === "gstack" ? "gstack" : "ECC"} setup status: ${lock[setupPipeline]?.status || "unknown"}`);
-  if (setupPipeline === "ecc" && lock.ecc?.status === "manual-plugin-install-required") {
+  if (setupPipeline === "gstack" || setupPipeline === "both") check(lock.gstack?.status === "installed", ".repo-pattern/.repo-pattern.lock.json gstack.status=installed");
+  if (setupPipeline === "both") infoRows.push(`ECC setup status: ${lock.ecc?.status || "unknown"}, gstack setup status: ${lock.gstack?.status || "unknown"}`);
+  else if (setupPipeline !== "none") infoRows.push(`${setupPipeline === "gstack" ? "gstack" : "ECC"} setup status: ${lock[setupPipeline]?.status || "unknown"}`);
+  else infoRows.push("setup pipeline: none");
+  if ((setupPipeline === "ecc" || setupPipeline === "both") && lock.ecc?.status === "manual-plugin-install-required") {
     infoRows.push("Open Claude Code and run:");
     infoRows.push("/plugin marketplace add https://github.com/affaan-m/ECC");
     infoRows.push("/plugin install ecc@ecc");

@@ -411,7 +411,7 @@ assert(auditLogs.includes("State   EMPTY"));
 assert(!auditLogs.some((line) => line.includes(".claude present")));
 assert(auditLogs.some((line) => line.includes("⚠ .mcp.json missing")));
 assert(auditLogs.some((line) => line.includes("⚠ .claude/settings.json hooks not empty")));
-assert(auditLogs.some((line) => line.includes("⚠ .claude/rules is incompatible with gstack")));
+assert(auditLogs.some((line) => line.includes("⚠ .claude/rules is incompatible with this setup pipeline")));
 
 const logs = [];
 const originalLog = console.log;
@@ -472,7 +472,7 @@ assert.match(result.stderr, /Unknown setup pipeline: nope\. Available: ecc, gsta
 
 result = runCli(["help"]);
 assert.equal(result.status, 0);
-assert.match(result.stdout, /--setup-pipeline <ecc\|gstack>/);
+assert.match(result.stdout, /--setup-pipeline <ecc\|gstack\|both\|none>/);
 assert.match(result.stdout, /--with-skill <name>/);
 assert.match(result.stdout, /ui-ux-pro-max/);
 assert.match(result.stdout, /impeccable/);
@@ -530,6 +530,9 @@ const gstackSetupTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-
 try {
   result = runCli(["setup", "--target", gstackSetupTarget, "--profile", "minimal", "--setup-pipeline", "gstack", "--yes", "--dry-run"]);
   assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Checking gstack prerequisites/);
+  assert.match(result.stdout, /Cloning gstack|Using existing gstack checkout/);
+  assert.match(result.stdout, /Running gstack setup/);
   assert.match(result.stdout, /\.\/setup/);
   assert.doesNotMatch(result.stdout, /Install ECC inside Claude Code/);
 } finally {
@@ -596,6 +599,18 @@ assert(gitignoreLines.includes(".repo-pattern/"));
 assert(!gitignoreLines.includes(".repo-pattern.json"));
 assert(!gitignoreLines.includes(".repo-pattern.lock.json"));
 assert(gitignoreLines.includes(".claude/"));
+
+const missingBunTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-missing-bun-"));
+const originalPath = process.env.PATH;
+console.log = () => {};
+try {
+  process.env.PATH = "";
+  await assert.rejects(() => setupGstack({ target: missingBunTarget }), /Bun is required/);
+} finally {
+  process.env.PATH = originalPath;
+  console.log = originalLog;
+  await fs.rm(missingBunTarget, { recursive: true, force: true });
+}
 
 const failedGstackTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-failed-"));
 console.log = () => {};
@@ -703,6 +718,72 @@ await assert.rejects(
   () => provisionProject({ sourceRoot: repoRoot, target: os.tmpdir(), setupPipeline: "invalid", dryRun: true }),
   /Unknown setup pipeline: invalid/
 );
+
+const bothProvisionTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-both-provision-"));
+console.log = () => {};
+try {
+  process.env.REPO_PATTERN_GSTACK_SETUP_CMD = "true";
+  await provisionProject({
+    sourceRoot: repoRoot,
+    target: bothProvisionTarget,
+    profile: "minimal",
+    setupPipeline: "both",
+    localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: secretSentinel }
+  });
+  const repoConfig = JSON.parse(await fs.readFile(path.join(bothProvisionTarget, ".repo-pattern", ".repo-pattern.json"), "utf8"));
+  const lock = JSON.parse(await fs.readFile(path.join(bothProvisionTarget, ".repo-pattern", ".repo-pattern.lock.json"), "utf8"));
+  const localSettings = JSON.parse(await fs.readFile(path.join(bothProvisionTarget, ".claude", "settings.local.json"), "utf8"));
+  assert.equal(repoConfig.workflow, "ecc-gstack");
+  assert.equal(lock.setupPipeline, "both");
+  assert.equal(lock.ecc.status, "installed");
+  assert.equal(lock.gstack.status, "installed");
+  assert.equal(localSettings.enabledPlugins["ecc@ecc"], true);
+  assert.equal((await auditProject(bothProvisionTarget)).state, "ECC_GSTACK_MINIMAL");
+  await doctorProject(bothProvisionTarget);
+} finally {
+  delete process.env.REPO_PATTERN_GSTACK_SETUP_CMD;
+  console.log = originalLog;
+  await fs.rm(bothProvisionTarget, { recursive: true, force: true });
+}
+
+const noPipelineProvisionTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-none-provision-"));
+console.log = () => {};
+try {
+  await provisionProject({
+    sourceRoot: repoRoot,
+    target: noPipelineProvisionTarget,
+    profile: "minimal",
+    setupPipeline: "none",
+    localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: secretSentinel },
+    applyRules: true
+  });
+  const repoConfig = JSON.parse(await fs.readFile(path.join(noPipelineProvisionTarget, ".repo-pattern", ".repo-pattern.json"), "utf8"));
+  const lock = JSON.parse(await fs.readFile(path.join(noPipelineProvisionTarget, ".repo-pattern", ".repo-pattern.lock.json"), "utf8"));
+  const localSettings = JSON.parse(await fs.readFile(path.join(noPipelineProvisionTarget, ".claude", "settings.local.json"), "utf8"));
+  assert.equal(repoConfig.workflow, "none");
+  assert.equal(lock.setupPipeline, "none");
+  assert.equal("ecc" in lock, false);
+  assert.equal("gstack" in lock, false);
+  assert.equal(localSettings.enabledPlugins["ecc@ecc"], undefined);
+  assert.equal((await auditProject(noPipelineProvisionTarget)).state, "NO_PIPELINE_MINIMAL");
+  await doctorProject(noPipelineProvisionTarget);
+} finally {
+  console.log = originalLog;
+  await fs.rm(noPipelineProvisionTarget, { recursive: true, force: true });
+}
+
+const setupBothDryRunTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-both-dry-run-"));
+try {
+  result = runCli(["setup", "--target", setupBothDryRunTarget, "--setup-pipeline", "both", "--yes", "--dry-run"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Setup pipeline\s+both/);
+} finally {
+  await fs.rm(setupBothDryRunTarget, { recursive: true, force: true });
+}
+
+result = runCli(["setup", "--setup-pipeline", "none", "--with-rules", "--yes", "--dry-run"]);
+assert.equal(result.status, 2);
+assert.match(result.stderr, /--with-rules requires --setup-pipeline ecc or both/);
 
 const gstackProvisionTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-provision-"));
 console.log = () => {};
