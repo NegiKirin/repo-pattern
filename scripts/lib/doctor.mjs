@@ -34,7 +34,7 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   check(!audit.hasClaudeHooksDir, ".claude/hooks does not exist");
   check(!audit.hasClaudeScriptsDir, ".claude/scripts does not exist");
   const usesEcc = audit.repoPattern?.workflow === "ecc-native" || audit.repoPattern?.workflow === "ecc-gstack";
-  check(!audit.hasClaudeRulesDir || (usesEcc && audit.hasOnlyEccRulesDir), usesEcc ? "no non-ECC .claude/rules" : ".claude/rules does not exist for this setup pipeline");
+  check(!audit.hasClaudeRulesDir || (audit.hasOnlyEccRulesDir && audit.hasManagedEccRules), "no unmanaged .claude/rules");
   check(audit.hasClaudeDir, ".claude exists");
   check(!audit.hasSettingsHooks, ".claude/settings.json hooks is {}");
   check(!isTracked(target, ".claude/settings.json"), ".claude/settings.json is not tracked");

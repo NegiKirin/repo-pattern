@@ -194,8 +194,9 @@ async function writeLocalSettings({ sourceRoot, target, localSettingsEnv = {}, d
   await appendGitignoreLine(target, ".claude/", { dryRun });
 }
 
-export async function provisionProject({ sourceRoot, target, profile = "web", setupPipeline = "ecc", planTuneHooks = false, mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, attributionConfig = { mode: "off" }, permissionConfig = { bypass: "deny" }, ruleMode = "auto", rules = null, applyRules = false, optionalSkills = [] }) {
+export async function provisionProject({ sourceRoot, target, profile = "web", setupPipeline = "ecc", planTuneHooks = false, mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, attributionConfig = { mode: "off" }, permissionConfig = { bypass: "deny" }, ruleMode = "auto", rules = null, applyRules = null, optionalSkills = [] }) {
   if (!SETUP_PIPELINES.includes(setupPipeline)) throw new Error(`Unknown setup pipeline: ${setupPipeline}. Available: ${SETUP_PIPELINES.join(", ")}`);
+  const shouldApplyRules = applyRules ?? usesEcc(setupPipeline);
   if (planTuneHooks && !usesGstack(setupPipeline)) throw new Error("--with-plan-tune-hooks requires --setup-pipeline gstack or both.");
   printSummary("Provisioning target", [["Target", target]]);
   await rejectClaudeSymlink(target, { dryRun });
@@ -245,7 +246,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
   await writeJson(repoConfigPath(target), await repoPatternConfig(sourceRoot, profile, setupPipeline), { dryRun });
   await writeJson(lockPath, lockConfig(profile, setupPipeline, { ecc: eccStatus, gstack: gstackStatus }, planTuneHooks), { dryRun });
   await ensureRepoPatternGitignore(target, { dryRun });
-  if (usesEcc(setupPipeline) && applyRules) await applyEccRules({ target, dryRun, ruleMode, rules });
+  if (shouldApplyRules) await applyEccRules({ target, dryRun, ruleMode, rules });
   if (optionalSkills.length > 0) await applyOptionalSkills({ target, skills: optionalSkills, dryRun });
 
   if (dryRun) {

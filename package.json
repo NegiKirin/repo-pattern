@@ -1,6 +1,6 @@
 {
   "name": "@negikirin/repo-pattern",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "description": "Minimal ECC-first Claude Code project setup and migrator",
   "type": "module",
   "bin": {

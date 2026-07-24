@@ -46,6 +46,8 @@ Scriptable setup:
 ```bash
 npx repo-pattern setup --profile web --setup-pipeline ecc --yes
 npx repo-pattern setup --profile web --setup-pipeline gstack --yes
+npx repo-pattern setup --profile web --setup-pipeline gstack --with-rules --yes
+npx repo-pattern setup --profile web --setup-pipeline none --with-rules --yes
 ```
 
 Pipeline scope is explicit:
@@ -56,6 +58,8 @@ Pipeline scope is explicit:
 - `none` — base project metadata only.
 
 gstack requires Git and Bun v1.0+. When Bun is missing on Linux or macOS, setup downloads the official installer over TLS, validates it, and installs Bun automatically. On unsupported systems, install Bun manually before setup. Its upstream setup runs with `--quiet --no-plan-tune-hooks`, so automated setup does not show settings diffs or wait for hook confirmation.
+
+ECC rules are independent of the ECC plugin. `ecc` and `both` install auto-detected packs by default; the interactive wizard can switch to manual packs or none. `gstack` and `none` prompt whether to install rules, while scriptable setup requires `--with-rules`. Managed packs live in `.claude/rules/ecc/` and can work when ECC plugin setup reports manual installation is still required.
 
 Migrate an existing project:
 
@@ -84,7 +88,8 @@ Common options:
 --target /path/to/project  # default: current directory
 --profile web              # default MCP profile
 --setup-pipeline ecc        # ecc (default), gstack, both, or none
---with-rules               # opt in to .claude/rules/ecc; ECC only
+--with-rules               # install auto-detected .claude/rules/ecc on gstack or none
+                            # ecc and both install auto-detected rules by default
 --with-skill ui-ux-pro-max # optional UI/UX skill; requires Python 3.x
 --with-skills nextjs-pattern,fastapi-pattern # optional framework pattern skills
 --migrate                  # take over legacy/local Claude runtime surfaces
@@ -130,7 +135,7 @@ target-project/
 * `.claude/` is generated from `.claude.example/` and gitignored.
 * Basic OS/IDE noise (`.DS_Store`, `Thumbs.db`, `.vscode/`, `.idea/`) is gitignored during setup.
 * `.claude/settings.json` keeps `hooks: {}` and disables commit attribution by default; interactive setup can turn it on or use a custom trailer.
-* No vendored ECC skills, commands, hooks, scripts, or rules are installed unless explicitly requested.
+* No vendored ECC skills, commands, hooks, or scripts are installed. ECC rules are auto-installed for ECC pipelines and opt-in for gstack/none.
 * Karpathy-inspired Claude Code guidelines are included in `.claude/CLAUDE.md` from `multica-ai/andrej-karpathy-skills` (MIT).
 * Optional external skills are user opt-in only: `--with-skill taste`, `--with-skill document-specialist`, `--with-skill ui-ux-pro-max`, `--with-skill impeccable`, `--with-skill huashu-design`, `--with-skill nextjs-pattern`, `--with-skill fastapi-pattern`, `--with-skill herdr`, or interactive setup.
 
