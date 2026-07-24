@@ -69,6 +69,7 @@ export async function auditProject(target) {
     hasClaudeScriptsDir: exists(path.join(target, ".claude", "scripts")),
     hasClaudeRulesDir: exists(path.join(target, ".claude", "rules")),
     hasOnlyEccRulesDir: await isOnlyEccRulesDir(target),
+    hasManagedEccRules: lock.ecc?.rulesSyncedBy === "repo-pattern-auto-cache" || (lock.ecc?.appliedRules || []).length > 0,
     hasClaudeEccRulesDir,
     eccRulePackDirs,
     hasRepoPatternJson: !!repoPattern,
@@ -86,7 +87,7 @@ export async function auditProject(target) {
     result.hasClaudeCommandsDir ||
     result.hasClaudeHooksDir ||
     result.hasClaudeScriptsDir ||
-    (result.hasClaudeRulesDir && (repoPattern ? (!usesEcc || !result.hasOnlyEccRulesDir) : !result.hasOnlyEccRulesDir))
+    (result.hasClaudeRulesDir && (repoPattern ? (!result.hasOnlyEccRulesDir || !result.hasManagedEccRules) : !result.hasOnlyEccRulesDir))
   );
 
   const setupComplete = !usesGstack || lock.gstack?.status === "installed";
@@ -132,8 +133,8 @@ export function printAudit(audit) {
     [audit.hasClaudeCommandsDir, ".claude/commands present"],
     [audit.hasClaudeHooksDir, ".claude/hooks present"],
     [audit.hasClaudeScriptsDir, ".claude/scripts present"],
-    [audit.hasClaudeRulesDir && !["ecc-native", "ecc-gstack"].includes(audit.repoPattern?.workflow), ".claude/rules is incompatible with this setup pipeline"],
-    [audit.hasClaudeRulesDir && ["ecc-native", "ecc-gstack"].includes(audit.repoPattern?.workflow) && !audit.hasOnlyEccRulesDir, "non-ECC .claude/rules present"]
+    [audit.hasClaudeRulesDir && !audit.hasOnlyEccRulesDir, "non-ECC .claude/rules present"],
+    [audit.hasClaudeRulesDir && !audit.hasManagedEccRules, ".claude/rules is not repo-pattern-managed"]
   ].filter(([bad]) => bad);
 
   if (issues.length > 0) {

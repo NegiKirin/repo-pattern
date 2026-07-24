@@ -6,7 +6,8 @@
   },
   "permissions": {
     "deny": [
-      "Agent(claude)"
+      "Agent(claude)",
+      "Agent(general-purpose)"
     ],
     "ask": [
       "Bash(git push *)",

@@ -423,7 +423,7 @@ assert(auditLogs.includes("State   EMPTY"));
 assert(!auditLogs.some((line) => line.includes(".claude present")));
 assert(auditLogs.some((line) => line.includes("⚠ .mcp.json missing")));
 assert(auditLogs.some((line) => line.includes("⚠ .claude/settings.json hooks not empty")));
-assert(auditLogs.some((line) => line.includes("⚠ .claude/rules is incompatible with this setup pipeline")));
+assert(auditLogs.some((line) => line.includes("⚠ .claude/rules is not repo-pattern-managed")));
 
 const logs = [];
 const originalLog = console.log;
@@ -902,7 +902,7 @@ try {
   const localSettings = JSON.parse(await fs.readFile(path.join(noPipelineProvisionTarget, ".claude", "settings.local.json"), "utf8"));
   assert.equal(repoConfig.workflow, "none");
   assert.equal(lock.setupPipeline, "none");
-  assert.equal("ecc" in lock, false);
+  assert.deepEqual(lock.ecc.appliedRules, ["common"]);
   assert.equal("gstack" in lock, false);
   assert.equal(localSettings.enabledPlugins["ecc@ecc"], undefined);
   assert.equal((await auditProject(noPipelineProvisionTarget)).state, "NO_PIPELINE_MINIMAL");
@@ -923,8 +923,14 @@ try {
 }
 
 result = runCli(["setup", "--setup-pipeline", "none", "--with-rules", "--yes", "--dry-run"]);
-assert.equal(result.status, 2);
-assert.match(result.stderr, /--with-rules requires --setup-pipeline ecc or both/);
+assert.equal(result.status, 0, result.stderr);
+assert.match(result.stdout, /Selected ECC rules/);
+assert.match(result.stdout, /Applied ECC rules/);
+
+result = runCli(["setup", "--setup-pipeline", "gstack", "--with-rules", "--yes", "--dry-run"]);
+assert.equal(result.status, 0, result.stderr);
+assert.match(result.stdout, /Selected ECC rules/);
+assert.match(result.stdout, /Applied ECC rules/);
 
 const gstackProvisionTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-provision-"));
 console.log = () => {};
@@ -947,16 +953,16 @@ try {
   const repoConfig = JSON.parse(await fs.readFile(path.join(gstackProvisionTarget, ".repo-pattern", ".repo-pattern.json"), "utf8"));
   const lock = JSON.parse(await fs.readFile(path.join(gstackProvisionTarget, ".repo-pattern", ".repo-pattern.lock.json"), "utf8"));
   assert.equal(repoConfig.workflow, "gstack");
-  assert.equal("ecc" in repoConfig, false);
+  assert.equal(repoConfig.ecc.rulesSync, "repo-pattern-auto-cache");
   assert.equal(lock.setupPipeline, "gstack");
   assert.equal(lock.gstack.status, "installed");
   assert.equal(lock.gstack.planTuneHooks, false);
-  assert.equal("ecc" in lock, false);
+  assert.deepEqual(lock.ecc.appliedRules, ["common"]);
   const gstackLocalSettings = JSON.parse(await fs.readFile(path.join(gstackProvisionTarget, ".claude", "settings.local.json"), "utf8"));
   assert.equal(gstackLocalSettings.enabledPlugins["ecc@ecc"], undefined);
   assert.equal(gstackLocalSettings.workflowSizeGuideline, "large");
   assert.equal(gstackLocalSettings.env.ANTHROPIC_AUTH_TOKEN, secretSentinel);
-  await assert.rejects(() => fs.access(path.join(gstackProvisionTarget, ".claude", "rules")), { code: "ENOENT" });
+  await fs.access(path.join(gstackProvisionTarget, ".claude", "rules", "ecc", "common"));
   assert.equal((await auditProject(gstackProvisionTarget)).state, "GSTACK_MINIMAL");
   await doctorProject(gstackProvisionTarget);
 } finally {
@@ -1228,6 +1234,9 @@ try {
   assert.equal(settings.permissions.defaultMode, "default");
   assert.equal(settings.permissions.disableBypassPermissionsMode, "disable");
   const localSettings = JSON.parse(await fs.readFile(path.join(defaultProvisionTarget, ".claude", "settings.local.json"), "utf8"));
+  const defaultProvisionLock = JSON.parse(await fs.readFile(path.join(defaultProvisionTarget, ".repo-pattern", ".repo-pattern.lock.json"), "utf8"));
+  assert.deepEqual(defaultProvisionLock.ecc.appliedRules, ["common"]);
+  await fs.access(path.join(defaultProvisionTarget, ".claude", "rules", "ecc", "common"));
   assert.equal(localSettings.model, "sonnet");
   assert.equal(localSettings.workflowSizeGuideline, "small");
   assert.deepEqual({

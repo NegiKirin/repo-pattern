@@ -81,11 +81,6 @@ function parseArgs(argv) {
     process.exit(2);
   }
 
-  if (!["ecc", "both"].includes(options.setupPipeline) && options.applyRules) {
-    console.error("--with-rules requires --setup-pipeline ecc or both.");
-    process.exit(2);
-  }
-
   if (options.planTuneHooks && !["gstack", "both"].includes(options.setupPipeline)) {
     console.error("--with-plan-tune-hooks requires --setup-pipeline gstack or both.");
     process.exit(2);
@@ -137,7 +132,8 @@ Setup UI:
   --dry-run      Print actions without writing
   --migrate      Take over legacy/local Claude runtime surfaces
   --force        Reapply setup over repo-pattern-managed state
-  --with-rules               Opt in to repo-pattern-managed .claude/rules/ecc
+  --with-rules               Install auto-detected project-local ECC rules on any pipeline
+                             ECC/both install rules by default; gstack/none opt in with this flag
   --with-skill <name>        Opt in to external skills/plugins (${optionalSkillNames})
   --with-skills <a,b>        Comma-separated optional skills
   --yes                      Run setup non-interactively

@@ -13,6 +13,8 @@ Use scriptable `setup --yes` when you already know the exact options:
 ```bash
 node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --setup-pipeline ecc --yes
 node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --setup-pipeline gstack --yes
+node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --setup-pipeline gstack --with-rules --yes
+node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --setup-pipeline none --with-rules --yes
 ```
 
 Pipeline scope is explicit:
@@ -34,7 +36,9 @@ minimal Claude Code setup
 + repo-pattern metadata
 ```
 
-`repo-pattern` is intentionally not a Claude runtime pack. It does not install local Claude skills, commands, hooks, scripts, or rules by default. Project-local ECC rules are explicit opt-in via `setup --with-rules`, `rules`, or interactive `setup`. Optional external skills are explicit opt-in via `setup --with-skill <name>` or interactive `setup`.
+`repo-pattern` is intentionally not a Claude runtime pack. It does not install local Claude skills, commands, hooks, or scripts by default. ECC and both pipelines install auto-detected project-local ECC rules by default; interactive setup can choose automatic packs, manual packs, or none. gstack and none keep rules off unless selected in the wizard or passed `setup --with-rules`. Rule sync is independent of ECC plugin installation, so managed `.claude/rules/ecc/` packs can be present while the plugin is still `manual-plugin-install-required`. Optional external skills are explicit opt-in via `setup --with-skill <name>` or interactive `setup`.
+
+Non-ECC managed rules are recorded under `repoConfig.ecc` and `lock.ecc` as rule-sync metadata only; they do not enable `ecc@ecc` or change the selected runtime pipeline.
 
 ---
 
@@ -130,7 +134,7 @@ For non-interactive scripts, use `setup --yes`.
 13. Add generated setup files and basic OS/IDE noise to `.gitignore`.
 14. Write `.repo-pattern/.repo-pattern.lock.json` without credential values.
 15. Run the selected setup pipeline: ECC setup after generation, or the global gstack installer after target preflight succeeds.
-16. During ECC `setup` with rules enabled, apply ECC rules.
+16. When rules are enabled, apply ECC rules independently of plugin installation.
 17. Run doctor.
 ```
 
@@ -529,7 +533,7 @@ It performs:
 minimal Claude setup
 MCP generation
 selected ECC or gstack setup flow
-optional ECC rules sync for ECC
+ECC rules sync (default for ecc/both; `--with-rules` for gstack/none)
 doctor check
 ```
 
@@ -703,7 +707,7 @@ full     → local testing only
 
 ## ECC rules auto-cache
 
-ECC rules are opt-in. `repo-pattern` can select ECC rule packs from the target project's stack and apply them to project scope.
+`repo-pattern` can select ECC rule packs from the target project's stack and apply them to project scope without requiring the ECC plugin. ecc and both pipelines enable auto-detected packs by default. gstack and none require an interactive opt-in or `--with-rules` in scriptable setup.
 
 Run rules explicitly with:
 
@@ -744,4 +748,4 @@ ruby
 arkts
 ```
 
-For scriptable setup, use `--with-rules --yes` to run this rules step after ECC setup and before doctor.
+For scriptable non-ECC setup, use `--with-rules --yes` to run this rules step before doctor. ECC and both run it automatically unless rules are explicitly disabled through the interactive wizard.

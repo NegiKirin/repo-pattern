@@ -7,7 +7,7 @@ import { provisionProject, setupPipelineScope, updateClaudeAttribution, updateCl
 import { doctorProject } from "./doctor.mjs";
 import { collectMcpValues, generateMcp, listAvailableMcpServers, persistedMcpValues, readGeneratedMcpValues, readMcpConfig } from "./mcp.mjs";
 import { askConfirm, askPassword, askText, isInteractive, printBox, printLogo, printSummary, selectMany, selectOne, style } from "./prompt.mjs";
-import { ECC_RULE_PACKS, selectEccRules } from "./ecc-rules.mjs";
+import { ECC_RULE_PACKS, normalizeEccRules, selectEccRules } from "./ecc-rules.mjs";
 import { ensureRepoPatternGitignore, isTracked, readJson, readPrivateJson, readRepoLock, repoLockPath, writeJson } from "./fs-utils.mjs";
 import { applyOptionalSkills, OPTIONAL_SKILLS } from "./skills.mjs";
 
@@ -237,7 +237,18 @@ async function choosePlanTuneHooks(setupPipeline, initialValue = false) {
 }
 
 async function chooseRuleConfig(detection, setupPipeline) {
-  if (!usesEcc(setupPipeline)) return { applyRules: false, ruleMode: "auto", rules: [] };
+  if (!usesEcc(setupPipeline)) {
+    const installRules = await selectOne({
+      message: "Install project-local ECC rules?",
+      options: [
+        { value: false, label: "No", description: "do not install project-local ECC rules" },
+        { value: true, label: "Yes", description: "sync ECC rules without installing the ECC plugin" }
+      ],
+      initialValue: false
+    });
+    if (!installRules) return { applyRules: false, ruleMode: "auto", rules: [] };
+  }
+
   const autoRules = selectEccRules(detection);
   const ruleMode = await selectOne({
     message: "Step 2/6 — Choose ECC rule detection mode",
@@ -252,15 +263,27 @@ async function chooseRuleConfig(detection, setupPipeline) {
   if (ruleMode === "none") return { applyRules: false, ruleMode: "auto", rules: [] };
   if (ruleMode !== "manual") return { applyRules: true, ruleMode, rules: autoRules };
 
+  const rules = normalizeEccRules(await selectMany({
+    message: "Choose ECC rule packs",
+    options: ECC_RULE_PACKS,
+    initialValues: autoRules
+  }));
+  return { applyRules: rules.length > 0, ruleMode, rules };
+}
+
+function defaultRuleConfig(setupPipeline, applyRules, detection) {
+  const shouldApplyRules = usesEcc(setupPipeline) || applyRules;
   return {
-    applyRules: true,
-    ruleMode,
-    rules: await selectMany({
-      message: "Choose ECC rule packs",
-      options: ECC_RULE_PACKS,
-      initialValues: autoRules
-    })
+    applyRules: shouldApplyRules,
+    ruleMode: "auto",
+    rules: shouldApplyRules ? selectEccRules(detection) : []
   };
+}
+
+function hasRequestedRules(audit, ruleConfig) {
+  if (!ruleConfig.applyRules) return !audit.hasClaudeRulesDir;
+  const appliedRules = audit.eccRulePackDirs || [];
+  return audit.hasManagedEccRules && JSON.stringify(appliedRules) === JSON.stringify([...ruleConfig.rules].sort());
 }
 
 async function chooseOptionalSkills(initialValues = []) {
@@ -416,13 +439,16 @@ export async function setupProject({ sourceRoot, target, profile = "web", setupP
     if (profile === "custom") throw new Error("setup --yes cannot use the custom profile; choose a named profile.");
 
     const audit = await auditProject(target);
+    const detection = await detectProject(target);
+    const ruleConfig = defaultRuleConfig(setupPipeline, applyRules, detection);
+    const hasIncompleteSetup = Boolean(setupOptionsFromLock(await readRepoLock(target, {})));
     const expectedState = expectedSetupState(setupPipeline);
-    if (audit.state === expectedState && !force && optionalSkills.length === 0) {
+    if (audit.state === expectedState && hasRequestedRules(audit, ruleConfig) && !hasIncompleteSetup && !force && optionalSkills.length === 0) {
       await doctorProject(target, { dryRun });
       return;
     }
 
-    if (audit.state === expectedState && optionalSkills.length > 0) {
+    if (audit.state === expectedState && hasRequestedRules(audit, ruleConfig) && optionalSkills.length > 0) {
       await applyOptionalSkills({ target, skills: optionalSkills, dryRun });
       if (!dryRun) await doctorProject(target, { updateLock: true, dryRun });
       return;
@@ -438,7 +464,9 @@ export async function setupProject({ sourceRoot, target, profile = "web", setupP
       force,
       migrate,
       planTuneHooks,
-      applyRules,
+      ruleMode: ruleConfig.ruleMode,
+      rules: ruleConfig.rules,
+      applyRules: ruleConfig.applyRules,
       optionalSkills
     });
     return;
@@ -456,7 +484,7 @@ export async function setupProject({ sourceRoot, target, profile = "web", setupP
   const mcpConfig = previousOptions
     ? { profile: previousOptions.profile, mcpServers: previousOptions.mcpServers }
     : await chooseMcpConfig(sourceRoot, chosenProfile);
-  const ruleConfig = previousOptions && usesEcc(selectedSetupPipeline)
+  const ruleConfig = previousOptions
     ? { applyRules: previousOptions.applyRules, ruleMode: previousOptions.ruleMode, rules: previousOptions.rules }
     : await chooseRuleConfig(detection, selectedSetupPipeline);
   const selectedOptionalSkills = previousOptions?.optionalSkills || await chooseOptionalSkills(optionalSkills);
@@ -469,7 +497,7 @@ export async function setupProject({ sourceRoot, target, profile = "web", setupP
   }
 
   const expectedState = expectedSetupState(selectedSetupPipeline);
-  if (audit.state === expectedState) {
+  if (audit.state === expectedState && hasRequestedRules(audit, ruleConfig)) {
     if (selectedOptionalSkills.length > 0) {
       await applyOptionalSkills({ target, skills: selectedOptionalSkills, dryRun });
       if (!dryRun) await doctorProject(target, { updateLock: true, dryRun });
