@@ -77,17 +77,18 @@ export async function auditProject(target) {
   };
 
   const allowSourceSkills = repoPattern?.mode === "template";
-  const allowManagedSkills = repoPattern?.runtime?.localSkills === true && Array.isArray(repoPattern?.optionalSkills) && result.hasOnlyManagedSkills;
   const workflow = repoPattern?.workflow;
   const usesEcc = workflow === "ecc-native" || workflow === "ecc-gstack";
   const usesGstack = workflow === "gstack" || workflow === "ecc-gstack";
   const legacy = (
     result.hasSettingsHooks ||
-    (result.hasClaudeSkillsDir && !allowSourceSkills && !allowManagedSkills) ||
+    (result.hasClaudeSkillsDir && !repoPattern && !allowSourceSkills) ||
     result.hasClaudeCommandsDir ||
     result.hasClaudeHooksDir ||
     result.hasClaudeScriptsDir ||
-    (result.hasClaudeRulesDir && (repoPattern ? (!result.hasOnlyEccRulesDir || !result.hasManagedEccRules) : !result.hasOnlyEccRulesDir))
+    (result.hasClaudeRulesDir && (repoPattern
+      ? (result.hasClaudeEccRulesDir && !result.hasManagedEccRules)
+      : !result.hasOnlyEccRulesDir))
   );
 
   const setupComplete = !usesGstack || lock.gstack?.status === "installed";
@@ -134,7 +135,7 @@ export function printAudit(audit) {
     [audit.hasClaudeHooksDir, ".claude/hooks present"],
     [audit.hasClaudeScriptsDir, ".claude/scripts present"],
     [audit.hasClaudeRulesDir && !audit.hasOnlyEccRulesDir, "non-ECC .claude/rules present"],
-    [audit.hasClaudeRulesDir && !audit.hasManagedEccRules, ".claude/rules is not repo-pattern-managed"]
+    [audit.hasClaudeEccRulesDir && !audit.hasManagedEccRules, ".claude/rules/ecc is not repo-pattern-managed"]
   ].filter(([bad]) => bad);
 
   if (issues.length > 0) {

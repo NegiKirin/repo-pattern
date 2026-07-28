@@ -7,10 +7,10 @@ import { fileURLToPath } from "node:url";
 import { auditProject, printAudit } from "./lib/audit.mjs";
 import { cleanupProject } from "./lib/cleanup.mjs";
 import { doctorProject } from "./lib/doctor.mjs";
-import { applyEccPluginSettings, setupEcc } from "./lib/ecc.mjs";
+import { ECC_PLUGIN, applyEccPluginSettings, setupEcc } from "./lib/ecc.mjs";
 import { ensureBun, gstackEnvironment, gstackSummaryRows, isValidBunInstaller, removeEccPluginSettings, runGstackSetup, setupGstack } from "./lib/gstack.mjs";
 import { applyMcpValues, generateMcp, mcpSecretPrompt, persistedMcpValues, readGeneratedMcpValues, validateRelativeMcpPath } from "./lib/mcp.mjs";
-import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, provisionProject, setupPipelineScope, updateClaudePermissions } from "./lib/provision.mjs";
+import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, provisionProject, reconcileLocalPluginSettings, setupPipelineScope, updateClaudePermissions } from "./lib/provision.mjs";
 import { writePrivateJson } from "./lib/fs-utils.mjs";
 import { printSummary, renderLogo, style } from "./lib/prompt.mjs";
 import { needsLocalSettingsPrompt, setupProject, setupRetryOptions } from "./lib/setup.mjs";
@@ -21,8 +21,15 @@ const cliDir = path.dirname(fileURLToPath(import.meta.url));
 const cliPath = path.join(cliDir, "repo-pattern.mjs");
 const repoRoot = path.dirname(cliDir);
 const secretSentinel = "do-not-persist-anthropic-token";
+const sharedSettingsTemplate = JSON.parse(await fs.readFile(path.join(repoRoot, ".claude.example", "settings.example.json"), "utf8"));
 const localSettingsTemplate = JSON.parse(await fs.readFile(path.join(repoRoot, ".claude.example", "settings.local.example.json"), "utf8"));
 
+assert.deepEqual(sharedSettingsTemplate.attribution, { commit: "", pr: "" });
+assert.equal("enabledPlugins" in sharedSettingsTemplate, false);
+assert.equal("extraKnownMarketplaces" in sharedSettingsTemplate, false);
+assert.equal("attribution" in localSettingsTemplate, false);
+assert.deepEqual(localSettingsTemplate.enabledPlugins, {});
+assert.deepEqual(localSettingsTemplate.extraKnownMarketplaces, {});
 assert.equal(localSettingsTemplate.workflowSizeGuideline, "small");
 assert.deepEqual({
   CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: localSettingsTemplate.env.CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION,
@@ -106,8 +113,25 @@ assert.deepEqual(applyLocalSettings({ env: {
   }
 });
 assert.deepEqual(applyAttributionSetting({ hooks: {} }, { mode: "off" }), { hooks: {}, attribution: { commit: "", pr: "" } });
-assert.deepEqual(applyAttributionSetting({ attribution: { commit: "" } }, { mode: "on" }), {});
-assert.deepEqual(applyAttributionSetting({ attribution: { pr: "PR" } }, { mode: "custom", commit: "Custom" }), { attribution: { pr: "PR", commit: "Custom" } });
+assert.deepEqual(applyAttributionSetting({ attribution: { commit: "old", pr: "old" } }, { mode: "on" }), { attribution: { commit: "", pr: "" } });
+assert.deepEqual(applyAttributionSetting({ attribution: { pr: "PR" } }, { mode: "custom", commit: "Custom" }), { attribution: { commit: "Custom", pr: "" } });
+assert.deepEqual(reconcileLocalPluginSettings({
+  env: { ANTHROPIC_AUTH_TOKEN: secretSentinel },
+  custom: true,
+  attribution: { commit: "legacy" },
+  enabledPlugins: { "ecc@ecc": true, "taste-skill@taste-skill": true, "unknown@plugin": true },
+  extraKnownMarketplaces: { ecc: ECC_PLUGIN.marketplace, "taste-skill": { source: { source: "git", url: "https://example.com/stale.git" } }, unknown: { source: { source: "git", url: "https://example.com/unknown.git" } } }
+}, { setupPipeline: "gstack", optionalSkills: [] }), {
+  env: { ANTHROPIC_AUTH_TOKEN: secretSentinel },
+  custom: true,
+  enabledPlugins: { "unknown@plugin": true },
+  extraKnownMarketplaces: { unknown: { source: { source: "git", url: "https://example.com/unknown.git" } } }
+});
+assert.deepEqual(reconcileLocalPluginSettings({ enabledPlugins: { "unknown@plugin": true }, extraKnownMarketplaces: {} }, { setupPipeline: "both", optionalSkills: ["impeccable"] }).enabledPlugins, {
+  "unknown@plugin": true,
+  "ecc@ecc": true,
+  "impeccable@impeccable": true
+});
 assert.deepEqual(applyPermissionSettings({ permissions: { deny: ["Read(.env)"] } }, { bypass: "allow" }), {
   permissions: { deny: ["Read(.env)"], defaultMode: "bypassPermissions" }
 });
@@ -281,11 +305,27 @@ try {
     }]
   }), "utf8");
   await applyOptionalSkills({ target: mixedSkillTarget, skills: ["taste"] });
-  console.log = originalSkillLog;
-  const repoConfig = JSON.parse(await fs.readFile(path.join(mixedSkillTarget, ".repo-pattern", ".repo-pattern.json"), "utf8"));
+  let repoConfig = JSON.parse(await fs.readFile(path.join(mixedSkillTarget, ".repo-pattern", ".repo-pattern.json"), "utf8"));
   assert.equal(await fs.readFile(path.join(mixedSkillTarget, ".claude", "skills", "document-specialist-skill", "KEEP"), "utf8"), "ok");
   assert.equal(repoConfig.runtime.localSkills, true);
   assert.deepEqual(repoConfig.optionalSkills.map((entry) => entry.name), ["document-specialist", "taste"]);
+
+  await fs.rename(
+    path.join(mixedSkillTarget, ".repo-pattern", ".repo-pattern.json"),
+    path.join(mixedSkillTarget, ".repo-pattern.json")
+  );
+  await provisionProject({
+    sourceRoot: repoRoot,
+    target: mixedSkillTarget,
+    profile: "minimal",
+    setupPipeline: "none",
+    applyRules: false
+  });
+  console.log = originalSkillLog;
+  repoConfig = JSON.parse(await fs.readFile(path.join(mixedSkillTarget, ".repo-pattern", ".repo-pattern.json"), "utf8"));
+  await assert.rejects(() => fs.access(path.join(mixedSkillTarget, ".claude", "skills", "document-specialist-skill")), { code: "ENOENT" });
+  assert.equal(repoConfig.runtime.localSkills, false);
+  assert.deepEqual(repoConfig.optionalSkills, []);
 } finally {
   console.log = originalSkillLog;
   await fs.rm(mixedSkillTarget, { recursive: true, force: true });
@@ -410,6 +450,7 @@ try {
     target: "/tmp/project",
     state: "LEGACY_VENDOR",
     hasClaudeRulesDir: true,
+    hasClaudeEccRulesDir: true,
     hasOnlyEccRulesDir: true,
     repoPattern: { workflow: "gstack" }
   });
@@ -423,7 +464,7 @@ assert(auditLogs.includes("State   EMPTY"));
 assert(!auditLogs.some((line) => line.includes(".claude present")));
 assert(auditLogs.some((line) => line.includes("⚠ .mcp.json missing")));
 assert(auditLogs.some((line) => line.includes("⚠ .claude/settings.json hooks not empty")));
-assert(auditLogs.some((line) => line.includes("⚠ .claude/rules is not repo-pattern-managed")));
+assert(auditLogs.some((line) => line.includes("⚠ .claude/rules/ecc is not repo-pattern-managed")));
 
 const logs = [];
 const originalLog = console.log;
@@ -877,6 +918,7 @@ try {
   assert.equal(lock.gstack.status, "installed");
   assert.equal(lock.gstack.planTuneHooks, true);
   assert.equal(localSettings.enabledPlugins["ecc@ecc"], true);
+  assert.equal(localSettings.extraKnownMarketplaces.ecc.source.url, "https://github.com/affaan-m/ECC.git");
   assert.equal((await auditProject(bothProvisionTarget)).state, "ECC_GSTACK_MINIMAL");
   await doctorProject(bothProvisionTarget);
 } finally {
@@ -938,9 +980,19 @@ try {
   await fs.mkdir(path.join(gstackProvisionTarget, ".claude", "rules", "ecc", "typescript"), { recursive: true });
   await fs.writeFile(path.join(gstackProvisionTarget, ".claude", "settings.local.json"), JSON.stringify({
     workflowSizeGuideline: "large",
+    custom: true,
+    attribution: { commit: "legacy", pr: "legacy" },
     env: { ANTHROPIC_AUTH_TOKEN: secretSentinel },
-    enabledPlugins: { "ecc@ecc": true },
-    extraKnownMarketplaces: { ecc: { source: { source: "git", url: "https://github.com/affaan-m/ECC.git" } } }
+    enabledPlugins: {
+      "ecc@ecc": true,
+      "taste-skill@taste-skill": true,
+      "unknown@plugin": true
+    },
+    extraKnownMarketplaces: {
+      ecc: { source: { source: "git", url: "https://github.com/affaan-m/ECC.git" } },
+      "taste-skill": { source: { source: "git", url: "https://example.com/taste.git" } },
+      unknown: { source: { source: "git", url: "https://example.com/unknown.git" } }
+    }
   }), { mode: 0o600 });
   process.env.REPO_PATTERN_GSTACK_SETUP_CMD = "true";
   await provisionProject({
@@ -960,15 +1012,130 @@ try {
   assert.deepEqual(lock.ecc.appliedRules, ["common"]);
   const gstackLocalSettings = JSON.parse(await fs.readFile(path.join(gstackProvisionTarget, ".claude", "settings.local.json"), "utf8"));
   assert.equal(gstackLocalSettings.enabledPlugins["ecc@ecc"], undefined);
+  assert.equal(gstackLocalSettings.enabledPlugins["taste-skill@taste-skill"], undefined);
+  assert.equal(gstackLocalSettings.enabledPlugins["unknown@plugin"], true);
+  assert.equal(gstackLocalSettings.extraKnownMarketplaces.ecc, undefined);
+  assert.equal(gstackLocalSettings.extraKnownMarketplaces["taste-skill"], undefined);
+  assert.equal(gstackLocalSettings.extraKnownMarketplaces.unknown.source.url, "https://example.com/unknown.git");
+  assert.equal("attribution" in gstackLocalSettings, false);
+  assert.equal(gstackLocalSettings.custom, true);
   assert.equal(gstackLocalSettings.workflowSizeGuideline, "large");
   assert.equal(gstackLocalSettings.env.ANTHROPIC_AUTH_TOKEN, secretSentinel);
   await fs.access(path.join(gstackProvisionTarget, ".claude", "rules", "ecc", "common"));
   assert.equal((await auditProject(gstackProvisionTarget)).state, "GSTACK_MINIMAL");
   await doctorProject(gstackProvisionTarget);
+
+  await provisionProject({
+    sourceRoot: repoRoot,
+    target: gstackProvisionTarget,
+    profile: "minimal",
+    setupPipeline: "both",
+    optionalSkills: ["nextjs-pattern"],
+    applyRules: false
+  });
+  await fs.access(path.join(gstackProvisionTarget, ".claude", "skills", "nextjs-pattern"));
+
+  await provisionProject({
+    sourceRoot: repoRoot,
+    target: gstackProvisionTarget,
+    profile: "minimal",
+    setupPipeline: "both",
+    optionalSkills: ["impeccable"],
+    applyRules: false
+  });
+  await assert.rejects(() => fs.access(path.join(gstackProvisionTarget, ".claude", "skills", "nextjs-pattern")), { code: "ENOENT" });
+  const reconciledLocalSettings = JSON.parse(await fs.readFile(path.join(gstackProvisionTarget, ".claude", "settings.local.json"), "utf8"));
+  const reconciledLock = JSON.parse(await fs.readFile(path.join(gstackProvisionTarget, ".repo-pattern", ".repo-pattern.lock.json"), "utf8"));
+  assert.equal(reconciledLocalSettings.enabledPlugins["ecc@ecc"], true);
+  assert.equal(reconciledLocalSettings.enabledPlugins["taste-skill@taste-skill"], undefined);
+  assert.equal(reconciledLocalSettings.enabledPlugins["impeccable@impeccable"], true);
+  assert.equal(reconciledLocalSettings.enabledPlugins["unknown@plugin"], true);
+  assert.equal(reconciledLocalSettings.extraKnownMarketplaces["taste-skill"], undefined);
+  assert.equal(reconciledLocalSettings.extraKnownMarketplaces.impeccable.source.url, "https://github.com/pbakaus/impeccable.git");
+  assert.equal(reconciledLocalSettings.extraKnownMarketplaces.unknown.source.url, "https://example.com/unknown.git");
+  assert.equal(reconciledLocalSettings.env.ANTHROPIC_AUTH_TOKEN, secretSentinel);
+  assert.equal(reconciledLock.ecc.appliedRules.length, 0);
+  await assert.rejects(() => fs.access(path.join(gstackProvisionTarget, ".claude", "rules", "ecc", "common")), { code: "ENOENT" });
+  await assert.rejects(() => fs.access(path.join(gstackProvisionTarget, ".claude", "rules")), { code: "ENOENT" });
+
+  await provisionProject({
+    sourceRoot: repoRoot,
+    target: gstackProvisionTarget,
+    profile: "minimal",
+    setupPipeline: "gstack",
+    optionalSkills: [],
+    applyRules: false
+  });
+  const deselectedLocalSettings = JSON.parse(await fs.readFile(path.join(gstackProvisionTarget, ".claude", "settings.local.json"), "utf8"));
+  const deselectedConfig = JSON.parse(await fs.readFile(path.join(gstackProvisionTarget, ".repo-pattern", ".repo-pattern.json"), "utf8"));
+  const deselectedLock = JSON.parse(await fs.readFile(path.join(gstackProvisionTarget, ".repo-pattern", ".repo-pattern.lock.json"), "utf8"));
+  assert.deepEqual(deselectedConfig.optionalSkills, []);
+  assert.equal(deselectedConfig.runtime.localSkills, false);
+  assert.deepEqual(deselectedLock.optionalSkills.appliedSkills, []);
+  assert.equal(deselectedLocalSettings.enabledPlugins["ecc@ecc"], undefined);
+  assert.equal(deselectedLocalSettings.enabledPlugins["impeccable@impeccable"], undefined);
+  assert.equal(deselectedLocalSettings.enabledPlugins["unknown@plugin"], true);
+
+  const idempotentSnapshot = JSON.stringify({
+    settings: deselectedLocalSettings,
+    config: deselectedConfig,
+    appliedSkills: deselectedLock.optionalSkills.appliedSkills,
+    appliedRules: deselectedLock.ecc?.appliedRules || []
+  });
+  await provisionProject({
+    sourceRoot: repoRoot,
+    target: gstackProvisionTarget,
+    profile: "minimal",
+    setupPipeline: "gstack",
+    optionalSkills: [],
+    applyRules: false
+  });
+  const idempotentSettings = JSON.parse(await fs.readFile(path.join(gstackProvisionTarget, ".claude", "settings.local.json"), "utf8"));
+  const idempotentConfig = JSON.parse(await fs.readFile(path.join(gstackProvisionTarget, ".repo-pattern", ".repo-pattern.json"), "utf8"));
+  const idempotentLock = JSON.parse(await fs.readFile(path.join(gstackProvisionTarget, ".repo-pattern", ".repo-pattern.lock.json"), "utf8"));
+  assert.equal(JSON.stringify({
+    settings: idempotentSettings,
+    config: idempotentConfig,
+    appliedSkills: idempotentLock.optionalSkills.appliedSkills,
+    appliedRules: idempotentLock.ecc?.appliedRules || []
+  }), idempotentSnapshot);
 } finally {
   delete process.env.REPO_PATTERN_GSTACK_SETUP_CMD;
   console.log = originalLog;
   await fs.rm(gstackProvisionTarget, { recursive: true, force: true });
+}
+
+const unrelatedRulesTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-unrelated-rules-"));
+console.log = () => {};
+try {
+  await provisionProject({
+    sourceRoot: repoRoot,
+    target: unrelatedRulesTarget,
+    profile: "minimal",
+    setupPipeline: "none",
+    applyRules: false
+  });
+  const unrelatedRulePath = path.join(unrelatedRulesTarget, ".claude", "rules", "third-party", "rule.md");
+  const unrelatedSkillPath = path.join(unrelatedRulesTarget, ".claude", "skills", "third-party", "SKILL.md");
+  await fs.mkdir(path.dirname(unrelatedRulePath), { recursive: true });
+  await fs.mkdir(path.dirname(unrelatedSkillPath), { recursive: true });
+  await fs.writeFile(unrelatedRulePath, "preserve", "utf8");
+  await fs.writeFile(unrelatedSkillPath, "preserve", "utf8");
+
+  await provisionProject({
+    sourceRoot: repoRoot,
+    target: unrelatedRulesTarget,
+    profile: "minimal",
+    setupPipeline: "none",
+    applyRules: false
+  });
+  assert.equal(await fs.readFile(unrelatedRulePath, "utf8"), "preserve");
+  assert.equal(await fs.readFile(unrelatedSkillPath, "utf8"), "preserve");
+  assert.equal((await auditProject(unrelatedRulesTarget)).state, "NO_PIPELINE_MINIMAL");
+  await doctorProject(unrelatedRulesTarget);
+} finally {
+  console.log = originalLog;
+  await fs.rm(unrelatedRulesTarget, { recursive: true, force: true });
 }
 
 const provisionTemplateTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-template-"));

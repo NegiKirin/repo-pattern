@@ -3,13 +3,13 @@ import path from "node:path";
 import { auditProject, printAudit } from "./audit.mjs";
 import { cleanupProject } from "./cleanup.mjs";
 import { generateMcp, withoutPersistedMcpValues } from "./mcp.mjs";
-import { setupEcc } from "./ecc.mjs";
-import { removeEccPluginSettings, setupGstack } from "./gstack.mjs";
+import { ECC_PLUGIN, applyEccPluginSettings, setupEcc } from "./ecc.mjs";
+import { setupGstack } from "./gstack.mjs";
 import { doctorProject } from "./doctor.mjs";
-import { applyEccRules } from "./rules.mjs";
-import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, ensureRepoPatternGitignore, isTracked, readJson, removePath, repoConfigPath, repoLockPath, writeJson, writeIfMissing, writePrivateJson } from "./fs-utils.mjs";
+import { applyEccRules, clearEccRules } from "./rules.mjs";
+import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, ensureRepoPatternGitignore, isTracked, readJson, readRepoConfig, removePath, repoConfigPath, repoLockPath, writeJson, writeIfMissing, writePrivateJson } from "./fs-utils.mjs";
 import { printSummary, style } from "./prompt.mjs";
-import { applyOptionalSkills } from "./skills.mjs";
+import { applyOptionalSkills, reconcilePluginSkillSettings } from "./skills.mjs";
 
 const TARGET_CLAUDE_MD = "";
 const BASIC_GITIGNORE_LINES = [".DS_Store", "Thumbs.db", ".vscode/", ".idea/"];
@@ -104,21 +104,13 @@ function lockConfig(profile, setupPipeline, pipelineStatus = {}, planTuneHooks =
 }
 
 export function applyAttributionSetting(settings, attributionConfig = { mode: "off" }) {
-  const next = { ...settings };
-  if (attributionConfig.mode === "on") {
-    if (!next.attribution) return next;
-    const { commit, ...rest } = next.attribution;
-    if (Object.keys(rest).length > 0) next.attribution = rest;
-    else delete next.attribution;
-    return next;
-  }
-
-  next.attribution = {
-    ...(next.attribution || {}),
-    commit: attributionConfig.mode === "custom" ? attributionConfig.commit : "",
-    ...(attributionConfig.mode === "off" ? { pr: "" } : {})
+  return {
+    ...settings,
+    attribution: {
+      commit: attributionConfig.mode === "custom" ? attributionConfig.commit : "",
+      pr: ""
+    }
   };
-  return next;
 }
 
 export function applyPermissionSettings(settings, permissionConfig = { bypass: "deny" }) {
@@ -165,6 +157,19 @@ export function applyLocalSettings(settings, localSettingsEnv) {
   return { ...settings, env };
 }
 
+export function reconcileLocalPluginSettings(settings = {}, { setupPipeline, optionalSkills = [] }) {
+  const { attribution, ...withoutAttribution } = settings;
+  const withoutManagedSkills = reconcilePluginSkillSettings(withoutAttribution, optionalSkills);
+  const enabledPlugins = { ...(withoutManagedSkills.enabledPlugins || {}) };
+  const extraKnownMarketplaces = { ...(withoutManagedSkills.extraKnownMarketplaces || {}) };
+  delete enabledPlugins[ECC_PLUGIN.id];
+  delete extraKnownMarketplaces[ECC_PLUGIN.marketplaceName];
+  const withoutManagedPlugins = { ...withoutManagedSkills, enabledPlugins, extraKnownMarketplaces };
+  return setupPipeline === "ecc" || setupPipeline === "both"
+    ? applyEccPluginSettings(withoutManagedPlugins)
+    : withoutManagedPlugins;
+}
+
 async function rejectClaudeSymlink(target, { dryRun = false } = {}) {
   if (dryRun) return;
   let stat;
@@ -177,17 +182,17 @@ async function rejectClaudeSymlink(target, { dryRun = false } = {}) {
   if (stat.isSymbolicLink()) throw new Error(".claude must not be a symlink.");
 }
 
-async function writeLocalSettings({ sourceRoot, target, localSettingsEnv = {}, dryRun }) {
+async function writeLocalSettings({ sourceRoot, target, localSettingsEnv = {}, setupPipeline, optionalSkills, dryRun }) {
   if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local provider settings.");
   const claudeDir = path.join(target, ".claude");
   await rejectClaudeSymlink(target, { dryRun });
   const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.local.example.json"), {});
   const file = path.join(claudeDir, "settings.local.json");
-  await writePrivateJson(file, (current) => applyLocalSettings({
+  await writePrivateJson(file, (current) => reconcileLocalPluginSettings(applyLocalSettings({
     ...template,
     ...current,
     env: { ...(template.env || {}), ...(current.env || {}) }
-  }, localSettingsEnv), {
+  }, localSettingsEnv), { setupPipeline, optionalSkills }), {
     dryRun,
     label: ".claude/settings.local.json"
   });
@@ -210,6 +215,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
   if (isTracked(target, ".repo-pattern/.repo-pattern.lock.json") || isTracked(target, ".repo-pattern.lock.json")) throw new Error("repo-pattern lock is tracked. Untrack it before writing local setup state.");
 
   const gstackStatus = usesGstack(setupPipeline) ? await setupGstack({ target, dryRun, planTuneHooks }) : null;
+  const previousRepoConfig = await readRepoConfig(target, {});
 
   if (audit.state === "LEGACY_VENDOR") {
     await cleanupProject({ sourceRoot, target, dryRun });
@@ -232,22 +238,25 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
   await writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun });
   await appendGitignoreLine(target, ".claude/", { dryRun });
 
-  await writeLocalSettings({ sourceRoot, target, localSettingsEnv, dryRun });
+  await writeLocalSettings({ sourceRoot, target, localSettingsEnv, setupPipeline, optionalSkills, dryRun });
 
   await ensureRepoPatternGitignore(target, { dryRun });
   const lockPath = repoLockPath(target);
 
   const mcpResult = await generateMcp({ sourceRoot, target, profile, mcpServers, mcpValues, dryRun });
-  const eccStatus = usesEcc(setupPipeline) ? await setupEcc({ sourceRoot, target, dryRun }) : null;
-  if (setupPipeline === "gstack" || setupPipeline === "none") {
-    await removeEccPluginSettings({ target, dryRun });
-    await removePath(path.join(target, ".claude", "rules"), { dryRun });
-  }
+  const eccStatus = usesEcc(setupPipeline) ? await setupEcc({ sourceRoot, target, dryRun, configurePlugin: false }) : null;
   await writeJson(repoConfigPath(target), await repoPatternConfig(sourceRoot, profile, setupPipeline), { dryRun });
   await writeJson(lockPath, lockConfig(profile, setupPipeline, { ecc: eccStatus, gstack: gstackStatus }, planTuneHooks), { dryRun });
   await ensureRepoPatternGitignore(target, { dryRun });
   if (shouldApplyRules) await applyEccRules({ target, dryRun, ruleMode, rules });
-  if (optionalSkills.length > 0) await applyOptionalSkills({ target, skills: optionalSkills, dryRun });
+  else await clearEccRules({ target, dryRun });
+  await applyOptionalSkills({
+    target,
+    skills: optionalSkills,
+    dryRun,
+    reconcile: true,
+    previousOptionalSkills: previousRepoConfig.optionalSkills
+  });
 
   if (dryRun) {
     console.log("[dry-run] doctor skipped because no files were written.");

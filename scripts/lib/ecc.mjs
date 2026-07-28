@@ -1,13 +1,17 @@
 import { execSync } from "node:child_process";
 import path from "node:path";
-import { appendGitignoreLine, ensureRepoPatternGitignore, isTracked, readJson, readRepoLock, repoLockPath, writeJson, writePrivateJson } from "./fs-utils.mjs";
+import { appendGitignoreLine, ensureRepoPatternGitignore, isTracked, readRepoLock, repoLockPath, writeJson, writePrivateJson } from "./fs-utils.mjs";
 import { printSummary } from "./prompt.mjs";
 
 const ECC_PLUGIN_ID = "ecc@ecc";
-const ECC_MARKETPLACE = {
-  source: {
-    source: "git",
-    url: "https://github.com/affaan-m/ECC.git"
+export const ECC_PLUGIN = {
+  id: ECC_PLUGIN_ID,
+  marketplaceName: "ecc",
+  marketplace: {
+    source: {
+      source: "git",
+      url: "https://github.com/affaan-m/ECC.git"
+    }
   }
 };
 
@@ -16,11 +20,11 @@ export function applyEccPluginSettings(settings = {}) {
     ...settings,
     enabledPlugins: {
       ...(settings.enabledPlugins || {}),
-      [ECC_PLUGIN_ID]: true
+      [ECC_PLUGIN.id]: true
     },
     extraKnownMarketplaces: {
       ...(settings.extraKnownMarketplaces || {}),
-      ecc: ECC_MARKETPLACE
+      [ECC_PLUGIN.marketplaceName]: ECC_PLUGIN.marketplace
     }
   };
 }
@@ -33,10 +37,9 @@ function hasEccPlugin() {
   }
 }
 
-async function writeEccLocalSettings({ target, dryRun }) {
+async function ensureEccLocalSettings({ target, dryRun }) {
   if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local plugin settings.");
-  const file = path.join(target, ".claude", "settings.local.json");
-  await writePrivateJson(file, applyEccPluginSettings, {
+  await writePrivateJson(path.join(target, ".claude", "settings.local.json"), applyEccPluginSettings, {
     dryRun,
     label: ".claude/settings.local.json",
     parentLabel: ".claude"
@@ -44,8 +47,8 @@ async function writeEccLocalSettings({ target, dryRun }) {
   await appendGitignoreLine(target, ".claude/", { dryRun });
 }
 
-export async function setupEcc({ target, dryRun = false }) {
-  await writeEccLocalSettings({ target, dryRun });
+export async function setupEcc({ target, dryRun = false, configurePlugin = true }) {
+  if (configurePlugin) await ensureEccLocalSettings({ target, dryRun });
   let status = hasEccPlugin() ? "installed" : "manual-plugin-install-required";
 
   if (status === "installed") {

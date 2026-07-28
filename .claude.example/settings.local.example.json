@@ -11,17 +11,8 @@
   "spinnerTipsEnabled": true,
   "fileCheckpointingEnabled": true,
   "workflowSizeGuideline": "small",
-  "enabledPlugins": {
-    "ecc@ecc": true
-  },
-  "extraKnownMarketplaces": {
-    "ecc": {
-      "source": {
-        "source": "git",
-        "url": "https://github.com/affaan-m/ECC.git"
-      }
-    }
-  },
+  "enabledPlugins": {},
+  "extraKnownMarketplaces": {},
   "env": {
     "ENABLE_TOOL_SEARCH": "auto:5",
     "CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION": "4",

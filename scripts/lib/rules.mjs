@@ -102,6 +102,33 @@ async function ensureEccCache(target, { dryRun = false } = {}) {
   return eccCache;
 }
 
+export async function clearEccRules({ target, dryRun = false }) {
+  const destRoot = path.join(target, ".claude", "rules", "ecc");
+  await backupPaths(target, [".claude/rules/ecc"], { dryRun });
+  await removePath(destRoot, { dryRun });
+  if (!dryRun) {
+    try {
+      await fs.rmdir(path.join(target, ".claude", "rules"));
+    } catch (error) {
+      if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error.code)) throw error;
+    }
+  }
+
+  const repoConfig = await readRepoConfig(target, {});
+  if (repoConfig.ecc) {
+    const { rulesSync, rulesProfile, rulesScope, copyRuntimeSurfaces, ...ecc } = repoConfig.ecc;
+    repoConfig.ecc = ecc;
+    await writeJson(repoConfigPath(target), repoConfig, { dryRun });
+  }
+
+  const lock = await readRepoLock(target, {});
+  if (lock.ecc) {
+    const { rulesSyncedBy, rulesProfile, rulesScope, recommendedRules, appliedRules, detectedStack, rulesSource, rulesCache, rulesAppliedAt, ...ecc } = lock.ecc;
+    lock.ecc = { ...ecc, rulesSyncedBy: null, rulesScope: "project", recommendedRules: [], appliedRules: [] };
+    await writeJson(repoLockPath(target), lock, { dryRun });
+  }
+}
+
 export async function applyEccRules({ target, dryRun = false, ruleMode = "auto", rules = null }) {
   const detection = await detectProject(target);
   const invalidRules = ruleMode === "manual" ? invalidEccRules(rules) : [];
