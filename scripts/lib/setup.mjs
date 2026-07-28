@@ -438,21 +438,8 @@ export async function setupProject({ sourceRoot, target, profile = "web", setupP
     if (!yes) throw new Error("setup requires an interactive terminal, or pass --yes for scriptable mode.");
     if (profile === "custom") throw new Error("setup --yes cannot use the custom profile; choose a named profile.");
 
-    const audit = await auditProject(target);
     const detection = await detectProject(target);
     const ruleConfig = defaultRuleConfig(setupPipeline, applyRules, detection);
-    const hasIncompleteSetup = Boolean(setupOptionsFromLock(await readRepoLock(target, {})));
-    const expectedState = expectedSetupState(setupPipeline);
-    if (audit.state === expectedState && hasRequestedRules(audit, ruleConfig) && !hasIncompleteSetup && !force && optionalSkills.length === 0) {
-      await doctorProject(target, { dryRun });
-      return;
-    }
-
-    if (audit.state === expectedState && hasRequestedRules(audit, ruleConfig) && optionalSkills.length > 0) {
-      await applyOptionalSkills({ target, skills: optionalSkills, dryRun });
-      if (!dryRun) await doctorProject(target, { updateLock: true, dryRun });
-      return;
-    }
 
     await provisionProject({
       sourceRoot,
@@ -494,17 +481,6 @@ export async function setupProject({ sourceRoot, target, profile = "web", setupP
 
   if (audit.state === "LEGACY_VENDOR" && force && !migrate) {
     throw new Error("Target has legacy/local Claude runtime surfaces. Re-run setup with --migrate, not --force.");
-  }
-
-  const expectedState = expectedSetupState(selectedSetupPipeline);
-  if (audit.state === expectedState && hasRequestedRules(audit, ruleConfig)) {
-    if (selectedOptionalSkills.length > 0) {
-      await applyOptionalSkills({ target, skills: selectedOptionalSkills, dryRun });
-      if (!dryRun) await doctorProject(target, { updateLock: true, dryRun });
-    } else {
-      await handleInitialized({ sourceRoot, target, profile: chosenProfile, dryRun });
-    }
-    return;
   }
 
   const action = audit.state === "LEGACY_VENDOR" ? "migrate" : "setup";

@@ -441,11 +441,13 @@ Meaning:
 - defer MCP tool loading unless tools fit within 5% of context
 
 
-`repo-pattern setup` writes local ignored project settings from the tracked `.claude.example/settings.example.json` template:
+`repo-pattern setup` writes ignored shared project settings from the tracked `.claude.example/settings.example.json` template:
 
 ```text
 .claude/settings.json
 ```
+
+This file owns shared Claude Code configuration: permissions, MCP approvals, hooks, and attribution. Every setup run writes both `attribution.commit` and `attribution.pr`; `off` and `on` use empty strings, and `custom` writes the selected commit trailer with `pr: ""`.
 
 The template is intentionally safe by default:
 
@@ -476,11 +478,15 @@ For example, profile `web` sets:
 ]
 ```
 
-Local preferences and Anthropic provider/model values should go in:
+Local preferences and Anthropic provider/model values go in:
 
 ```text
 .claude/settings.local.json
 ```
+
+This file also contains `enabledPlugins` and `extraKnownMarketplaces` for ECC and selected optional plugin skills. Full `setup` treats its current pipeline and optional-skill selection as the source of truth: it removes deselected repo-pattern-managed plugin entries and legacy local attribution, but preserves provider credentials, unrelated local settings, and unknown third-party plugin and marketplace entries.
+
+Selected local-copy skills are written under `.claude/skills/`; selected ECC rule packs are written under `.claude/rules/ecc/`. A full setup rerun removes deselected repo-pattern-managed skill directories and ECC packs. The separate initialized-project **Add optional skills** action is add-only.
 
 `setup` asks for these values and writes the file for you:
 

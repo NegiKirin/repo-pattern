@@ -29,12 +29,12 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   const lock = await readRepoLock(target, {});
   const allowSourceSkills = audit.repoPattern?.mode === "template";
   const managedSkills = audit.repoPattern?.runtime?.localSkills === true && Array.isArray(audit.repoPattern?.optionalSkills) && audit.hasOnlyManagedSkills;
-  check(!audit.hasClaudeSkillsDir || allowSourceSkills || managedSkills, ".claude/skills does not exist unless repo-pattern-managed optional skills are enabled");
+  check(!audit.hasClaudeSkillsDir || allowSourceSkills || audit.hasRepoPatternJson, ".claude/skills is preserved for initialized repo-pattern projects");
   check(!audit.hasClaudeCommandsDir, ".claude/commands does not exist");
   check(!audit.hasClaudeHooksDir, ".claude/hooks does not exist");
   check(!audit.hasClaudeScriptsDir, ".claude/scripts does not exist");
   const usesEcc = audit.repoPattern?.workflow === "ecc-native" || audit.repoPattern?.workflow === "ecc-gstack";
-  check(!audit.hasClaudeRulesDir || (audit.hasOnlyEccRulesDir && audit.hasManagedEccRules), "no unmanaged .claude/rules");
+  check(!audit.hasClaudeEccRulesDir || audit.hasManagedEccRules, ".claude/rules/ecc is repo-pattern-managed when present");
   check(audit.hasClaudeDir, ".claude exists");
   check(!audit.hasSettingsHooks, ".claude/settings.json hooks is {}");
   check(!isTracked(target, ".claude/settings.json"), ".claude/settings.json is not tracked");

@@ -124,6 +124,20 @@ function pluginId(skill) {
   return `${skill.plugin.name}@${skill.plugin.marketplace}`;
 }
 
+export function selectedPluginSkills(skills = []) {
+  return normalizeOptionalSkills(skills).map(knownSkill).filter((skill) => skill?.plugin);
+}
+
+export function reconcilePluginSkillSettings(settings = {}, skills = []) {
+  const enabledPlugins = { ...(settings.enabledPlugins || {}) };
+  const extraKnownMarketplaces = { ...(settings.extraKnownMarketplaces || {}) };
+  for (const skill of OPTIONAL_SKILLS.filter((entry) => entry.plugin)) {
+    delete enabledPlugins[pluginId(skill)];
+    delete extraKnownMarketplaces[skill.plugin.marketplace];
+  }
+  return applyPluginSkillSettings({ ...settings, enabledPlugins, extraKnownMarketplaces }, selectedPluginSkills(skills));
+}
+
 export function applyPluginSkillSettings(settings = {}, skills = []) {
   const next = {
     ...settings,
@@ -270,39 +284,55 @@ async function copySkill(skill, cacheDir, destRoot, { dryRun = false } = {}) {
   return [skill.destName];
 }
 
-export async function applyOptionalSkills({ target, skills = [], dryRun = false }) {
+export async function applyOptionalSkills({
+  target,
+  skills = [],
+  dryRun = false,
+  reconcile = false,
+  previousOptionalSkills = null
+}) {
   const selected = normalizeOptionalSkills(skills);
   const invalid = invalidOptionalSkills(selected);
   if (invalid.length > 0) throw new Error(`Unknown optional skill(s): ${invalid.join(", ")}`);
-  if (selected.length === 0) return { selectedSkills: [], appliedSkills: [] };
 
   const chosen = selected.map(knownSkill);
   const repoConfig = await readRepoConfig(target, {});
-  const desired = [...new Set([...(repoConfig.optionalSkills || []), ...chosen].map((entry) => entry.name || entry.value))]
-    .map(knownSkill)
-    .filter(Boolean);
+  const previousSkills = previousOptionalSkills || repoConfig.optionalSkills || [];
+  const desired = reconcile
+    ? chosen
+    : [...new Set([...previousSkills, ...chosen].map((entry) => entry.name || entry.value))]
+      .map(knownSkill)
+      .filter(Boolean);
   const pluginSkills = desired.filter((skill) => skill.plugin);
   const localSkills = desired.filter((skill) => !skill.plugin);
-  const shouldSyncLocalSkills = chosen.some((skill) => !skill.plugin);
+  const shouldSyncLocalSkills = reconcile || chosen.some((skill) => !skill.plugin);
   const destRoot = path.join(target, ".claude", "skills");
-  await writePluginSkillSettings({ target, skills: pluginSkills, dryRun });
+  if (!reconcile) await writePluginSkillSettings({ target, skills: pluginSkills, dryRun });
 
-  const appliedSkills = shouldSyncLocalSkills
-    ? []
-    : (repoConfig.optionalSkills || []).filter((entry) => {
+  const appliedSkills = [];
+  if (shouldSyncLocalSkills) {
+    await backupPaths(target, [".claude/skills"], { dryRun });
+    const previousLocalSkills = previousSkills.filter((entry) => {
       const skill = knownSkill(entry.name);
       return skill && !skill.plugin;
     });
-  if (shouldSyncLocalSkills) {
-    await backupPaths(target, [".claude/skills"], { dryRun });
-    await removePath(destRoot, { dryRun });
-    await ensureDir(destRoot, { dryRun });
-    await ensureRepoPatternGitignore(target, { dryRun });
-
-    for (const skill of localSkills) {
-      const cacheDir = await syncSkillCache(target, skill, { dryRun });
-      const installedDirs = await copySkill(skill, cacheDir, destRoot, { dryRun });
-      appliedSkills.push({ name: skill.value, source: skill.source, revision: skill.revision, license: skill.license, installedDirs });
+    for (const skill of previousLocalSkills) {
+      for (const dir of skill.installedDirs || []) await removePath(path.join(destRoot, dir), { dryRun });
+    }
+    if (localSkills.length > 0) {
+      await ensureDir(destRoot, { dryRun });
+      await ensureRepoPatternGitignore(target, { dryRun });
+      for (const skill of localSkills) {
+        const cacheDir = await syncSkillCache(target, skill, { dryRun });
+        const installedDirs = await copySkill(skill, cacheDir, destRoot, { dryRun });
+        appliedSkills.push({ name: skill.value, source: skill.source, revision: skill.revision, license: skill.license, installedDirs });
+      }
+    } else if (!dryRun) {
+      try {
+        await fs.rmdir(destRoot);
+      } catch (error) {
+        if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error.code)) throw error;
+      }
     }
 
     const repoPatternDir = path.join(target, ".repo-pattern");
@@ -317,6 +347,8 @@ export async function applyOptionalSkills({ target, skills = [], dryRun = false 
         if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error.code)) throw error;
       }
     }
+  } else {
+    appliedSkills.push(...(repoConfig.optionalSkills || []).filter((entry) => !knownSkill(entry.name)?.plugin));
   }
 
   appliedSkills.push(...pluginSkills.map((skill) => ({ name: skill.value, source: skill.source, revision: skill.revision, license: skill.license, installedDirs: [], plugin: skill.plugin })));
@@ -334,7 +366,7 @@ export async function applyOptionalSkills({ target, skills = [], dryRun = false 
   printSummary("Applied optional skills", [
     ["Plugin settings", pluginSkills.length ? ".claude/settings.local.json" : "none"],
     ["Local skill path", localSkills.length ? path.relative(target, destRoot) : "none"],
-    ["Skills", selected.join(", ")]
+    ["Skills", selected.join(", ") || "none"]
   ]);
 
   return { selectedSkills: selected, appliedSkills };
