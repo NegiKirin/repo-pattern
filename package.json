@@ -11,6 +11,9 @@
     "doctor": "node scripts/repo-pattern.mjs doctor --target .",
     "mcp:web": "node scripts/repo-pattern.mjs mcp --target . --profile web",
     "test": "node scripts/self-check.mjs",
+    "test:coverage": "node scripts/test-coverage.mjs",
+    "check:module-limits": "node scripts/check-module-limits.mjs",
+    "measure:test-duration": "node scripts/measure-test-duration.mjs",
     "pack:dry": "npm pack --dry-run",
     "prepublishOnly": "npm test && npm run pack:dry"
   },
@@ -45,7 +48,7 @@
     "javascript"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "files": [
     "scripts/",
