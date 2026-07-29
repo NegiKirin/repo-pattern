@@ -48,6 +48,9 @@ export async function auditProject(target) {
   const eccRulesDir = path.join(target, ".claude", "rules", "ecc");
   const hasClaudeEccRulesDir = exists(eccRulesDir);
   const eccRulePackDirs = await listDirNames(eccRulesDir);
+  const agentsDir = path.join(target, ".claude", "agents");
+  const hasClaudeAgentsDir = exists(agentsDir);
+  const agentEntries = await listDirNames(agentsDir);
   const hasMcpJson = exists(path.join(target, ".mcp.json"));
   const hasHardcodedMcpPath = hasMcpJson
     ? await fileContains(path.join(target, ".mcp.json"), HARDCODED_PATH_RE)
@@ -68,6 +71,9 @@ export async function auditProject(target) {
     hasClaudeHooksDir: exists(path.join(target, ".claude", "hooks")),
     hasClaudeScriptsDir: exists(path.join(target, ".claude", "scripts")),
     hasClaudeRulesDir: exists(path.join(target, ".claude", "rules")),
+    hasClaudeAgentsDir,
+    agentEntries,
+    hasManagedEccAgents: lock.ecc?.agentsSyncedBy === "repo-pattern-auto-cache" || (lock.ecc?.appliedAgents || []).length > 0,
     hasOnlyEccRulesDir: await isOnlyEccRulesDir(target),
     hasManagedEccRules: lock.ecc?.rulesSyncedBy === "repo-pattern-auto-cache" || (lock.ecc?.appliedRules || []).length > 0,
     hasClaudeEccRulesDir,
@@ -135,7 +141,9 @@ export function printAudit(audit) {
     [audit.hasClaudeHooksDir, ".claude/hooks present"],
     [audit.hasClaudeScriptsDir, ".claude/scripts present"],
     [audit.hasClaudeRulesDir && !audit.hasOnlyEccRulesDir, "non-ECC .claude/rules present"],
-    [audit.hasClaudeEccRulesDir && !audit.hasManagedEccRules, ".claude/rules/ecc is not repo-pattern-managed"]
+    [audit.hasClaudeEccRulesDir && !audit.hasManagedEccRules, ".claude/rules/ecc is not repo-pattern-managed"],
+    [audit.hasManagedEccAgents && !audit.hasClaudeAgentsDir, ".claude/agents is missing for repo-pattern-managed ECC agents"],
+    [audit.hasClaudeAgentsDir && !audit.hasManagedEccAgents, ".claude/agents is not repo-pattern-managed"]
   ].filter(([bad]) => bad);
 
   if (issues.length > 0) {
