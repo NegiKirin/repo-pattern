@@ -77,8 +77,8 @@ Install ECC inside Claude Code:
 /plugin marketplace add https://github.com/affaan-m/ECC
 /plugin install ecc@ecc
 
-repo-pattern does not vendor ECC skills, commands, hooks, scripts, or rules.
-ECC runtime surfaces are plugin-managed.
+repo-pattern does not vendor ECC skills, commands, hooks, or scripts.
+When ECC rules are applied, repo-pattern synchronizes upstream agent definitions and rule packs; other runtime surfaces are plugin-managed.
 `);
   }
 

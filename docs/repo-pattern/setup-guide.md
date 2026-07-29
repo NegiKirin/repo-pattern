@@ -36,7 +36,7 @@ minimal Claude Code setup
 + repo-pattern metadata
 ```
 
-`repo-pattern` is intentionally not a Claude runtime pack. It does not install local Claude skills, commands, hooks, or scripts by default. ECC and both pipelines install auto-detected project-local ECC rules by default; interactive setup can choose automatic packs, manual packs, or none. gstack and none keep rules off unless selected in the wizard or passed `setup --with-rules`. Rule sync is independent of ECC plugin installation, so managed `.claude/rules/ecc/` packs can be present while the plugin is still `manual-plugin-install-required`. Optional external skills are explicit opt-in via `setup --with-skill <name>` or interactive `setup`.
+`repo-pattern` is intentionally not a Claude runtime pack. It does not install local Claude skills, commands, hooks, or scripts by default. Whenever ECC rules are applied, it stages and atomically replaces `.claude/agents/` with ECC's upstream `agents/**` tree; ECC skills, `.agents`, commands, hooks, and scripts are never copied. ECC and both pipelines install auto-detected project-local ECC rules by default; interactive setup can choose automatic packs, manual packs, or none. gstack and none keep rules off unless selected in the wizard or passed `setup --with-rules`. Rule sync is independent of ECC plugin installation, so managed `.claude/rules/ecc/` packs and agents can be present while the plugin is still `manual-plugin-install-required`. Optional external skills are explicit opt-in via `setup --with-skill <name>` or interactive `setup`.
 
 Non-ECC managed rules are recorded under `repoConfig.ecc` and `lock.ecc` as rule-sync metadata only; they do not enable `ecc@ecc` or change the selected runtime pipeline.
 
@@ -134,8 +134,9 @@ For non-interactive scripts, use `setup --yes`.
 13. Add generated setup files and basic OS/IDE noise to `.gitignore`.
 14. Write `.repo-pattern/.repo-pattern.lock.json` without credential values.
 15. Run the selected setup pipeline: ECC setup after generation, or the global gstack installer after target preflight succeeds.
-16. When rules are enabled, apply ECC rules independently of plugin installation.
-17. Run doctor.
+16. When rules are enabled, apply ECC rules independently of plugin installation, validate the cached ECC Git `HEAD`, and atomically promote upstream `agents/**` into `.claude/agents/`.
+17. Write ECC agent provenance and the sorted SHA-256 file inventory only to `.repo-pattern/.repo-pattern.lock.json`; rollback agents and nested metadata if promotion or metadata writes fail.
+18. Run doctor, which validates ECC agent source, revision, manifest paths, missing/extra files, and hashes.
 ```
 
 After setup, the target project should contain:
@@ -146,12 +147,13 @@ target-project/
 ├── .claude/
 │   ├── CLAUDE.md
 │   ├── settings.json
-│   └── settings.local.json  # setup only, gitignored
+│   ├── settings.local.json  # setup only, gitignored
+│   └── agents/              # synchronized only when ECC rules are applied, gitignored
 ├── .mcp.json
 ├── .repo-pattern/
 │   ├── .gitignore
 │   ├── .repo-pattern.json
-│   └── .repo-pattern.lock.json
+│   └── .repo-pattern.lock.json  # ECC agent source, revision, and SHA-256 inventory when rules are enabled
 ```
 
 ## Root `CLAUDE.md` policy

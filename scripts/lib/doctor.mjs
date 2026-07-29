@@ -2,6 +2,7 @@ import path from "node:path";
 import { auditProject } from "./audit.mjs";
 import { ensureRepoPatternGitignore, isTracked, readJson, readRepoLock, repoLockPath, writeJson } from "./fs-utils.mjs";
 import { printBox, style } from "./prompt.mjs";
+import { isValidEccAgentProvenance, verifyAgentInventory } from "./rules.mjs";
 
 function renderDoctor(target, checks, infoRows) {
   const failed = checks.filter((row) => !row.ok);
@@ -76,6 +77,12 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
     check(audit.hasOnlyEccRulesDir, ".claude/rules/ecc contains only ECC-managed project rules");
     check(audit.hasClaudeEccRulesDir && existingRules.size > 0, ".claude/rules/ecc contains synced ECC rule pack directories");
     check(appliedRules.every((rule) => existingRules.has(rule)), "all locked ECC rule packs exist under .claude/rules/ecc");
+  }
+  const managedAgentsClaimed = lock.ecc?.agentsSyncedBy === "repo-pattern-auto-cache" || (lock.ecc?.appliedAgents || []).length > 0;
+  if (managedAgentsClaimed) {
+    check(audit.hasClaudeAgentsDir, ".claude/agents exists for managed ECC agents");
+    check(isValidEccAgentProvenance(lock.ecc), ".repo-pattern/.repo-pattern.lock.json ECC agent provenance and manifest are valid");
+    check(await verifyAgentInventory(path.join(target, ".claude", "agents"), lock.ecc?.appliedAgents), ".claude/agents exactly matches the locked ECC SHA-256 manifest");
   }
   if (setupPipeline === "gstack" || setupPipeline === "both") check(lock.gstack?.status === "installed", ".repo-pattern/.repo-pattern.lock.json gstack.status=installed");
   if (setupPipeline === "both") infoRows.push(`ECC setup status: ${lock.ecc?.status || "unknown"}, gstack setup status: ${lock.gstack?.status || "unknown"}`);

@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { auditProject, printAudit } from "./audit.mjs";
 import { cleanupProject } from "./cleanup.mjs";
@@ -7,7 +8,7 @@ import { ECC_PLUGIN, applyEccPluginSettings, setupEcc } from "./ecc.mjs";
 import { setupGstack } from "./gstack.mjs";
 import { doctorProject } from "./doctor.mjs";
 import { applyEccRules, clearEccRules } from "./rules.mjs";
-import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, ensureRepoPatternGitignore, isTracked, readJson, readRepoConfig, removePath, repoConfigPath, repoLockPath, writeJson, writeIfMissing, writePrivateJson } from "./fs-utils.mjs";
+import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, ensureRepoPatternGitignore, exists, isTracked, readJson, readRepoConfig, removePath, repoConfigPath, repoLockPath, writeJson, writeIfMissing, writePrivateJson } from "./fs-utils.mjs";
 import { printSummary, style } from "./prompt.mjs";
 import { applyOptionalSkills, reconcilePluginSkillSettings } from "./skills.mjs";
 
@@ -182,6 +183,52 @@ async function rejectClaudeSymlink(target, { dryRun = false } = {}) {
   if (stat.isSymbolicLink()) throw new Error(".claude must not be a symlink.");
 }
 
+async function snapshotProvisionState(target, { dryRun = false } = {}) {
+  if (dryRun) return null;
+  const files = [
+    path.join(target, ".mcp.json"),
+    repoConfigPath(target),
+    repoLockPath(target),
+    path.join(target, ".repo-pattern", ".gitignore"),
+    path.join(target, ".claude", "CLAUDE.md")
+  ];
+  const snapshots = await Promise.all(files.map(async (file) => {
+    try {
+      return { file, exists: true, content: await fs.readFile(file) };
+    } catch (error) {
+      if (error.code === "ENOENT") return { file, exists: false, content: null };
+      throw error;
+    }
+  }));
+  const snapshotRoot = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-provision-transaction-"));
+  const directories = [
+    { path: path.join(target, ".claude", "agents"), snapshot: path.join(snapshotRoot, "agents") },
+    { path: path.join(target, ".claude", "rules", "ecc"), snapshot: path.join(snapshotRoot, "ecc-rules") }
+  ].map((entry) => ({ ...entry, exists: exists(entry.path) }));
+  for (const directory of directories) {
+    if (directory.exists) await fs.cp(directory.path, directory.snapshot, { recursive: true, force: true });
+  }
+  return { snapshots, directories, snapshotRoot };
+}
+
+async function restoreProvisionState(snapshot) {
+  if (!snapshot) return;
+  for (const directory of snapshot.directories) {
+    await fs.rm(directory.path, { recursive: true, force: true });
+    if (directory.exists) await fs.cp(directory.snapshot, directory.path, { recursive: true, force: true });
+  }
+  for (const entry of snapshot.snapshots) {
+    if (entry.exists) {
+      await ensureDir(path.dirname(entry.file));
+      await fs.writeFile(entry.file, entry.content);
+    } else await fs.rm(entry.file, { force: true });
+  }
+}
+
+async function removeProvisionSnapshot(snapshot) {
+  if (snapshot) await fs.rm(snapshot.snapshotRoot, { recursive: true, force: true });
+}
+
 async function writeLocalSettings({ sourceRoot, target, localSettingsEnv = {}, setupPipeline, optionalSkills, dryRun }) {
   if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local provider settings.");
   const claudeDir = path.join(target, ".claude");
@@ -214,54 +261,71 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
   if (isTracked(target, ".claude/settings.json")) throw new Error(".claude/settings.json is tracked. Untrack it before writing Claude Code settings.");
   if (isTracked(target, ".repo-pattern/.repo-pattern.lock.json") || isTracked(target, ".repo-pattern.lock.json")) throw new Error("repo-pattern lock is tracked. Untrack it before writing local setup state.");
 
-  const gstackStatus = usesGstack(setupPipeline) ? await setupGstack({ target, dryRun, planTuneHooks }) : null;
-  const previousRepoConfig = await readRepoConfig(target, {});
+  const provisionSnapshot = await snapshotProvisionState(target, { dryRun });
+  let eccStatus = null;
+  let mcpResult = null;
+  try {
+    const gstackStatus = usesGstack(setupPipeline) ? await setupGstack({ target, dryRun, planTuneHooks }) : null;
+    const previousRepoConfig = await readRepoConfig(target, {});
 
-  if (audit.state === "LEGACY_VENDOR") {
-    await cleanupProject({ sourceRoot, target, dryRun });
-  } else {
-    await backupPaths(target, ["CLAUDE.md", ".claude/CLAUDE.md", ".claude/settings.json", ".claude/rules", ".claude/skills", ".claude/commands", ".claude/hooks", ".claude/scripts", ".repo-pattern.json", ".repo-pattern.lock.json"], { dryRun });
-  }
+    if (audit.state === "LEGACY_VENDOR") {
+      await cleanupProject({ sourceRoot, target, dryRun });
+    } else {
+      await backupPaths(target, ["CLAUDE.md", ".claude/CLAUDE.md", ".claude/settings.json", ".claude/rules", ".claude/agents", ".claude/skills", ".claude/commands", ".claude/hooks", ".claude/scripts", ".repo-pattern/.repo-pattern.json", ".repo-pattern/.repo-pattern.lock.json"], { dryRun });
+    }
 
-  await ensureDir(path.join(target, ".claude"), { dryRun });
+    await ensureDir(path.join(target, ".claude"), { dryRun });
 
-  // Target CLAUDE.md is created empty when missing so project-specific instructions can be added later. Existing target CLAUDE.md is preserved.
-  await writeIfMissing(path.join(target, "CLAUDE.md"), TARGET_CLAUDE_MD, { dryRun });
-  for (const line of BASIC_GITIGNORE_LINES) await appendGitignoreLine(target, line, { dryRun });
+    // Target CLAUDE.md is created empty when missing so project-specific instructions can be added later. Existing target CLAUDE.md is preserved.
+    await writeIfMissing(path.join(target, "CLAUDE.md"), TARGET_CLAUDE_MD, { dryRun });
+    for (const line of BASIC_GITIGNORE_LINES) await appendGitignoreLine(target, line, { dryRun });
 
-  await copyRecursive(
-    path.join(sourceRoot, ".claude.example", "CLAUDE.md"),
-    path.join(target, ".claude", "CLAUDE.md"),
-    { dryRun }
-  );
+    await copyRecursive(
+      path.join(sourceRoot, ".claude.example", "CLAUDE.md"),
+      path.join(target, ".claude", "CLAUDE.md"),
+      { dryRun }
+    );
 
-  await writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun });
-  await appendGitignoreLine(target, ".claude/", { dryRun });
+    await writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun });
+    await appendGitignoreLine(target, ".claude/", { dryRun });
 
-  await writeLocalSettings({ sourceRoot, target, localSettingsEnv, setupPipeline, optionalSkills, dryRun });
+    await writeLocalSettings({ sourceRoot, target, localSettingsEnv, setupPipeline, optionalSkills, dryRun });
 
-  await ensureRepoPatternGitignore(target, { dryRun });
-  const lockPath = repoLockPath(target);
+    await ensureRepoPatternGitignore(target, { dryRun });
+    const lockPath = repoLockPath(target);
+    mcpResult = await generateMcp({ sourceRoot, target, profile, mcpServers, mcpValues, dryRun });
+    eccStatus = usesEcc(setupPipeline) ? await setupEcc({ sourceRoot, target, dryRun, configurePlugin: false }) : null;
+    await writeJson(repoConfigPath(target), await repoPatternConfig(sourceRoot, profile, setupPipeline), { dryRun });
+    await writeJson(lockPath, lockConfig(profile, setupPipeline, { ecc: eccStatus, gstack: gstackStatus }, planTuneHooks), { dryRun });
+    await ensureRepoPatternGitignore(target, { dryRun });
+    if (shouldApplyRules) await applyEccRules({ target, dryRun, ruleMode, rules });
+    else await clearEccRules({ target, dryRun });
+    await applyOptionalSkills({
+      target,
+      skills: optionalSkills,
+      dryRun,
+      reconcile: true,
+      previousOptionalSkills: previousRepoConfig.optionalSkills
+    });
 
-  const mcpResult = await generateMcp({ sourceRoot, target, profile, mcpServers, mcpValues, dryRun });
-  const eccStatus = usesEcc(setupPipeline) ? await setupEcc({ sourceRoot, target, dryRun, configurePlugin: false }) : null;
-  await writeJson(repoConfigPath(target), await repoPatternConfig(sourceRoot, profile, setupPipeline), { dryRun });
-  await writeJson(lockPath, lockConfig(profile, setupPipeline, { ecc: eccStatus, gstack: gstackStatus }, planTuneHooks), { dryRun });
-  await ensureRepoPatternGitignore(target, { dryRun });
-  if (shouldApplyRules) await applyEccRules({ target, dryRun, ruleMode, rules });
-  else await clearEccRules({ target, dryRun });
-  await applyOptionalSkills({
-    target,
-    skills: optionalSkills,
-    dryRun,
-    reconcile: true,
-    previousOptionalSkills: previousRepoConfig.optionalSkills
-  });
-
-  if (dryRun) {
-    console.log("[dry-run] doctor skipped because no files were written.");
-  } else {
-    await doctorProject(target, { updateLock: true, dryRun });
+    if (dryRun) {
+      console.log("[dry-run] doctor skipped because no files were written.");
+    } else {
+      await doctorProject(target, { updateLock: true, dryRun });
+    }
+  } catch (error) {
+    try {
+      await restoreProvisionState(provisionSnapshot);
+    } catch (rollbackError) {
+      console.warn(`WARN: Provision rollback failed: ${rollbackError.message}`);
+    }
+    throw error;
+  } finally {
+    try {
+      await removeProvisionSnapshot(provisionSnapshot);
+    } catch (cleanupError) {
+      console.warn(`WARN: Provision rollback snapshot cleanup failed: ${cleanupError.message}`);
+    }
   }
 
   const pending = [

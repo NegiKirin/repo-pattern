@@ -59,7 +59,7 @@ Pipeline scope is explicit:
 
 gstack requires Git and Bun v1.0+. When Bun is missing on Linux or macOS, setup downloads the official installer over TLS, validates it, and installs Bun automatically. On unsupported systems, install Bun manually before setup. Its upstream setup runs with `--quiet --no-plan-tune-hooks`, so automated setup does not show settings diffs or wait for hook confirmation.
 
-ECC rules are independent of the ECC plugin. `ecc` and `both` install auto-detected packs by default; the interactive wizard can switch to manual packs or none. `gstack` and `none` prompt whether to install rules, while scriptable setup requires `--with-rules`. Managed packs live in `.claude/rules/ecc/` and can work when ECC plugin setup reports manual installation is still required.
+ECC rules are independent of the ECC plugin. Whenever rules are applied, repo-pattern atomically replaces `.claude/agents/` with ECC's upstream `agents/**` tree and records the source revision plus a SHA-256 file manifest only in `.repo-pattern/.repo-pattern.lock.json`. `ecc` and `both` install auto-detected packs by default; the interactive wizard can switch to manual packs or none. `gstack` and `none` prompt whether to install rules, while scriptable setup requires `--with-rules`. Managed packs live in `.claude/rules/ecc/`; ECC skills are never copied. `doctor` verifies agent provenance and manifest integrity.
 
 Migrate an existing project:
 
@@ -118,7 +118,8 @@ target-project/
 ├── .claude/
 │   ├── CLAUDE.md
 │   ├── settings.json             # copied from example, gitignored
-│   └── settings.local.json       # when local settings are provided, gitignored
+│   ├── settings.local.json       # when local settings are provided, gitignored
+│   └── agents/                   # ECC agents when ECC rules are applied, gitignored
 ├── .mcp.json                     # generated, gitignored
 ├── .repo-pattern/
 │   ├── .gitignore               # *
@@ -139,7 +140,7 @@ Each full `repo-pattern setup` run reconciles repo-pattern-managed state to its 
 * `.claude/` is generated from `.claude.example/` and gitignored.
 * Basic OS/IDE noise (`.DS_Store`, `Thumbs.db`, `.vscode/`, `.idea/`) is gitignored during setup.
 * `.claude/settings.json` keeps `hooks: {}` and disables commit attribution by default; interactive setup can turn it on or use a custom trailer.
-* No vendored ECC skills, commands, hooks, or scripts are installed. ECC rules are auto-installed for ECC pipelines and opt-in for gstack/none.
+* ECC rule application atomically stages and replaces upstream ECC agents, with rollback through nested repo-pattern metadata writes. The lock records their source revision and SHA-256 inventory; ECC skills, commands, hooks, scripts, and `.agents` are never copied. Clearing ECC rules clears only agent metadata and retains `.claude/agents/`.
 * Karpathy-inspired Claude Code guidelines are included in `.claude/CLAUDE.md` from `multica-ai/andrej-karpathy-skills` (MIT).
 * Optional external skills are user opt-in only: `--with-skill taste`, `--with-skill document-specialist`, `--with-skill ui-ux-pro-max`, `--with-skill impeccable`, `--with-skill huashu-design`, `--with-skill nextjs-pattern`, `--with-skill fastapi-pattern`, `--with-skill herdr`, or interactive setup.
 
