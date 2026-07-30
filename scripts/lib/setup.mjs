@@ -107,7 +107,7 @@ function retryRows(setup) {
     ["Failed step", setup.failedStep || "unknown"],
     ["Error", setup.error || "unknown"],
     ["Setup pipeline", options.setupPipeline || "ecc"],
-    ...(usesGstack(options.setupPipeline) ? [["Plan-tune hooks", options.planTuneHooks ? "installed in ~/.claude/settings.json" : "not installed"]] : []),
+    ...(usesGstack(options.setupPipeline) ? [["Plan-tune hooks", options.planTuneHooks ? "installed in .claude/settings.json" : "not installed"]] : []),
     ["Profile", options.profile || "web"],
     ["MCP servers", options.mcpServers?.join(", ") || "from profile"],
     ["MCP values", options.mcpValueNames?.length ? options.mcpValueNames.join(", ") : "none"],
@@ -218,7 +218,7 @@ async function chooseSetupPipeline(initialValue = "ecc") {
     message: "Choose setup pipeline",
     options: [
       { value: "ecc", label: "ECC", description: "project-scoped plugin with optional project rules" },
-      { value: "gstack", label: "gstack", description: "user-scoped/global at ~/.claude/skills/gstack; requires Git and Bun" }
+      { value: "gstack", label: "gstack", description: "project-local at .claude/skills/gstack; requires Git and Bun" }
     ],
     initialValues: pipelineValues(initialValue)
   }));
@@ -229,8 +229,8 @@ async function choosePlanTuneHooks(setupPipeline, initialValue = false) {
   return selectOne({
     message: "Install gstack plan-tune hooks?",
     options: [
-      { value: false, label: "No", description: "keep ~/.claude/settings.json unchanged by gstack" },
-      { value: true, label: "Yes", description: "add gstack PreToolUse and PostToolUse hooks to ~/.claude/settings.json" }
+      { value: false, label: "No", description: "keep target .claude/settings.json unchanged by gstack" },
+      { value: true, label: "Yes", description: "add gstack PreToolUse and PostToolUse hooks to target .claude/settings.json" }
     ],
     initialValue
   });
@@ -349,11 +349,12 @@ function attributionSummary(attributionConfig) {
 
 async function confirmSummary({ action, setupPipeline, planTuneHooks, target, mcpConfig, mcpValues, ruleConfig, optionalSkills, localSettingsEnv, attributionConfig, permissionConfig, dryRun }) {
   const hasLocalSkill = optionalSkills.some((name) => !OPTIONAL_SKILLS.find((skill) => skill.value === name)?.plugin);
+  const writesGstack = usesGstack(setupPipeline);
   printSummary("Setup summary", [
     ["Action", action],
     ["Setup pipeline", setupPipeline],
     ["Pipeline scope", setupPipelineScope(setupPipeline)],
-    ...(usesGstack(setupPipeline) ? [["Plan-tune hooks", planTuneHooks ? "will add PreToolUse/PostToolUse hooks to ~/.claude/settings.json" : "not installed"]] : []),
+    ...(usesGstack(setupPipeline) ? [["Plan-tune hooks", planTuneHooks ? "will add PreToolUse/PostToolUse hooks to .claude/settings.json" : "not installed"]] : []),
     ["Target", target],
     ["Profile", mcpConfig.profile],
     ["MCP servers", mcpConfig.mcpServers?.join(", ") || "from profile"],
@@ -370,8 +371,8 @@ async function confirmSummary({ action, setupPipeline, planTuneHooks, target, mc
     ["Bypass permissions", permissionConfig.bypass === "allow" ? "allowed by default" : "disabled"],
     ["Commit attribution", attributionSummary(attributionConfig)],
     ["Dry-run", dryRun ? "yes" : "no"],
-    ["Will write", `CLAUDE.md (if missing), .claude/CLAUDE.md, .claude/settings.json, .claude/settings.local.json, .mcp.json, .repo-pattern/.repo-pattern.json, .repo-pattern/.repo-pattern.lock.json${optionalSkills.length ? ", optional skill/plugin config" : ""}${hasLocalSkill ? ", .claude/skills" : ""}`],
-    ["Will not write", hasLocalSkill ? ".claude/commands, .claude/hooks, .claude/scripts" : ".claude/skills, .claude/commands, .claude/hooks, .claude/scripts"]
+    ["Will write", `CLAUDE.md (if missing), .claude/CLAUDE.md, .claude/settings.json, .claude/settings.local.json, .mcp.json, .repo-pattern/.repo-pattern.json, .repo-pattern/.repo-pattern.lock.json${writesGstack ? ", .claude/skills/gstack, generated gstack wrappers, .repo-pattern/gstack" : ""}${optionalSkills.length ? ", optional skill/plugin config" : ""}${hasLocalSkill ? ", .claude/skills" : ""}`],
+    ["Will not write", hasLocalSkill || writesGstack ? ".claude/commands, .claude/hooks, .claude/scripts" : ".claude/skills, .claude/commands, .claude/hooks, .claude/scripts"]
   ]);
 
   const answer = await selectOne({

@@ -8,7 +8,6 @@ import { auditProject, printAudit } from "../lib/audit.mjs";
 import { cleanupProject } from "../lib/cleanup.mjs";
 import { doctorProject } from "../lib/doctor.mjs";
 import { ECC_PLUGIN, applyEccPluginSettings, setupEcc } from "../lib/ecc.mjs";
-import { ensureBun, gstackEnvironment, gstackSummaryRows, isValidBunInstaller, removeEccPluginSettings, runGstackSetup, setupGstack } from "../lib/gstack.mjs";
 import { applyMcpValues, generateMcp, mcpSecretPrompt, persistedMcpValues, readGeneratedMcpValues, validateRelativeMcpPath } from "../lib/mcp.mjs";
 import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, provisionProject, reconcileLocalPluginSettings, setupPipelineScope, updateClaudePermissions } from "../lib/provision.mjs";
 import { writePrivateJson } from "../lib/fs-utils.mjs";
@@ -184,6 +183,40 @@ try {
   console.log = originalLog;
   await fs.rm(settingsSymlinkTarget, { recursive: true, force: true });
   await fs.rm(settingsSymlinkDestination, { force: true });
+}
+
+const doctorLockSymlinkTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-doctor-lock-symlink-target-"));
+const doctorLockSymlinkDestination = path.join(os.tmpdir(), `repo-pattern-doctor-lock-symlink-destination-${process.pid}`);
+console.log = () => {};
+try {
+  await fs.mkdir(path.join(doctorLockSymlinkTarget, ".repo-pattern"));
+  await fs.writeFile(doctorLockSymlinkDestination, "unchanged", "utf8");
+  await fs.symlink(doctorLockSymlinkDestination, path.join(doctorLockSymlinkTarget, ".repo-pattern", ".repo-pattern.lock.json"));
+  await assert.rejects(
+    () => doctorProject(doctorLockSymlinkTarget, { updateLock: true }),
+    /\.repo-pattern\/.repo-pattern\.lock\.json.*symlink/
+  );
+  assert.equal(await fs.readFile(doctorLockSymlinkDestination, "utf8"), "unchanged");
+} finally {
+  console.log = originalLog;
+  await fs.rm(doctorLockSymlinkTarget, { recursive: true, force: true });
+  await fs.rm(doctorLockSymlinkDestination, { force: true });
+}
+
+const doctorStateSymlinkTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-doctor-state-symlink-target-"));
+const doctorStateSymlinkDestination = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-doctor-state-symlink-destination-"));
+console.log = () => {};
+try {
+  await fs.symlink(doctorStateSymlinkDestination, path.join(doctorStateSymlinkTarget, ".repo-pattern"), "dir");
+  await assert.rejects(
+    () => doctorProject(doctorStateSymlinkTarget, { updateLock: true }),
+    /\.repo-pattern.*symlink/
+  );
+  assert.equal(await fs.readdir(doctorStateSymlinkDestination).then((entries) => entries.length), 0);
+} finally {
+  console.log = originalLog;
+  await fs.rm(doctorStateSymlinkTarget, { recursive: true, force: true });
+  await fs.rm(doctorStateSymlinkDestination, { recursive: true, force: true });
 }
 
 const eccSettingsTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-ecc-settings-"));

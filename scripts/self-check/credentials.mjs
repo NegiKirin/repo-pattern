@@ -15,7 +15,6 @@ const secretSentinel = "do-not-persist-anthropic-token";
 const originalLog = console.log;
 
 export async function runCredentialChecks() {
-const originalGstackSetupCommand = process.env.REPO_PATTERN_GSTACK_SETUP_CMD;
 const pluginSettingsTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-plugin-settings-"));
 console.log = () => {};
 try {
@@ -162,7 +161,6 @@ try {
 }
 
 const trackedLockTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-tracked-lock-"));
-const gstackMarker = path.join(os.tmpdir(), `repo-pattern-gstack-marker-${process.pid}`);
 console.log = () => {};
 try {
   spawnSync("git", ["init"], { cwd: trackedLockTarget, stdio: "ignore" });
@@ -173,18 +171,13 @@ try {
     () => provisionProject({ sourceRoot: repoRoot, target: trackedLockTarget, profile: "minimal" }),
     /repo-pattern lock is tracked/,
   );
-  process.env.REPO_PATTERN_GSTACK_SETUP_CMD = `touch ${JSON.stringify(gstackMarker)}`;
   await assert.rejects(
     () => provisionProject({ sourceRoot: repoRoot, target: trackedLockTarget, profile: "minimal", setupPipeline: "gstack" }),
     /repo-pattern lock is tracked/,
   );
-  await assert.rejects(() => fs.access(gstackMarker), { code: "ENOENT" });
 } finally {
-  if (originalGstackSetupCommand === undefined) delete process.env.REPO_PATTERN_GSTACK_SETUP_CMD;
-  else process.env.REPO_PATTERN_GSTACK_SETUP_CMD = originalGstackSetupCommand;
   console.log = originalLog;
   await fs.rm(trackedLockTarget, { recursive: true, force: true });
-  await fs.rm(gstackMarker, { force: true });
 }
 
 }

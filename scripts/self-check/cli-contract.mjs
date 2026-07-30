@@ -8,7 +8,6 @@ import { auditProject, printAudit } from "../lib/audit.mjs";
 import { cleanupProject } from "../lib/cleanup.mjs";
 import { doctorProject } from "../lib/doctor.mjs";
 import { ECC_PLUGIN, applyEccPluginSettings, setupEcc } from "../lib/ecc.mjs";
-import { ensureBun, gstackEnvironment, gstackSummaryRows, isValidBunInstaller, removeEccPluginSettings, runGstackSetup, setupGstack } from "../lib/gstack.mjs";
 import { applyMcpValues, generateMcp, mcpSecretPrompt, persistedMcpValues, readGeneratedMcpValues, validateRelativeMcpPath } from "../lib/mcp.mjs";
 import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, provisionProject, reconcileLocalPluginSettings, setupPipelineScope, updateClaudePermissions } from "../lib/provision.mjs";
 import { writePrivateJson } from "../lib/fs-utils.mjs";
@@ -115,8 +114,8 @@ result = runCli(["help"]);
 assert.equal(result.status, 0);
 assert.match(result.stdout, /--setup-pipeline <ecc\|gstack\|both\|none>/);
 assert.match(result.stdout, /ecc: project-scoped ECC/);
-assert.match(result.stdout, /gstack: user-scoped\/global at ~\/\.claude\/skills\/gstack/);
-assert.match(result.stdout, /both: project-scoped ECC \+ user-scoped\/global gstack/);
+assert.match(result.stdout, /gstack: project-local at \.claude\/skills\/gstack/);
+assert.match(result.stdout, /both: project-scoped ECC \+ project-local gstack/);
 assert.match(result.stdout, /none: base project metadata only/);
 assert.match(result.stdout, /--with-plan-tune-hooks/);
 assert.match(result.stdout, /--with-skill <name>/);
@@ -179,11 +178,9 @@ const gstackSetupTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-
 try {
   result = runCli(["setup", "--target", gstackSetupTarget, "--profile", "minimal", "--setup-pipeline", "gstack", "--yes", "--dry-run"]);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Checking gstack prerequisites/);
-  assert.match(result.stdout, /Cloning gstack|Using existing gstack checkout/);
-  assert.match(result.stdout, /Running gstack setup/);
-  assert.match(result.stdout, /\.\/setup --quiet --no-plan-tune-hooks/);
-  assert.match(result.stdout, /Pipeline scope\s+user-scoped\/global gstack at ~\/\.claude\/skills\/gstack/);
+  assert.match(result.stdout, /git clone --single-branch --depth 1|copy .*\.claude\/skills\/gstack/);
+  assert.match(result.stdout, /write gstack skill wrapper/);
+  assert.match(result.stdout, /Pipeline scope\s+project-local gstack at \.claude\/skills\/gstack/);
   assert.doesNotMatch(result.stdout, /Install ECC inside Claude Code/);
 } finally {
   await fs.rm(gstackSetupTarget, { recursive: true, force: true });
@@ -193,8 +190,8 @@ const gstackHooksSetupTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pat
 try {
   result = runCli(["setup", "--target", gstackHooksSetupTarget, "--profile", "minimal", "--setup-pipeline", "gstack", "--with-plan-tune-hooks", "--yes", "--dry-run"]);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /\.\/setup --quiet --plan-tune-hooks/);
-  assert.match(result.stdout, /Plan-tune hooks\s+installed in ~\/\.claude\/settings\.json/);
+  assert.match(result.stdout, /Plan-tune hooks\s+installed in \.claude\/settings\.json/);
+  assert.doesNotMatch(result.stdout, /\.\/setup|~\/\.claude\/settings\.json/);
 } finally {
   await fs.rm(gstackHooksSetupTarget, { recursive: true, force: true });
 }

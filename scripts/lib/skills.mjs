@@ -334,7 +334,6 @@ export async function applyOptionalSkills({
         if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error.code)) throw error;
       }
     }
-
     const repoPatternDir = path.join(target, ".repo-pattern");
     if (dryRun) {
       console.log(`[dry-run] rm -rf ${path.join(repoPatternDir, "cache")}`);

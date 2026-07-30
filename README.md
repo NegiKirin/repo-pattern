@@ -16,7 +16,7 @@
 * **Start fast** — generate `.claude/`, `.mcp.json`, and repo-pattern metadata.
 * **Stay clean** — no local skills, commands, hooks, scripts, or duplicated templates by default.
 * **Use MCP profiles** — choose `minimal`, `web`, `backend`, `research`, `full`, or `custom`.
-* **Explicit pipeline** — choose ECC (default) or the upstream global gstack installer.
+* **Explicit pipeline** — choose ECC (default) or a project-local gstack checkout.
 * **Migrate safely** — audit, cleanup, doctor, and `setup --migrate` are built in.
 
 ## Install
@@ -53,11 +53,11 @@ npx repo-pattern setup --profile web --setup-pipeline none --with-rules --yes
 Pipeline scope is explicit:
 
 - `ecc` (default) — project-scoped ECC.
-- `gstack` — user-scoped/global gstack at `~/.claude/skills/gstack`.
-- `both` — project-scoped ECC plus user-scoped/global gstack.
+- `gstack` — project-local gstack at `.claude/skills/gstack`.
+- `both` — project-scoped ECC plus project-local gstack.
 - `none` — base project metadata only.
 
-gstack requires Git and Bun v1.0+. When Bun is missing on Linux or macOS, setup downloads the official installer over TLS, validates it, and installs Bun automatically. On unsupported systems, install Bun manually before setup. Its upstream setup runs with `--quiet --no-plan-tune-hooks`, so automated setup does not show settings diffs or wait for hook confirmation.
+gstack requires Git and Bun v1.0+ on `PATH`. repo-pattern never downloads Bun and never runs the upstream `gstack/setup` script. It keeps the checkout in `.claude/skills/gstack`, runtime state in `.repo-pattern/gstack/`, and both locations gitignored. A valid existing local checkout is reused unchanged; a valid global checkout is migration-only input copied to the target without modification. Bootstrap materializes required review support files beside generated wrappers from that project-local checkout. Optional plan-tune hooks are merged only into target `.claude/settings.json`.
 
 ECC rules are independent of the ECC plugin. Whenever rules are applied, repo-pattern atomically replaces `.claude/agents/` with ECC's upstream `agents/**` tree and records the source revision plus a SHA-256 file manifest only in `.repo-pattern/.repo-pattern.lock.json`. `ecc` and `both` install auto-detected packs by default; the interactive wizard can switch to manual packs or none. `gstack` and `none` prompt whether to install rules, while scriptable setup requires `--with-rules`. Managed packs live in `.claude/rules/ecc/`; ECC skills are never copied. `doctor` verifies agent provenance and manifest integrity.
 
@@ -119,10 +119,12 @@ target-project/
 │   ├── CLAUDE.md
 │   ├── settings.json             # copied from example, gitignored
 │   ├── settings.local.json       # when local settings are provided, gitignored
+│   ├── skills/gstack/            # gstack checkout when selected, gitignored
 │   └── agents/                   # ECC agents when ECC rules are applied, gitignored
 ├── .mcp.json                     # generated, gitignored
 ├── .repo-pattern/
 │   ├── .gitignore               # *
+│   ├── gstack/                  # gstack runtime state when selected
 │   ├── .repo-pattern.json
 │   └── .repo-pattern.lock.json
 ```
@@ -149,7 +151,7 @@ Each full `repo-pattern setup` run reconciles repo-pattern-managed state to its 
 | Name | Integrated as | Source | License |
 |----|----|----|----|
 | `karpathy-guidelines` | Built-in `.claude/CLAUDE.md` guidance | https://github.com/multica-ai/andrej-karpathy-skills | MIT |
-| `gstack` | Global setup pipeline via `--setup-pipeline gstack` | https://github.com/garrytan/gstack | MIT |
+| `gstack` | Project-local checkout via `--setup-pipeline gstack` | https://github.com/garrytan/gstack | MIT |
 | `taste` | Optional Claude Code plugin via `--with-skill taste` | https://github.com/Leonxlnx/taste-skill/ | MIT |
 | `document-specialist` | Optional `.claude/skills/` install via `--with-skill document-specialist` | https://github.com/SpillwaveSolutions/document-specialist-skill/ | NOASSERTION — no upstream license declared during review on 2026-07-06 |
 | `ui-ux-pro-max` | Optional Claude Code plugin via `--with-skill ui-ux-pro-max` | https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/ | MIT |

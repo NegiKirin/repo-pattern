@@ -1,7 +1,10 @@
+import { constants } from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { auditProject } from "./audit.mjs";
-import { ensureRepoPatternGitignore, isTracked, readJson, readRepoLock, repoLockPath, writeJson } from "./fs-utils.mjs";
+import { ensureRepoPatternGitignore, isTracked, readJson, readRepoLock, repoLockPath, writePrivateJson } from "./fs-utils.mjs";
 import { printBox, style } from "./prompt.mjs";
+import { applyPlanTuneHooks, validateProjectGstack } from "./gstack.mjs";
 import { isValidEccAgentProvenance, verifyAgentInventory } from "./rules.mjs";
 
 function renderDoctor(target, checks, infoRows) {
@@ -17,7 +20,28 @@ function renderDoctor(target, checks, infoRows) {
   ]);
 }
 
+async function assertNoDoctorLockSymlink(target) {
+  const statePath = path.dirname(repoLockPath(target));
+  try {
+    if ((await fs.lstat(statePath)).isSymbolicLink()) {
+      throw new Error(".repo-pattern must not be a symlink.");
+    }
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+
+  const lockPath = repoLockPath(target);
+  try {
+    if ((await fs.lstat(lockPath)).isSymbolicLink()) {
+      throw new Error(".repo-pattern/.repo-pattern.lock.json must not be a symlink.");
+    }
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+}
+
 export async function doctorProject(target, { updateLock = false, dryRun = false } = {}) {
+  await assertNoDoctorLockSymlink(target);
   const audit = await auditProject(target);
   const checks = [];
   const infoRows = [];
@@ -37,7 +61,8 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   const usesEcc = audit.repoPattern?.workflow === "ecc-native" || audit.repoPattern?.workflow === "ecc-gstack";
   check(!audit.hasClaudeEccRulesDir || audit.hasManagedEccRules, ".claude/rules/ecc is repo-pattern-managed when present");
   check(audit.hasClaudeDir, ".claude exists");
-  check(!audit.hasSettingsHooks, ".claude/settings.json hooks is {}");
+  const usesGstack = audit.repoPattern?.workflow === "gstack" || audit.repoPattern?.workflow === "ecc-gstack";
+  check(!audit.hasSettingsHooks || usesGstack, ".claude/settings.json hooks is {} unless gstack plan-tune is enabled");
   check(!isTracked(target, ".claude/settings.json"), ".claude/settings.json is not tracked");
   check(!isTracked(target, ".claude/settings.local.json"), ".claude/settings.local.json is not tracked");
   check(!isTracked(target, ".mcp.json"), ".mcp.json is not tracked");
@@ -84,7 +109,44 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
     check(isValidEccAgentProvenance(lock.ecc), ".repo-pattern/.repo-pattern.lock.json ECC agent provenance and manifest are valid");
     check(await verifyAgentInventory(path.join(target, ".claude", "agents"), lock.ecc?.appliedAgents), ".claude/agents exactly matches the locked ECC SHA-256 manifest");
   }
-  if (setupPipeline === "gstack" || setupPipeline === "both") check(lock.gstack?.status === "installed", ".repo-pattern/.repo-pattern.lock.json gstack.status=installed");
+  if (setupPipeline === "gstack" || setupPipeline === "both") {
+    const gstack = await validateProjectGstack(target);
+    const checkout = gstack.checkout;
+    const statePath = gstack.statePath;
+    const expectedSettings = applyPlanTuneHooks({ ...settings, hooks: {} }, {
+      checkout,
+      statePath,
+      enabled: Boolean(lock.gstack?.planTuneHooks)
+    });
+    const actualHooks = JSON.stringify(settings.hooks || {});
+    const expectedHooks = JSON.stringify(expectedSettings.hooks || {});
+    const hookCommands = Object.values(settings.hooks || {}).flatMap((entries) => (entries || []).flatMap((entry) => entry.hooks || [])).map((hook) => hook.command || "");
+    const hasHomePathLeak = hookCommands.some((command) => /\$HOME|~\/?\.claude\/skills\/gstack|\/\.claude\/skills\/gstack/.test(command) && !command.includes(checkout));
+    check(lock.gstack?.status === "installed", ".repo-pattern/.repo-pattern.lock.json gstack.status=installed");
+    check(lock.gstack?.installMode === "project-local", "gstack install mode is project-local");
+    check(lock.gstack?.path === ".claude/skills/gstack" && lock.gstack?.statePath === ".repo-pattern/gstack", "gstack lock paths are project-local");
+    check(gstack.checkoutValid, ".claude/skills/gstack is a valid local Git checkout");
+    check(gstack.stateValid, ".repo-pattern/gstack state exists");
+    check(gstack.wrappersValid, "gstack wrappers match local checkout state");
+    check(gstack.assetsValid, "gstack workflow assets match local checkout state");
+    check(gstack.sidecarsValid, "gstack review sidecars match local checkout state");
+    check(
+      !lock.gstack?.planTuneHooks || await Promise.all(["question-log-hook", "question-preference-hook"].map(async (hookName) => {
+        const hook = path.join(checkout, "hosts", "claude", "hooks", hookName);
+        try {
+          const stat = await fs.lstat(hook);
+          if (!stat.isFile() || stat.isSymbolicLink()) return false;
+          await fs.access(hook, constants.X_OK);
+          return true;
+        } catch {
+          return false;
+        }
+      })).then((valid) => valid.every(Boolean)),
+      "gstack plan-tune hook files are local and executable"
+    );
+    check(actualHooks === expectedHooks, "gstack plan-tune hooks match local settings");
+    check(!hasHomePathLeak, "gstack hooks do not reference home or global paths");
+  }
   if (setupPipeline === "both") infoRows.push(`ECC setup status: ${lock.ecc?.status || "unknown"}, gstack setup status: ${lock.gstack?.status || "unknown"}`);
   else if (setupPipeline !== "none") infoRows.push(`${setupPipeline === "gstack" ? "gstack" : "ECC"} setup status: ${lock[setupPipeline]?.status || "unknown"}`);
   else infoRows.push("setup pipeline: none");
@@ -98,7 +160,11 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
     await ensureRepoPatternGitignore(target, { dryRun });
     lock.repoPattern = lock.repoPattern || {};
     lock.repoPattern.lastDoctorRun = new Date().toISOString();
-    await writeJson(lockPath, lock, { dryRun });
+    await writePrivateJson(lockPath, lock, {
+      dryRun,
+      label: ".repo-pattern/.repo-pattern.lock.json",
+      parentLabel: ".repo-pattern"
+    });
   }
 
   renderDoctor(target, checks, infoRows);
