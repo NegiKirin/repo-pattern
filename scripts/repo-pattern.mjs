@@ -121,10 +121,10 @@ Options:
   --setup-pipeline <ecc|gstack|both|none>
                                   Setup pipeline. Default: ecc
                                   ecc: project-scoped ECC
-                                  gstack: user-scoped/global at ~/.claude/skills/gstack
-                                  both: project-scoped ECC + user-scoped/global gstack
+                                  gstack: project-local at .claude/skills/gstack
+                                  both: project-scoped ECC + project-local gstack
                                   none: base project metadata only
-  --with-plan-tune-hooks          Add gstack PreToolUse/PostToolUse hooks to ~/.claude/settings.json
+  --with-plan-tune-hooks          Add gstack PreToolUse/PostToolUse hooks to .claude/settings.json
                                   Requires --setup-pipeline gstack or both. Default: not installed
 
 Setup UI:

@@ -12,12 +12,12 @@ repo-pattern synchronizes only ECC rule packs and `agents/**` when rules are ena
 
 ## gstack
 
-repo-pattern can run gstack's upstream global setup when explicitly selected with `--setup-pipeline gstack`.
+repo-pattern can provision a project-local gstack checkout when explicitly selected with `--setup-pipeline gstack`.
 
 Source: https://github.com/garrytan/gstack
 License: MIT
 
-repo-pattern does not vendor gstack. The upstream installer manages its checkout, build output, skills, and runtime state.
+repo-pattern does not vendor gstack. It reuses or copies a valid checkout, or shallow-clones one into the target's `.claude/skills/gstack/`; runtime state is stored in `.repo-pattern/gstack/`. It never runs upstream `gstack/setup` or modifies global gstack state.
 
 ## Karpathy-inspired guidelines
 

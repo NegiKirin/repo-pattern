@@ -20,11 +20,11 @@ node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --se
 Pipeline scope is explicit:
 
 - `ecc` (default) — project-scoped ECC.
-- `gstack` — user-scoped/global gstack at `~/.claude/skills/gstack`.
-- `both` — project-scoped ECC plus user-scoped/global gstack.
+- `gstack` — project-local gstack at `.claude/skills/gstack`.
+- `both` — project-scoped ECC plus project-local gstack.
 - `none` — base project metadata only.
 
-gstack requires Git and Bun v1.0+. When Bun is missing on Linux or macOS, setup downloads the official installer over TLS, validates it, and installs Bun automatically. On unsupported systems, install Bun manually before setup. Its upstream setup runs with `--quiet --no-plan-tune-hooks`, preventing settings diff previews and hook confirmation waits during automated setup. Routine upstream logs are suppressed; failures report a bounded, secret-redacted diagnostic summary.
+gstack requires Git and Bun v1.0+ on `PATH`; setup never downloads or installs Bun. repo-pattern reuses a valid project-local checkout, copies a valid global checkout as migration-only input, or shallow-clones a target-local checkout. It never runs upstream `gstack/setup` and never modifies global gstack state. Runtime state stays in `.repo-pattern/gstack/`, and bootstrap copies required review support files beside generated wrappers from the project-local checkout. Optional plan-tune hooks are merged only into the target `.claude/settings.json`. If gstack bootstrap fails, base/ECC provisioning completes, setup records the failure and prints a recovery command, and `doctor` fails until gstack is repaired.
 
 Use this when you want to initialize a new project with:
 
@@ -133,10 +133,10 @@ For non-interactive scripts, use `setup --yes`.
 12. Create `.repo-pattern/.gitignore` with `*`.
 13. Add generated setup files and basic OS/IDE noise to `.gitignore`.
 14. Write `.repo-pattern/.repo-pattern.lock.json` without credential values.
-15. Run the selected setup pipeline: ECC setup after generation, or the global gstack installer after target preflight succeeds.
+15. Run the selected setup pipeline: ECC setup after generation, or project-local gstack bootstrap after base/ECC provisioning succeeds.
 16. When rules are enabled, apply ECC rules independently of plugin installation, validate the cached ECC Git `HEAD`, and atomically promote upstream `agents/**` into `.claude/agents/`.
 17. Write ECC agent provenance and the sorted SHA-256 file inventory only to `.repo-pattern/.repo-pattern.lock.json`; rollback agents and nested metadata if promotion or metadata writes fail.
-18. Run doctor, which validates ECC agent source, revision, manifest paths, missing/extra files, and hashes.
+18. Run doctor unless gstack bootstrap failed; doctor validates ECC agent source, revision, manifest paths, missing/extra files, hashes, and local gstack surfaces.
 ```
 
 After setup, the target project should contain:
@@ -148,12 +148,16 @@ target-project/
 │   ├── CLAUDE.md
 │   ├── settings.json
 │   ├── settings.local.json  # setup only, gitignored
-│   └── agents/              # synchronized only when ECC rules are applied, gitignored
+│   ├── agents/              # synchronized only when ECC rules are applied, gitignored
+│   └── skills/
+│       ├── gstack/          # gstack/both pipelines only, gitignored
+│       └── review/          # generated gstack wrappers and review support, gitignored
 ├── .mcp.json
 ├── .repo-pattern/
 │   ├── .gitignore
 │   ├── .repo-pattern.json
-│   └── .repo-pattern.lock.json  # ECC agent source, revision, and SHA-256 inventory when rules are enabled
+│   ├── .repo-pattern.lock.json  # ECC agent source, revision, and SHA-256 inventory when rules are enabled
+│   └── gstack/              # gstack/both pipelines only, gitignored
 ```
 
 ## Root `CLAUDE.md` policy

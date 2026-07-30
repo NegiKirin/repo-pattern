@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { exists, isTracked, readJson, readRepoConfig, readRepoLock } from "./fs-utils.mjs";
 import { printBox, style } from "./prompt.mjs";
+import { validateProjectGstack } from "./gstack.mjs";
 import { expectedOptionalSkillDirs } from "./skills.mjs";
 
 const HARDCODED_PATH_RE = /"\/home\/|"\/Users\/|"[A-Za-z]:\\\\/;
@@ -42,9 +43,17 @@ export async function auditProject(target) {
   const repoPattern = await readRepoConfig(target, null);
   const lock = await readRepoLock(target, {});
 
-  const actualSkillDirs = await listDirNames(path.join(target, ".claude", "skills"));
-  const expectedSkillDirs = expectedOptionalSkillDirs(repoPattern?.optionalSkills || []);
-  const hasOnlyManagedSkills = JSON.stringify(actualSkillDirs) === JSON.stringify(expectedSkillDirs);
+  const workflow = repoPattern?.workflow;
+  const usesGstack = workflow === "gstack" || workflow === "ecc-gstack";
+  const gstack = usesGstack ? await validateProjectGstack(target) : null;
+  const skillsRoot = path.join(target, ".claude", "skills");
+  const actualSkillDirs = await listDirNames(skillsRoot);
+  const expectedSkillDirs = [
+    ...expectedOptionalSkillDirs(repoPattern?.optionalSkills || []),
+    ...(gstack?.wrappers || []).map((wrapper) => path.relative(skillsRoot, path.join(target, wrapper)).split(path.sep)[0]),
+    ...(usesGstack ? ["gstack"] : [])
+  ].sort();
+  const hasOnlyManagedSkills = JSON.stringify(actualSkillDirs) === JSON.stringify([...new Set(expectedSkillDirs)].sort());
   const eccRulesDir = path.join(target, ".claude", "rules", "ecc");
   const hasClaudeEccRulesDir = exists(eccRulesDir);
   const eccRulePackDirs = await listDirNames(eccRulesDir);
@@ -79,15 +88,15 @@ export async function auditProject(target) {
     hasClaudeEccRulesDir,
     eccRulePackDirs,
     hasRepoPatternJson: !!repoPattern,
-    repoPattern
+    repoPattern,
+    lock,
+    gstack
   };
 
   const allowSourceSkills = repoPattern?.mode === "template";
-  const workflow = repoPattern?.workflow;
   const usesEcc = workflow === "ecc-native" || workflow === "ecc-gstack";
-  const usesGstack = workflow === "gstack" || workflow === "ecc-gstack";
   const legacy = (
-    result.hasSettingsHooks ||
+    (result.hasSettingsHooks && !usesGstack) ||
     (result.hasClaudeSkillsDir && !repoPattern && !allowSourceSkills) ||
     result.hasClaudeCommandsDir ||
     result.hasClaudeHooksDir ||
@@ -97,7 +106,17 @@ export async function auditProject(target) {
       : !result.hasOnlyEccRulesDir))
   );
 
-  const setupComplete = !usesGstack || lock.gstack?.status === "installed";
+  const setupComplete = !usesGstack || (
+    lock.gstack?.status === "installed" &&
+    lock.gstack.installMode === "project-local" &&
+    lock.gstack.path === ".claude/skills/gstack" &&
+    lock.gstack.statePath === ".repo-pattern/gstack" &&
+    gstack.checkoutValid &&
+    gstack.stateValid &&
+    gstack.wrappersValid &&
+    gstack.assetsValid &&
+    gstack.sidecarsValid
+  );
   if (!result.hasClaudeDir && !result.hasMcpJson && !result.hasRepoPatternJson) {
     result.state = "EMPTY";
   } else if (
@@ -134,7 +153,13 @@ export function printAudit(audit) {
     [needsSetup && !audit.hasRepoPatternJson, ".repo-pattern/.repo-pattern.json missing"],
     [audit.hasHardcodedMcpPath, "hardcoded machine path in .mcp.json"],
     [audit.hasSettingsLocalTracked, ".claude/settings.local.json tracked"],
-    [audit.hasSettingsHooks, ".claude/settings.json hooks not empty"],
+    [audit.hasSettingsHooks && audit.repoPattern?.workflow !== "gstack" && audit.repoPattern?.workflow !== "ecc-gstack", ".claude/settings.json hooks not empty"],
+    [audit.gstack && !audit.gstack.checkoutValid, "project-local gstack checkout is missing or invalid"],
+    [audit.gstack && !audit.gstack.stateValid, "project-local gstack state is missing"],
+    [audit.gstack && !audit.gstack.wrappersValid, "project-local gstack wrappers have drifted"],
+    [audit.gstack && !audit.gstack.assetsValid, "project-local gstack workflow assets have drifted"],
+    [audit.gstack && !audit.gstack.sidecarsValid, "project-local gstack review sidecars have drifted"],
+    [audit.lock?.gstack?.status === "failed", "project-local gstack bootstrap failed"],
     [audit.repoPattern?.runtime?.localSkills === true && !audit.hasOnlyManagedSkills, ".claude/skills does not match managed optional skills"],
     [audit.hasClaudeSkillsDir && !audit.hasOnlyManagedSkills, ".claude/skills contains unmanaged entries"],
     [audit.hasClaudeCommandsDir, ".claude/commands present"],

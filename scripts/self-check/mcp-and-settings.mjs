@@ -8,7 +8,6 @@ import { auditProject, printAudit } from "../lib/audit.mjs";
 import { cleanupProject } from "../lib/cleanup.mjs";
 import { doctorProject } from "../lib/doctor.mjs";
 import { ECC_PLUGIN, applyEccPluginSettings, setupEcc } from "../lib/ecc.mjs";
-import { ensureBun, gstackEnvironment, gstackSummaryRows, isValidBunInstaller, removeEccPluginSettings, runGstackSetup, setupGstack } from "../lib/gstack.mjs";
 import { applyMcpValues, generateMcp, mcpSecretPrompt, persistedMcpValues, readGeneratedMcpValues, validateRelativeMcpPath } from "../lib/mcp.mjs";
 import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, provisionProject, reconcileLocalPluginSettings, setupPipelineScope, updateClaudePermissions } from "../lib/provision.mjs";
 import { writePrivateJson } from "../lib/fs-utils.mjs";
@@ -185,8 +184,8 @@ assert.deepEqual({
   none: setupPipelineScope("none")
 }, {
   ecc: "project-scoped ECC",
-  gstack: "user-scoped/global gstack at ~/.claude/skills/gstack",
-  both: "project-scoped ECC + user-scoped/global gstack at ~/.claude/skills/gstack",
+  gstack: "project-local gstack at .claude/skills/gstack",
+  both: "project-scoped ECC + project-local gstack at .claude/skills/gstack",
   none: "writes only base project metadata"
 });
 assert.equal(needsLocalSettingsPrompt({ ANTHROPIC_BASE_URL: "https://example.com/v1" }), true);

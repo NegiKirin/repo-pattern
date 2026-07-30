@@ -6,8 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { auditProject } from "../lib/audit.mjs";
 import { doctorProject } from "../lib/doctor.mjs";
-import { removeEccPluginSettings, setupGstack } from "../lib/gstack.mjs";
-import { provisionProject } from "../lib/provision.mjs";
+import { GSTACK_REVIEW_SIDECARS, removeEccPluginSettings, setupGstack } from "../lib/gstack.mjs";
+import { provisionProject, updateClaudePermissions } from "../lib/provision.mjs";
 import { setupProject } from "../lib/setup.mjs";
 import { writeEccGitFixture } from "./fixtures.mjs";
 
@@ -23,7 +23,6 @@ function runCli(args, cwd = repoRoot) {
 }
 
 export async function runProvisionAndPipelineChecks() {
-const originalGstackSetupCommand = process.env.REPO_PATTERN_GSTACK_SETUP_CMD;
 let result;
 const provisionRollbackTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-provision-rollback-"));
 console.log = () => {};
@@ -80,12 +79,13 @@ try {
     env: { ANTHROPIC_AUTH_TOKEN: secretSentinel },
     enabledPlugins: { "ecc@ecc": true }
   }), { mode: 0o600 });
-  process.env.REPO_PATTERN_GSTACK_SETUP_CMD = "false";
-  await assert.rejects(() => setupGstack({ target: failedGstackTarget }), /Command failed/);
+  const originalPath = process.env.PATH;
+  process.env.PATH = "";
+  const failedGstack = await setupGstack({ target: failedGstackTarget });
+  process.env.PATH = originalPath;
+  assert.equal(failedGstack.status, "failed");
   assert.match(await fs.readFile(localSettingsPath, "utf8"), /ecc@ecc/);
 } finally {
-  if (originalGstackSetupCommand === undefined) delete process.env.REPO_PATTERN_GSTACK_SETUP_CMD;
-  else process.env.REPO_PATTERN_GSTACK_SETUP_CMD = originalGstackSetupCommand;
   console.log = originalLog;
   await fs.rm(failedGstackTarget, { recursive: true, force: true });
 }
@@ -99,37 +99,32 @@ try {
     env: { ANTHROPIC_AUTH_TOKEN: "existing-token" },
     enabledPlugins: { "ecc@ecc": true }
   }), { mode: 0o600 });
-  const existingRulePath = path.join(failedGstackProvisionTarget, ".claude", "rules", "ecc", "existing.md");
-  await fs.mkdir(path.dirname(existingRulePath), { recursive: true });
-  await fs.writeFile(existingRulePath, "existing rule\n", "utf8");
-  await fs.mkdir(path.join(failedGstackProvisionTarget, ".claude", "commands"));
-  process.env.REPO_PATTERN_GSTACK_SETUP_CMD = "false";
-  await assert.rejects(() => provisionProject({
-    sourceRoot: repoRoot,
-    target: failedGstackProvisionTarget,
-    profile: "minimal",
-    setupPipeline: "gstack",
-    localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: "replacement-token" },
-    migrate: true
-  }), /Command failed/);
+  await writeEccGitFixture(failedGstackProvisionTarget);
+  const originalPath = process.env.PATH;
+  const gitPath = spawnSync("which", ["git"], { encoding: "utf8" }).stdout.trim();
+  process.env.PATH = path.dirname(gitPath);
+  try {
+    await provisionProject({
+      sourceRoot: repoRoot,
+      target: failedGstackProvisionTarget,
+      profile: "minimal",
+      setupPipeline: "both",
+      localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: "replacement-token" }
+    });
+  } finally {
+    process.env.PATH = originalPath;
+  }
+  const failedLock = JSON.parse(await fs.readFile(path.join(failedGstackProvisionTarget, ".repo-pattern", ".repo-pattern.lock.json"), "utf8"));
+  assert.equal(failedLock.ecc.status, "manual-plugin-install-required");
+  assert.equal(failedLock.gstack.status, "failed");
+  assert.equal(failedLock.gstack.installMode, "project-local");
   const localSettings = await fs.readFile(localSettingsPath, "utf8");
   assert.match(localSettings, /ecc@ecc/);
-  assert.match(localSettings, /existing-token/);
-  assert.equal(await fs.readFile(existingRulePath, "utf8"), "existing rule\n");
-  process.env.REPO_PATTERN_GSTACK_SETUP_CMD = "true";
-  await provisionProject({
-    sourceRoot: repoRoot,
-    target: failedGstackProvisionTarget,
-    profile: "minimal",
-    setupPipeline: "gstack",
-    localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: "replacement-token" },
-    migrate: true
-  });
-  assert.equal((await auditProject(failedGstackProvisionTarget)).state, "GSTACK_MINIMAL");
-  assert.match(await fs.readFile(localSettingsPath, "utf8"), /replacement-token/);
+  assert.match(localSettings, /replacement-token/);
+  await fs.access(path.join(failedGstackProvisionTarget, ".claude", "rules", "ecc", "common"));
+  assert.equal((await auditProject(failedGstackProvisionTarget)).state, "PARTIAL");
+  await assert.rejects(() => doctorProject(failedGstackProvisionTarget), /Doctor failed/);
 } finally {
-  if (originalGstackSetupCommand === undefined) delete process.env.REPO_PATTERN_GSTACK_SETUP_CMD;
-  else process.env.REPO_PATTERN_GSTACK_SETUP_CMD = originalGstackSetupCommand;
   console.log = originalLog;
   await fs.rm(failedGstackProvisionTarget, { recursive: true, force: true });
 }
@@ -142,13 +137,9 @@ try {
   const localSettingsPath = path.join(trackedGstackSettingsTarget, ".claude", "settings.local.json");
   await fs.writeFile(localSettingsPath, JSON.stringify({ enabledPlugins: { "ecc@ecc": true } }), { mode: 0o600 });
   spawnSync("git", ["add", ".claude/settings.local.json"], { cwd: trackedGstackSettingsTarget, stdio: "ignore" });
-  process.env.REPO_PATTERN_GSTACK_SETUP_CMD = "true";
-  await assert.rejects(() => setupGstack({ target: trackedGstackSettingsTarget }), /settings\.local\.json is tracked/);
   await assert.rejects(() => removeEccPluginSettings({ target: trackedGstackSettingsTarget }), /settings\.local\.json is tracked/);
   assert.match(await fs.readFile(localSettingsPath, "utf8"), /ecc@ecc/);
 } finally {
-  if (originalGstackSetupCommand === undefined) delete process.env.REPO_PATTERN_GSTACK_SETUP_CMD;
-  else process.env.REPO_PATTERN_GSTACK_SETUP_CMD = originalGstackSetupCommand;
   console.log = originalLog;
   await fs.rm(trackedGstackSettingsTarget, { recursive: true, force: true });
 }
@@ -185,17 +176,64 @@ await assert.rejects(
   /--with-plan-tune-hooks requires --setup-pipeline gstack or both/
 );
 
+const symlinkWriteTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-symlink-write-"));
+const symlinkWriteOutside = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-symlink-write-outside-"));
+try {
+  const settingsOutside = path.join(symlinkWriteOutside, "settings.json");
+  const repoConfigOutside = path.join(symlinkWriteOutside, "repo-config.json");
+  await fs.mkdir(path.join(symlinkWriteTarget, ".claude"));
+  await fs.writeFile(settingsOutside, "outside settings", "utf8");
+  await fs.symlink(settingsOutside, path.join(symlinkWriteTarget, ".claude", "settings.json"));
+  await assert.rejects(
+    () => updateClaudePermissions({ sourceRoot: repoRoot, target: symlinkWriteTarget, permissionConfig: { bypass: "deny" } }),
+    /settings\.json must not be a symlink/
+  );
+  assert.equal(await fs.readFile(settingsOutside, "utf8"), "outside settings");
+  await fs.rm(path.join(symlinkWriteTarget, ".claude", "settings.json"));
+
+  await fs.mkdir(path.join(symlinkWriteTarget, ".repo-pattern"));
+  await fs.writeFile(repoConfigOutside, "{}\n", "utf8");
+  await fs.symlink(repoConfigOutside, path.join(symlinkWriteTarget, ".repo-pattern", ".repo-pattern.json"));
+  await assert.rejects(
+    () => provisionProject({ sourceRoot: repoRoot, target: symlinkWriteTarget, profile: "minimal", setupPipeline: "none" }),
+    /repo-pattern\.json must not be a symlink/
+  );
+  assert.equal(await fs.readFile(repoConfigOutside, "utf8"), "{}\n");
+} finally {
+  await fs.rm(symlinkWriteTarget, { recursive: true, force: true });
+  await fs.rm(symlinkWriteOutside, { recursive: true, force: true });
+}
+
 const bothProvisionTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-both-provision-"));
 console.log = () => {};
 try {
   process.env.REPO_PATTERN_ECC_SETUP_CMD = "true";
-  process.env.REPO_PATTERN_GSTACK_SETUP_CMD = "true";
+  const gstackCheckout = path.join(bothProvisionTarget, ".claude", "skills", "gstack");
+  await fs.mkdir(path.join(gstackCheckout, "hosts", "claude", "hooks"), { recursive: true });
+  await fs.writeFile(path.join(gstackCheckout, "setup"), "#!/bin/sh\n", { mode: 0o755 });
+  await fs.writeFile(path.join(gstackCheckout, "SKILL.md"), "Project-local gstack", "utf8");
+  await fs.mkdir(path.join(gstackCheckout, "review"), { recursive: true });
+  await fs.writeFile(path.join(gstackCheckout, "review", "SKILL.md"), "Review", "utf8");
+  for (const sidecar of GSTACK_REVIEW_SIDECARS) {
+    await fs.mkdir(path.dirname(path.join(gstackCheckout, sidecar)), { recursive: true });
+    await fs.writeFile(path.join(gstackCheckout, sidecar), `Fixture ${sidecar}`, "utf8");
+  }
+  for (const hook of ["question-log-hook", "question-preference-hook"]) {
+    await fs.writeFile(path.join(gstackCheckout, "hosts", "claude", "hooks", hook), "#!/bin/sh\n", { mode: 0o755 });
+  }
+  spawnSync("git", ["init"], { cwd: gstackCheckout, stdio: "ignore" });
+  await fs.mkdir(path.join(bothProvisionTarget, ".repo-pattern"), { recursive: true });
+  await fs.writeFile(path.join(bothProvisionTarget, ".repo-pattern", ".repo-pattern.json"), JSON.stringify({
+    workflow: "gstack",
+    runtime: { localSkills: false, localCommands: false, localHooks: false, localScripts: false, localRules: false }
+  }), "utf8");
   await writeEccGitFixture(bothProvisionTarget);
   await provisionProject({
     sourceRoot: repoRoot,
     target: bothProvisionTarget,
     profile: "minimal",
     setupPipeline: "both",
+    migrate: true,
     planTuneHooks: true,
     localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: secretSentinel }
   });
@@ -207,14 +245,15 @@ try {
   assert.equal(lock.ecc.status, "installed");
   assert.equal(lock.gstack.status, "installed");
   assert.equal(lock.gstack.planTuneHooks, true);
+  for (const sidecar of GSTACK_REVIEW_SIDECARS) {
+    assert.equal(await fs.readFile(path.join(bothProvisionTarget, ".claude", "skills", sidecar), "utf8"), `Fixture ${sidecar}`);
+  }
   assert.equal(localSettings.enabledPlugins["ecc@ecc"], true);
   assert.equal(localSettings.extraKnownMarketplaces.ecc.source.url, "https://github.com/affaan-m/ECC.git");
   assert.equal((await auditProject(bothProvisionTarget)).state, "ECC_GSTACK_MINIMAL");
   await doctorProject(bothProvisionTarget);
 } finally {
   delete process.env.REPO_PATTERN_ECC_SETUP_CMD;
-  if (originalGstackSetupCommand === undefined) delete process.env.REPO_PATTERN_GSTACK_SETUP_CMD;
-  else process.env.REPO_PATTERN_GSTACK_SETUP_CMD = originalGstackSetupCommand;
   console.log = originalLog;
   await fs.rm(bothProvisionTarget, { recursive: true, force: true });
 }
@@ -251,7 +290,7 @@ try {
   result = runCli(["setup", "--target", setupBothDryRunTarget, "--setup-pipeline", "both", "--yes", "--dry-run"]);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Setup pipeline\s+both/);
-  assert.match(result.stdout, /Pipeline scope\s+project-scoped ECC \+ user-scoped\/global gstack at\s+~\/\.claude\/skills\/gstack/);
+  assert.match(result.stdout, /Pipeline scope\s+project-scoped ECC \+ project-local gstack at \.claude\/skills\/gstack/);
 } finally {
   await fs.rm(setupBothDryRunTarget, { recursive: true, force: true });
 }
