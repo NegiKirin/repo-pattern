@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { appendGitignoreLine, ensureDir, exists, isTracked, readJson, removePath, writeJson, writePrivateJson } from "./fs-utils.mjs";
-import { isInteractive, printSummary, withSpinner } from "./prompt.mjs";
+import { printSummary, withSpinner } from "./prompt.mjs";
 
 const GSTACK_REPOSITORY = "https://github.com/garrytan/gstack.git";
 const GSTACK_DIAGNOSTIC_MAX_CHARS = 4000;
@@ -444,7 +444,8 @@ export async function resolveGstackCheckout({
   globalCheckout = globalGstackCheckoutPath(),
   run: runCommand = run,
   copy = fs.cp,
-  clone = (destination) => runCommand("git", ["clone", "--single-branch", "--depth", "1", GSTACK_REPOSITORY, destination], { stdio: "inherit" })
+  clone = (destination) => runCommand("git", ["clone", "--single-branch", "--depth", "1", GSTACK_REPOSITORY, destination], { stdio: ["ignore", "pipe", "pipe"], maxBuffer: Infinity }),
+  withSpinner: runWithSpinner = withSpinner
 }) {
   const localCheckout = gstackCheckoutPath(target);
   await assertNoSymlinkPath(target, path.relative(target, localCheckout));
@@ -472,7 +473,18 @@ export async function resolveGstackCheckout({
   const temporary = await fs.mkdtemp(path.join(parent, ".gstack-"));
   try {
     if (globalValid) await copy(globalCheckout, temporary, { recursive: true, force: true });
-    else await clone(temporary);
+    else await runWithSpinner("Downloading gstack", async () => {
+      try {
+        await clone(temporary);
+      } catch (error) {
+        const cloneError = new Error(error.message, { cause: error });
+        cloneError.gstackCloneFailure = true;
+        cloneError.stderr = error.stderr;
+        cloneError.stdout = error.stdout;
+        cloneError.status = error.status;
+        throw cloneError;
+      }
+    });
     if (!await isValidGstackCheckout(temporary, { run: runCommand })) {
       throw new Error("Resolved gstack checkout is invalid.");
     }
@@ -531,7 +543,7 @@ export function gstackEnvironment(bun, environment = process.env) {
   return { ...environment, PATH: `${path.dirname(bun)}${path.delimiter}${environment.PATH || ""}` };
 }
 
-export async function setupGstack({ target, dryRun = false, planTuneHooks = false }) {
+export async function setupGstack({ target, dryRun = false, planTuneHooks = false, resolveCheckout = resolveGstackCheckout }) {
   const checkout = gstackCheckoutPath(target);
   const statePath = gstackStatePath(target);
   let checkoutLease = null;
@@ -539,7 +551,7 @@ export async function setupGstack({ target, dryRun = false, planTuneHooks = fals
   try {
     if (!dryRun) ensureBun();
     const install = async () => {
-      const resolved = await resolveGstackCheckout({ target, dryRun });
+      const resolved = await resolveCheckout({ target, dryRun });
       checkoutLease = resolved;
       if (!dryRun) {
         const wrappers = await expectedGstackWrappers(target, checkout, statePath);
@@ -560,11 +572,7 @@ export async function setupGstack({ target, dryRun = false, planTuneHooks = fals
       }
       return { status: dryRun ? "dry-run" : "installed", source: resolved.source, path: checkout, statePath };
     };
-    const result = dryRun
-      ? await install()
-      : isInteractive()
-        ? await withSpinner("Installing project-local gstack", install)
-        : await install();
+    const result = await install();
     if (!dryRun) printSummary("gstack", gstackSummaryRows(target, planTuneHooks));
     return result;
   } catch (error) {
@@ -586,6 +594,10 @@ export async function setupGstack({ target, dryRun = false, planTuneHooks = fals
       } catch (rollbackError) {
         console.warn(`WARN: gstack checkout rollback failed: ${rollbackError.message}`);
       }
+    }
+    if (error.gstackCloneFailure) {
+      const stderr = String(error.stderr || "");
+      if (stderr) process.stderr.write(stderr);
     }
     return { status: "failed", path: checkout, statePath, error: redactedGstackDiagnostic(error) };
   }
