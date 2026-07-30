@@ -115,11 +115,17 @@ try {
     spawnSync("git", ["init"], { cwd: checkout, stdio: "ignore" });
   };
 
+  const reuseSpinnerMessages = [];
+  const recordReuseSpinner = async (message, task) => {
+    reuseSpinnerMessages.push(message);
+    return task();
+  };
   await createCheckout(localCheckout, "local");
   const reused = await resolveGstackCheckout({
     target: resolverTarget,
     globalCheckout,
-    clone: () => { throw new Error("clone should not run"); }
+    clone: () => { throw new Error("clone should not run"); },
+    withSpinner: recordReuseSpinner
   });
   assert.equal(reused.source, "local");
   assert.equal(await fs.readFile(path.join(localCheckout, "source"), "utf8"), "local");
@@ -129,21 +135,54 @@ try {
   const migrated = await resolveGstackCheckout({
     target: resolverTarget,
     globalCheckout,
-    clone: () => { throw new Error("clone should not run"); }
+    clone: () => { throw new Error("clone should not run"); },
+    withSpinner: recordReuseSpinner
   });
   assert.equal(migrated.source, "global-migration");
   assert.equal(await fs.readFile(path.join(localCheckout, "source"), "utf8"), "global");
   assert.equal(await fs.readFile(path.join(globalCheckout, "source"), "utf8"), "global");
+  assert.deepEqual(reuseSpinnerMessages, []);
 
   await fs.rm(localCheckout, { recursive: true, force: true });
   await fs.rm(globalCheckout, { recursive: true, force: true });
+  const spinnerMessages = [];
   const cloned = await resolveGstackCheckout({
-    target: resolverTarget,
-    globalCheckout,
-    clone: async (destination) => createCheckout(destination, "clone")
+    target: resolverTarget, globalCheckout, clone: async (destination) => createCheckout(destination, "clone"),
+    withSpinner: async (message, task) => { spinnerMessages.push(message); return task(); }
   });
   assert.equal(cloned.source, "clone");
   assert.equal(await fs.readFile(path.join(localCheckout, "source"), "utf8"), "clone");
+  assert.deepEqual(spinnerMessages, ["Downloading gstack"]);
+
+  await fs.rm(localCheckout, { recursive: true, force: true });
+  const defaultCloneOptions = [];
+  await assert.rejects(() => resolveGstackCheckout({
+    target: resolverTarget, globalCheckout,
+    run: (_command, _args, options) => { defaultCloneOptions.push(options); throw Object.assign(new Error("clone failed"), { stderr: "fatal: clone failed\n", status: 128 }); },
+    withSpinner: async (_message, task) => task()
+  }), /clone failed/);
+  assert.deepEqual(defaultCloneOptions[0].stdio, ["ignore", "pipe", "pipe"]);
+  assert.equal(defaultCloneOptions[0].maxBuffer, Infinity);
+
+  await fs.rm(localCheckout, { recursive: true, force: true });
+  const cloneFailure = Object.assign(new Error("clone failed"), { stderr: "fatal: complete clone stderr\nwith every line\n", status: 128 });
+  const failedSpinnerMessages = [];
+  await assert.rejects(() => resolveGstackCheckout({
+    target: resolverTarget, globalCheckout, run: () => { throw cloneFailure; },
+    withSpinner: async (message, task) => { failedSpinnerMessages.push(message); return task(); }
+  }), (error) => error.gstackCloneFailure && error.stderr === cloneFailure.stderr);
+  assert.deepEqual(failedSpinnerMessages, ["Downloading gstack"]);
+  assert.equal(await fs.access(localCheckout).then(() => true, () => false), false);
+
+  const originalStderrWrite = process.stderr.write;
+  const cloneFailureOutput = [];
+  process.stderr.write = (output) => { cloneFailureOutput.push(output); return true; };
+  try {
+    const failed = await setupGstack({ target: resolverTarget, resolveCheckout: async () => { throw Object.assign(new Error("clone failed"), { gstackCloneFailure: true, stderr: cloneFailure.stderr }); } });
+    assert.equal(failed.status, "failed");
+    assert.match(failed.error, /gstack output: \[redacted\]/);
+  } finally { process.stderr.write = originalStderrWrite; }
+  assert.deepEqual(cloneFailureOutput, [cloneFailure.stderr]);
 
   await fs.rm(localCheckout, { recursive: true, force: true });
   await assert.rejects(
