@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.2.5] - 2026-07-31
+
+**Setup output now stays readable when progress meets diagnostics.**
+**Interactive progress bars close cleanly before ordinary terminal output.**
+
+The setup command now terminates an active ANSI progress line before backups, warnings, summaries, cleanup messages, and other regular output. This keeps diagnostics and progress visually separate in interactive terminals without changing non-interactive output, dry-run behavior, rollback, or credential handling.
+
+### The setup numbers that matter
+
+These figures come from the reproducible `npm test` self-check suite on this branch.
+
+| Metric | Before | After | Δ |
+| --- | ---: | ---: | ---: |
+| ANSI output boundary regressions covered | 0 | 2 | +2 |
+| Runtime dependencies | 1 | 1 | 0 |
+
+The progress bar no longer runs directly into the next log message. Run `npm test` to verify the boundary checks.
+
+### What this means for repo-pattern users
+
+Interactive setup logs remain readable when progress updates are followed by warnings or summaries. No configuration change is required. Run `repo-pattern setup` as usual.
+
+### Itemized changes
+
+### Fixed
+
+- Closed active ANSI progress output before unrelated terminal messages and summaries.
+- Added regression coverage for interleaved output and aggregate completion rendering.
+
 ## [0.2.4] - 2026-07-31
 
 **Setup progress is now visible from start to finish.**  
