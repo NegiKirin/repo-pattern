@@ -144,6 +144,59 @@ export async function copyRecursive(src, dest, { dryRun = false } = {}) {
   await fs.cp(src, dest, { recursive: true, force: true });
 }
 
+export async function scanCopyTree(source) {
+  const entries = [];
+  let files = 0;
+  let bytes = 0;
+
+  async function scan(current) {
+    const stat = await fs.lstat(current);
+    entries.push({ path: current, stat });
+    if (stat.isFile()) {
+      files++;
+      bytes += stat.size;
+      return;
+    }
+    if (!stat.isDirectory()) return;
+    const children = await fs.readdir(current);
+    for (const child of children) await scan(path.join(current, child));
+  }
+
+  if (exists(source)) await scan(source);
+  return { entries, files, bytes };
+}
+
+export async function copyRecursiveWithProgress(source, destination, { dryRun = false, onProgress = null } = {}) {
+  if (!exists(source)) return { files: 0, bytes: 0 };
+  if (dryRun) {
+    console.log(`[dry-run] copy ${source} -> ${destination}`);
+    return { files: 0, bytes: 0 };
+  }
+  const tree = await scanCopyTree(source);
+  let copiedFiles = 0;
+  let copiedBytes = 0;
+  onProgress?.({ completedFiles: 0, totalFiles: tree.files, completedBytes: 0, totalBytes: tree.bytes });
+  for (const entry of tree.entries) {
+    const relative = path.relative(source, entry.path);
+    const target = relative ? path.join(destination, relative) : destination;
+    if (entry.stat.isDirectory()) {
+      await ensureDir(target);
+      continue;
+    }
+    await ensureDir(path.dirname(target));
+    if (entry.stat.isFile()) {
+      await fs.copyFile(entry.path, target);
+      await fs.chmod(target, entry.stat.mode);
+      copiedFiles++;
+      copiedBytes += entry.stat.size;
+      onProgress?.({ completedFiles: copiedFiles, totalFiles: tree.files, completedBytes: copiedBytes, totalBytes: tree.bytes });
+      continue;
+    }
+    if (entry.stat.isSymbolicLink()) await fs.symlink(await fs.readlink(entry.path), target);
+  }
+  return { files: tree.files, bytes: tree.bytes };
+}
+
 export async function removePath(p, { dryRun = false } = {}) {
   if (!exists(p)) return;
   if (dryRun) {
@@ -194,31 +247,63 @@ export function timestamp() {
   return new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "").replace("T", "-");
 }
 
-export async function backupPaths(targetRoot, relativePaths, { dryRun = false } = {}) {
+export async function backupPaths(targetRoot, relativePaths, {
+  dryRun = false,
+  progress = null,
+  progressId = "backup",
+  progressLabel = "Backing up workspace",
+  progressWeight = 1
+} = {}) {
   const backupRoot = path.join(targetRoot, ".repo-pattern", "backups", timestamp());
-  let copied = 0;
-
-  for (const rel of relativePaths) {
-    const src = path.join(targetRoot, rel);
-    if (!exists(src)) continue;
-    const dest = path.join(backupRoot, rel);
-
-    if (dryRun) {
-      console.log(`[dry-run] backup ${src} -> ${dest}`);
-      copied++;
-      continue;
-    }
-
-    await ensureDir(path.dirname(dest));
-    const stat = await fs.stat(src);
-    if (stat.isDirectory()) {
-      await fs.cp(src, dest, { recursive: true, force: true });
-    } else {
-      await fs.copyFile(src, dest);
-    }
-    copied++;
+  const sources = relativePaths.map((rel) => ({ rel, src: path.join(targetRoot, rel) })).filter(({ src }) => exists(src));
+  if (sources.length === 0) {
+    progress?.skipOperation?.(progressId);
+    return null;
   }
 
-  if (copied > 0) console.log(`Backup created: ${backupRoot}`);
-  return copied > 0 ? backupRoot : null;
+  const trees = dryRun ? [] : await Promise.all(sources.map(async ({ rel, src }) => ({ rel, src, tree: await scanCopyTree(src) })));
+  const totalFiles = trees.reduce((total, { tree }) => total + tree.files, 0);
+  const totalBytes = trees.reduce((total, { tree }) => total + tree.bytes, 0);
+  const operation = progress?.beginOperation?.({
+    id: progressId,
+    label: progressLabel,
+    totalUnits: totalFiles || sources.length,
+    unitLabel: "files",
+    weight: progressWeight
+  });
+  let copied = 0;
+  let completedFiles = 0;
+  let completedBytes = 0;
+
+  try {
+    for (const { rel, src } of sources) {
+      const dest = path.join(backupRoot, rel);
+      if (dryRun) {
+        console.log(`[dry-run] backup ${src} -> ${dest}`);
+        copied++;
+        continue;
+      }
+      const tree = trees.find((entry) => entry.src === src).tree;
+      await copyRecursiveWithProgress(src, dest, {
+        onProgress: ({ completedFiles: files, completedBytes: bytes }) => {
+          const nextFiles = completedFiles + files;
+          const nextBytes = completedBytes + bytes;
+          const detail = totalBytes > 0
+            ? `${nextFiles}/${totalFiles} files · ${nextBytes}/${totalBytes} bytes`
+            : `${nextFiles}/${totalFiles} files`;
+          operation?.update({ completedUnits: nextFiles, totalUnits: totalFiles || sources.length, detail });
+        }
+      });
+      completedFiles += tree.files;
+      completedBytes += tree.bytes;
+      copied++;
+    }
+    operation?.complete({ detail: "completed" });
+  } catch (error) {
+    operation?.fail({ detail: "failed" });
+    throw error;
+  }
+
+  console.log(`Backup created: ${backupRoot}`);
+  return backupRoot;
 }

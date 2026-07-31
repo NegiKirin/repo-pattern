@@ -10,7 +10,7 @@ import { doctorProject } from "../lib/doctor.mjs";
 import { ECC_PLUGIN, applyEccPluginSettings, setupEcc } from "../lib/ecc.mjs";
 import { applyMcpValues, generateMcp, mcpSecretPrompt, persistedMcpValues, readGeneratedMcpValues, validateRelativeMcpPath } from "../lib/mcp.mjs";
 import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, provisionProject, reconcileLocalPluginSettings, setupPipelineScope, updateClaudePermissions } from "../lib/provision.mjs";
-import { writePrivateJson } from "../lib/fs-utils.mjs";
+import { backupPaths, copyRecursiveWithProgress, scanCopyTree, writePrivateJson } from "../lib/fs-utils.mjs";
 import { printSummary, renderLogo, style } from "../lib/prompt.mjs";
 import { needsLocalSettingsPrompt, setupProject, setupRetryOptions } from "../lib/setup.mjs";
 import { applyEccRules, buildAgentManifest, clearEccRules, formatEccCloneError, hasGitUpstream, validateAgentManifest } from "../lib/rules.mjs";
@@ -24,6 +24,42 @@ import { writeEccGitFixture } from "./fixtures.mjs";
 const originalLog = console.log;
 
 export async function runFilesystemChecks() {
+const copyProgressRoot = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-copy-progress-"));
+try {
+  const source = path.join(copyProgressRoot, "source");
+  const destination = path.join(copyProgressRoot, "destination");
+  await fs.mkdir(path.join(source, "nested"), { recursive: true });
+  await fs.writeFile(path.join(source, "one.txt"), "one", { mode: 0o640 });
+  await fs.writeFile(path.join(source, "nested", "zero.txt"), "");
+  const tree = await scanCopyTree(source);
+  assert.deepEqual({ files: tree.files, bytes: tree.bytes }, { files: 2, bytes: 3 });
+  const events = [];
+  assert.deepEqual(await copyRecursiveWithProgress(source, destination, {
+    onProgress: (event) => events.push(event)
+  }), { files: 2, bytes: 3 });
+  assert.deepEqual(events.at(0), { completedFiles: 0, totalFiles: 2, completedBytes: 0, totalBytes: 3 });
+  assert.deepEqual(events.at(-1), { completedFiles: 2, totalFiles: 2, completedBytes: 3, totalBytes: 3 });
+  assert.equal((await fs.stat(path.join(destination, "one.txt"))).mode & 0o777, 0o640);
+
+  const backupEvents = [];
+  const progress = { beginOperation(spec) {
+    backupEvents.push({ type: "begin", ...spec });
+    return {
+      update: (values) => backupEvents.push({ type: "update", ...values }),
+      complete: (values) => backupEvents.push({ type: "complete", ...values }),
+      fail: (values) => backupEvents.push({ type: "fail", ...values })
+    };
+  } };
+  await backupPaths(copyProgressRoot, ["source"], { progress, progressId: "fixture-backup" });
+  assert.equal(backupEvents[0].id, "fixture-backup");
+  assert.equal(backupEvents.at(-1).type, "complete");
+  let skipped = false;
+  await backupPaths(copyProgressRoot, ["missing"], { progress: { skipOperation: () => { skipped = true; } } });
+  assert.equal(skipped, true);
+} finally {
+  await fs.rm(copyProgressRoot, { recursive: true, force: true });
+}
+
 const unrelatedRulesTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-unrelated-rules-"));
 console.log = () => {};
 try {

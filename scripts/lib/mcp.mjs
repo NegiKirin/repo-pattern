@@ -194,27 +194,40 @@ async function syncEnabledMcpServers(target, servers, { dryRun = false } = {}) {
   await writeJson(settingsPath, settings, { dryRun });
 }
 
-export async function generateMcp({ sourceRoot, target, profile = "web", mcpServers: selectedServers = null, mcpValues = {}, yes = false, dryRun = false }) {
+export async function generateMcp({ sourceRoot, target, profile = "web", mcpServers: selectedServers = null, mcpValues = {}, yes = false, dryRun = false, progress = null }) {
+  const operation = progress?.beginOperation?.({ id: "mcp-generation", label: "Generating MCP workspace", totalUnits: 4, unitLabel: "items", weight: 1 });
+  let completed = 0;
+  const advance = (detail) => operation?.update({ completedUnits: ++completed, totalUnits: 4, detail });
   const { profileServers, mcpServers } = await readMcpConfig({ sourceRoot, profile, mcpServers: selectedServers });
   if (isTracked(target, ".mcp.json")) throw new Error(".mcp.json is tracked. Untrack it before generating MCP config with local values.");
   if (isTracked(target, ".claude/settings.json")) throw new Error(".claude/settings.json is tracked. Untrack it before enabling MCP servers.");
   const values = await collectMcpValues(mcpServers, { yes, values: mcpValues });
   const resolvedMcpServers = applyMcpValues(mcpServers, values);
 
-  await ensureDir(target, { dryRun });
-  await writePrivateJson(path.join(target, ".mcp.json"), { mcpServers: resolvedMcpServers }, { dryRun, label: ".mcp.json" });
-  await appendGitignoreLine(target, ".mcp.json", { dryRun });
+  try {
+    await ensureDir(target, { dryRun });
+    await writePrivateJson(path.join(target, ".mcp.json"), { mcpServers: resolvedMcpServers }, { dryRun, label: ".mcp.json" });
+    await appendGitignoreLine(target, ".mcp.json", { dryRun });
+    advance("Writing .mcp.json");
 
-  await syncEnabledMcpServers(target, profileServers, { dryRun });
+    await syncEnabledMcpServers(target, profileServers, { dryRun });
+    advance("Enabling MCP servers");
 
-  await ensureRepoPatternGitignore(target, { dryRun });
-  const lockPath = repoLockPath(target);
-  const lock = await readRepoLock(target, {});
-  lock.mcp = lock.mcp || {};
-  lock.mcp.profile = profile;
-  lock.mcp.enabledServers = profileServers;
-  lock.mcp.generatedAt = new Date().toISOString();
-  await writeJson(lockPath, lock, { dryRun });
+    await ensureRepoPatternGitignore(target, { dryRun });
+    advance("Writing workspace state");
+    const lockPath = repoLockPath(target);
+    const lock = await readRepoLock(target, {});
+    lock.mcp = lock.mcp || {};
+    lock.mcp.profile = profile;
+    lock.mcp.enabledServers = profileServers;
+    lock.mcp.generatedAt = new Date().toISOString();
+    await writeJson(lockPath, lock, { dryRun });
+    advance("Writing setup lock");
+    operation?.complete({ detail: "completed" });
+  } catch (error) {
+    operation?.fail({ detail: "failed" });
+    throw error;
+  }
 
   const missingValues = warnMissingMcpValues(mcpServers, values);
   printSummary("MCP generated", [

@@ -10,7 +10,8 @@ import { doctorProject } from "./doctor.mjs";
 import { applyEccRules, clearEccRules } from "./rules.mjs";
 import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, ensureRepoPatternGitignore, exists, isTracked, readJson, readPrivateJson, readRepoConfig, removePath, repoConfigPath, repoLockPath, writeIfMissing, writePrivateJson } from "./fs-utils.mjs";
 import { printSummary, style } from "./prompt.mjs";
-import { applyOptionalSkills, reconcilePluginSkillSettings } from "./skills.mjs";
+import { createSetupProgress } from "./progress.mjs";
+import { applyOptionalSkills, OPTIONAL_SKILLS, reconcilePluginSkillSettings } from "./skills.mjs";
 
 const TARGET_CLAUDE_MD = "";
 const BASIC_GITIGNORE_LINES = [".DS_Store", "Thumbs.db", ".vscode/", ".idea/"];
@@ -284,6 +285,33 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
   if (isTracked(target, ".claude/settings.json")) throw new Error(".claude/settings.json is tracked. Untrack it before writing Claude Code settings.");
   if (isTracked(target, ".repo-pattern/.repo-pattern.lock.json") || isTracked(target, ".repo-pattern.lock.json")) throw new Error("repo-pattern lock is tracked. Untrack it before writing local setup state.");
 
+  const localOptionalSkills = optionalSkills
+    .map((value) => OPTIONAL_SKILLS.find((skill) => skill.value === value))
+    .filter((skill) => skill && !skill.plugin);
+  const progressPlan = dryRun ? [] : [
+    { id: "backup", label: "Backing up workspace", weight: 1 },
+    { id: "workspace", label: "Generating workspace", weight: 2 },
+    { id: "mcp-generation", label: "Generating MCP workspace", weight: 1 },
+    ...(shouldApplyRules ? [
+      { id: "ecc-cache", label: "Syncing ECC cache", weight: 3 },
+      { id: "ecc-sync", label: "Staging ECC rules and agents", weight: 3 },
+      { id: "ecc-backup", label: "Backing up ECC rules", weight: 1 }
+    ] : []),
+    ...localOptionalSkills.flatMap((skill) => [
+      { id: `skill-git-${skill.value}`, label: `Syncing ${skill.value}`, weight: 2 },
+      { id: `skill-copy-${skill.value}`, label: `Copying ${skill.value}`, weight: 2 }
+    ]),
+    ...(localOptionalSkills.length > 0 ? [{ id: "skills-backup", label: "Backing up local skills", weight: 1 }] : []),
+    ...(usesGstack(setupPipeline) ? [
+      { id: "gstack-checkout", label: "Downloading gstack", weight: 3 },
+      { id: "gstack-bootstrap", label: "Bootstrapping gstack", weight: 2 },
+      { id: "gstack-hooks", label: "Writing gstack hooks", weight: 1 }
+    ] : [])
+  ];
+  const progress = createSetupProgress(progressPlan, {
+    interactive: Boolean(process.stdout.isTTY),
+    ansi: Boolean(process.stdout.isTTY && !process.env.NO_COLOR && process.env.TERM !== "dumb")
+  });
   const provisionSnapshot = await snapshotProvisionState(target, { dryRun });
   const lockPath = repoLockPath(target);
   let eccStatus = null;
@@ -297,45 +325,57 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
         sourceRoot,
         target,
         dryRun,
-        preserveGstack: usesGstack(setupPipeline)
+        preserveGstack: usesGstack(setupPipeline),
+        progress
       });
     } else {
-      await backupPaths(target, ["CLAUDE.md", ".claude/CLAUDE.md", ".claude/settings.json", ".claude/rules", ".claude/agents", ".claude/skills", ".claude/commands", ".claude/hooks", ".claude/scripts", ".repo-pattern/.repo-pattern.json", ".repo-pattern/.repo-pattern.lock.json"], { dryRun });
+      await backupPaths(target, ["CLAUDE.md", ".claude/CLAUDE.md", ".claude/settings.json", ".claude/rules", ".claude/agents", ".claude/skills", ".claude/commands", ".claude/hooks", ".claude/scripts", ".repo-pattern/.repo-pattern.json", ".repo-pattern/.repo-pattern.lock.json"], { dryRun, progress });
     }
 
+    const workspace = progress?.beginOperation?.({ id: "workspace", label: "Generating workspace", totalUnits: 5, unitLabel: "items", weight: 2 });
+    let workspaceCompleted = 0;
+    const advanceWorkspace = (detail) => workspace?.update({ completedUnits: ++workspaceCompleted, totalUnits: 5, detail });
     await ensureDir(path.join(target, ".claude"), { dryRun });
 
     // Target CLAUDE.md is created empty when missing so project-specific instructions can be added later. Existing target CLAUDE.md is preserved.
     await writeIfMissing(path.join(target, "CLAUDE.md"), TARGET_CLAUDE_MD, { dryRun });
     for (const line of BASIC_GITIGNORE_LINES) await appendGitignoreLine(target, line, { dryRun });
+    advanceWorkspace("Writing project instructions");
 
     await copyRecursive(
       path.join(sourceRoot, ".claude.example", "CLAUDE.md"),
       path.join(target, ".claude", "CLAUDE.md"),
       { dryRun }
     );
+    advanceWorkspace("Copying workspace template");
 
     await writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun });
+    advanceWorkspace("Writing Claude settings");
     await appendGitignoreLine(target, ".claude/", { dryRun });
     await writeLocalSettings({ sourceRoot, target, localSettingsEnv, setupPipeline, optionalSkills, dryRun });
+    advanceWorkspace("Writing local settings");
     await ensureRepoPatternGitignore(target, { dryRun });
-    mcpResult = await generateMcp({ sourceRoot, target, profile, mcpServers, mcpValues, dryRun });
+    advanceWorkspace("Writing workspace state");
+    mcpResult = await generateMcp({ sourceRoot, target, profile, mcpServers, mcpValues, dryRun, progress });
+    workspace?.complete({ detail: "completed" });
     eccStatus = usesEcc(setupPipeline) ? await setupEcc({ sourceRoot, target, dryRun, configurePlugin: false }) : null;
     await writePrivateJson(repoConfigPath(target), await repoPatternConfig(sourceRoot, profile, setupPipeline), {
       dryRun,
       label: ".repo-pattern/.repo-pattern.json",
       parentLabel: ".repo-pattern"
     });
-    if (shouldApplyRules) await applyEccRules({ target, dryRun, ruleMode, rules });
+    if (shouldApplyRules) await applyEccRules({ target, dryRun, ruleMode, rules, progress });
     else await clearEccRules({ target, dryRun });
     await applyOptionalSkills({
       target,
       skills: optionalSkills,
       dryRun,
       reconcile: true,
-      previousOptionalSkills: previousRepoConfig.optionalSkills
+      previousOptionalSkills: previousRepoConfig.optionalSkills,
+      progress
     });
   } catch (error) {
+    progress?.fail({ detail: "failed" });
     try {
       await restoreProvisionState(provisionSnapshot);
     } catch (rollbackError) {
@@ -350,7 +390,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
     }
   }
 
-  if (usesGstack(setupPipeline)) gstackStatus = await setupGstack({ target, dryRun, planTuneHooks });
+  if (usesGstack(setupPipeline)) gstackStatus = await setupGstack({ target, dryRun, planTuneHooks, progress });
   const currentLock = await readPrivateJson(lockPath, {}, {
     label: ".repo-pattern/.repo-pattern.lock.json",
     parentLabel: ".repo-pattern"
@@ -363,8 +403,13 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
   await ensureRepoPatternGitignore(target, { dryRun });
 
   if (dryRun) console.log("[dry-run] doctor skipped because no files were written.");
-  else if (gstackStatus?.status === "failed") console.log("gstack doctor skipped because gstack bootstrap failed.");
-  else await doctorProject(target, { updateLock: true, dryRun });
+  else if (gstackStatus?.status === "failed") {
+    console.log("gstack doctor skipped because gstack bootstrap failed.");
+    progress?.fail({ detail: "gstack setup failed" });
+  } else {
+    await doctorProject(target, { updateLock: true, dryRun });
+    progress?.complete({ detail: "completed" });
+  }
 
   const pending = [
     ...(eccStatus === "manual-plugin-install-required" ? ["ECC plugin"] : []),

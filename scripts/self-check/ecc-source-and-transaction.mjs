@@ -13,6 +13,7 @@ import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, p
 import { writePrivateJson } from "../lib/fs-utils.mjs";
 import { printSummary, renderLogo, style } from "../lib/prompt.mjs";
 import { needsLocalSettingsPrompt, setupProject, setupRetryOptions } from "../lib/setup.mjs";
+import { ensureEccCache } from "../lib/ecc-source.mjs";
 import { applyEccRules, buildAgentManifest, clearEccRules, formatEccCloneError, hasGitUpstream, validateAgentManifest } from "../lib/rules.mjs";
 import { applyOptionalSkills, applyPluginSkillSettings, expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills, OPTIONAL_SKILLS } from "../lib/skills.mjs";
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
@@ -24,6 +25,19 @@ import { writeEccGitFixture } from "./fixtures.mjs";
 const originalDoctorLog = console.log;
 
 export async function runEccSourceAndTransactionChecks() {
+const existingCacheTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-existing-ecc-cache-"));
+try {
+  const cache = path.join(existingCacheTarget, ".repo-pattern", "cache", "ECC");
+  await fs.mkdir(path.join(cache, "rules"), { recursive: true });
+  const skipped = [];
+  const resolved = await ensureEccCache(existingCacheTarget, {
+    progress: { skipOperation: (id) => skipped.push(id) }
+  });
+  assert.equal(resolved, cache);
+  assert.deepEqual(skipped, ["ecc-cache"]);
+} finally {
+  await fs.rm(existingCacheTarget, { recursive: true, force: true });
+}
 
 const rollbackAgentsTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-agent-rollback-"));
 console.log = () => {};
