@@ -304,6 +304,7 @@ export async function backupPaths(targetRoot, relativePaths, {
     throw error;
   }
 
+  progress?.flush?.();
   console.log(`Backup created: ${backupRoot}`);
   return backupRoot;
 }

@@ -41,13 +41,19 @@ export function createProgressReporter({ interactive = false, ansi = false, writ
     }
   }
 
-  function update(operation, { completedUnits = operation.completedUnits, totalUnits = operation.totalUnits, detail } = {}) {
+  function update(operation, { completedUnits = operation.completedUnits, totalUnits = operation.totalUnits, detail, terminal = false } = {}) {
     operation.totalUnits = Math.max(0, Number(totalUnits) || 0);
     operation.completedUnits = Math.max(operation.completedUnits, Math.max(0, Number(completedUnits) || 0));
     operation.percent = Math.max(operation.percent, operationPercent(operation.completedUnits, operation.totalUnits));
     if (detail !== undefined) operation.detail = detail;
-    render(operation);
+    render(operation, { terminal });
     return operation;
+  }
+
+  function flush() {
+    if (!activeInteractive) return;
+    output("\x1b[2K\r\n");
+    activeInteractive = false;
   }
 
   function beginOperation({ id, label, totalUnits = 0, unitLabel = "", weight = 1, detail = "" }) {
@@ -90,7 +96,7 @@ export function createProgressReporter({ interactive = false, ansi = false, writ
     };
   }
 
-  return { beginOperation, operations };
+  return { beginOperation, operations, flush };
 }
 
 export function createSetupProgress(plan = [], options = {}) {
@@ -102,7 +108,7 @@ export function createSetupProgress(plan = [], options = {}) {
   let lastPercent = 0;
   let activeLabel = "preparing resources";
 
-  function updateSetup(nextLabel = activeLabel) {
+  function updateSetup(nextLabel = activeLabel, { terminal = false } = {}) {
     activeLabel = nextLabel;
     const totalWeight = [...weights.values()].reduce((total, weight) => total + weight, 0);
     const weighted = totalWeight === 0 ? 0 : [...weights.keys()].reduce((total, id) => {
@@ -115,16 +121,17 @@ export function createSetupProgress(plan = [], options = {}) {
     const nextPercent = complete ? 100 : Math.min(99, clampPercent(weighted));
     lastPercent = Math.max(lastPercent, nextPercent);
     if (complete) setup.complete({ detail: "completed" });
-    else setup.update({ completedUnits: lastPercent, totalUnits: 100, detail: activeLabel });
+    else setup.update({ completedUnits: lastPercent, totalUnits: 100, detail: activeLabel, terminal });
   }
 
   return {
+    flush: reporter.flush,
     beginOperation(spec) {
       const operation = reporter.beginOperation(spec);
       operations.set(spec.id, operation);
       const wrap = (method) => (values = {}) => {
         const result = operation[method](values);
-        updateSetup(spec.label);
+        updateSetup(spec.label, { terminal: method === "complete" });
         return result;
       };
       return {

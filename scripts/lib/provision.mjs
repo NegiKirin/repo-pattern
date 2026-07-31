@@ -402,8 +402,11 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
   });
   await ensureRepoPatternGitignore(target, { dryRun });
 
-  if (dryRun) console.log("[dry-run] doctor skipped because no files were written.");
-  else if (gstackStatus?.status === "failed") {
+  if (dryRun) {
+    progress?.flush?.();
+    console.log("[dry-run] doctor skipped because no files were written.");
+  } else if (gstackStatus?.status === "failed") {
+    progress?.flush?.();
     console.log("gstack doctor skipped because gstack bootstrap failed.");
     progress?.fail({ detail: "gstack setup failed" });
   } else {
@@ -441,5 +444,5 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
     [dryRun ? "Would write" : "Written", `CLAUDE.md (if missing), .claude/, .mcp.json, .repo-pattern/.repo-pattern.json, .repo-pattern/.repo-pattern.lock.json${optionalSkills.length ? ", optional skill/plugin config" : ""}`],
     ["Doctor", dryRun ? "skipped (dry-run)" : gstackFailed ? "skipped because gstack failed" : style("success", "passed")],
     ["Next", next]
-  ]);
+  ], { progress });
 }

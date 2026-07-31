@@ -89,7 +89,8 @@ export async function selectMany({ message, options, initialValues = [] }) {
   }));
 }
 
-export function printBox(title, lines = []) {
+export function printBox(title, lines = [], { progress = null } = {}) {
+  progress?.flush?.();
   if (isInteractive()) {
     note(lines.join("\n"), title);
     return;
@@ -197,7 +198,8 @@ function summaryLines(rows) {
   return lines;
 }
 
-export function printSummary(title, rows = []) {
+export function printSummary(title, rows = [], { progress = null } = {}) {
+  progress?.flush?.();
   const lines = summaryLines(rows);
   if (!isInteractive()) {
     printBox(title, lines);

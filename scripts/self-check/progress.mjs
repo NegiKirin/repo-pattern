@@ -33,6 +33,15 @@ export async function runProgressChecks() {
   assert.match(interactive.join("\n"), /Generating workspace \[[█░]+\] 50% · 1\/2 files/);
   assert.match(interactive.at(-1), /Generating workspace \[[█░]+\] 100% · completed/);
   assert(interactive.some((line) => line.includes("\x1b[2K\r")));
+  const interleaved = [];
+  const interleavedReporter = createProgressReporter({ interactive: true, ansi: true, write: (line) => interleaved.push(line) });
+  const interleavedOperation = interleavedReporter.beginOperation({ id: "copy", label: "Copying files", totalUnits: 2 });
+  interleavedOperation.update({ completedUnits: 1, detail: "1/2 files" });
+  interleavedReporter.flush();
+  interleaved.push("ordinary output\n");
+  interleavedOperation.complete({ detail: "completed" });
+  assert.equal(interleaved[3], "ordinary output\n");
+  assert.match(interleaved[2], /\x1b\[2K\r\n$/);
 
   const setupLines = [];
   const setup = createSetupProgress([
@@ -50,7 +59,18 @@ export async function runProgressChecks() {
   assert(setupLines.some((line) => line.startsWith("Setup 50% · Downloading gstack")));
   assert.equal(setupLines.at(-1), "Setup 100% · completed");
   assert.equal(setupLines.filter((line) => line === "Setup 100% · completed").length, 1);
+  assert.equal(setupLines.some((line) => line.startsWith("Setup 100% · completed")), true);
   setup.complete({ detail: "completed" });
+
+  const interactiveSetupLines = [];
+  const interactiveSetup = createSetupProgress([
+    { id: "workspace", label: "Generating workspace", weight: 1 },
+    { id: "gstack", label: "Downloading gstack", weight: 1 }
+  ], { interactive: true, ansi: true, write: (line) => interactiveSetupLines.push(line) });
+  interactiveSetup.beginOperation({ id: "workspace", label: "Generating workspace", totalUnits: 1 }).complete();
+  assert.match(interactiveSetupLines.at(-1), /Setup \[[█░]+\] 50% · Generating workspace\n$/);
+  interactiveSetup.beginOperation({ id: "gstack", label: "Downloading gstack", totalUnits: 1 }).complete();
+  assert.match(interactiveSetupLines.at(-1), /Setup \[[█░]+\] 100% · completed\n$/);
   setup.fail({ detail: "failed" });
   assert.equal(setupLines.filter((line) => line === "Setup 100% · completed").length, 1);
   assert.equal(setupLines.filter((line) => line === "Setup 100% · failed").length, 0);
