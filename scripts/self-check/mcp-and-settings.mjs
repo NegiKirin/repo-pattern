@@ -11,8 +11,8 @@ import { ECC_PLUGIN, applyEccPluginSettings, setupEcc } from "../lib/ecc.mjs";
 import { applyMcpValues, generateMcp, mcpSecretPrompt, persistedMcpValues, readGeneratedMcpValues, validateRelativeMcpPath } from "../lib/mcp.mjs";
 import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, provisionProject, reconcileLocalPluginSettings, setupPipelineScope, updateClaudePermissions } from "../lib/provision.mjs";
 import { writePrivateJson } from "../lib/fs-utils.mjs";
-import { printSummary, renderLogo, style } from "../lib/prompt.mjs";
-import { needsLocalSettingsPrompt, setupProject, setupRetryOptions } from "../lib/setup.mjs";
+import { printSummary, renderLogo, resolveTextValue, style } from "../lib/prompt.mjs";
+import { localSettingsPromptOptions, needsLocalSettingsPrompt, setupProject, setupRetryOptions } from "../lib/setup.mjs";
 import { applyEccRules, buildAgentManifest, clearEccRules, formatEccCloneError, hasGitUpstream, validateAgentManifest } from "../lib/rules.mjs";
 import { applyOptionalSkills, applyPluginSkillSettings, expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills, OPTIONAL_SKILLS } from "../lib/skills.mjs";
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
@@ -188,7 +188,57 @@ assert.deepEqual({
   both: "project-scoped ECC + project-local gstack at .claude/skills/gstack",
   none: "writes only base project metadata"
 });
+assert.equal(resolveTextValue("new", { initial: "current", placeholder: "default" }), "new");
+assert.equal(resolveTextValue("", { initial: "current", placeholder: "default" }), "current");
+assert.equal(resolveTextValue("", { initial: "", placeholder: "default" }), "default");
+const defaultPromptOptions = localSettingsPromptOptions({}, {});
+assert.equal(defaultPromptOptions.ANTHROPIC_BASE_URL.placeholder, "https://example.com/v1");
+assert.equal(defaultPromptOptions.ANTHROPIC_DEFAULT_OPUS_MODEL.placeholder, "claude-opus-4-8");
+assert.equal(defaultPromptOptions.ANTHROPIC_DEFAULT_SONNET_MODEL.placeholder, "claude-sonnet-4-6");
+assert.equal(defaultPromptOptions.ANTHROPIC_DEFAULT_HAIKU_MODEL.placeholder, "claude-haiku-4-5");
+assert.equal(defaultPromptOptions.ANTHROPIC_AUTH_TOKEN.placeholder, "");
+assert.deepEqual(Object.values(defaultPromptOptions).map(({ initial }) => initial), ["", "", "", "", ""]);
+assert.deepEqual(Object.values(defaultPromptOptions).map(({ placeholder }) => placeholder), ["", "https://example.com/v1", "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"]);
+const currentPromptOptions = localSettingsPromptOptions({
+  ANTHROPIC_AUTH_TOKEN: secretSentinel,
+  ANTHROPIC_BASE_URL: "https://provider.example/v1",
+  ANTHROPIC_DEFAULT_OPUS_MODEL: "custom-opus",
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "custom-sonnet",
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "custom-haiku"
+}, {});
+assert.deepEqual(Object.values(currentPromptOptions).map(({ initial }) => initial), [secretSentinel, "https://provider.example/v1", "custom-opus", "custom-sonnet", "custom-haiku"]);
+assert.deepEqual(Object.values(currentPromptOptions).map(({ placeholder }) => placeholder), ["", "https://example.com/v1", "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"]);
+const invalidPromptOptions = localSettingsPromptOptions({
+  ANTHROPIC_AUTH_TOKEN: secretSentinel,
+  ANTHROPIC_BASE_URL: "not-a-url",
+  ANTHROPIC_DEFAULT_OPUS_MODEL: " ",
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "",
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "custom-haiku"
+}, {});
+assert.deepEqual(Object.values(invalidPromptOptions).map(({ initial }) => initial), [secretSentinel, "", "", "", "custom-haiku"]);
+assert.deepEqual(localSettingsPromptOptions({}, {}), defaultPromptOptions);
 assert.equal(needsLocalSettingsPrompt({ ANTHROPIC_BASE_URL: "https://example.com/v1" }), true);
+assert.equal(needsLocalSettingsPrompt({
+  ANTHROPIC_AUTH_TOKEN: secretSentinel,
+  ANTHROPIC_BASE_URL: "",
+  ANTHROPIC_DEFAULT_OPUS_MODEL: "custom-opus",
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "custom-sonnet",
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "custom-haiku"
+}), true);
+assert.equal(needsLocalSettingsPrompt({
+  ANTHROPIC_AUTH_TOKEN: secretSentinel,
+  ANTHROPIC_BASE_URL: "https://provider.example/v1",
+  ANTHROPIC_DEFAULT_OPUS_MODEL: " ",
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "custom-sonnet",
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "custom-haiku"
+}), true);
+assert.equal(needsLocalSettingsPrompt({
+  ANTHROPIC_AUTH_TOKEN: secretSentinel,
+  ANTHROPIC_BASE_URL: "https://provider.example/v1",
+  ANTHROPIC_DEFAULT_OPUS_MODEL: "custom-opus",
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "\t",
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "custom-haiku"
+}), true);
 assert.equal(needsLocalSettingsPrompt({
   CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: "0",
   ANTHROPIC_AUTH_TOKEN: secretSentinel,

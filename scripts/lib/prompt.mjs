@@ -19,12 +19,19 @@ function clackValidate(validate, fallback = null) {
   };
 }
 
-export async function askText(message, { initial = "", validate = null } = {}) {
-  return handleCancel(await text({
+export function resolveTextValue(value, { initial = "", placeholder = "" } = {}) {
+  return value || initial || placeholder;
+}
+
+export async function askText(message, { initial = "", placeholder = "", validate = null } = {}) {
+  const fallback = initial || placeholder;
+  const value = handleCancel(await text({
     message,
     initialValue: initial,
-    validate: clackValidate(validate)
+    placeholder,
+    validate: clackValidate(validate, fallback)
   }));
+  return resolveTextValue(value, { initial, placeholder });
 }
 
 export async function askPassword(message, { initial = "", validate = null } = {}) {
