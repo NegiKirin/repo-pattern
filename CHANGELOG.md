@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.5.1] - 2026-07-31
+
+**Interactive provider defaults are easier to replace without accidental edits.**
+
+### Changed
+
+- Show Anthropic URL and model defaults as placeholders in fresh interactive setup, so users can type replacements directly or press Enter to accept the defaults.
+- Preserve valid provider values as editable inputs on reruns while falling back to placeholders for empty or invalid values.
+- Keep `ANTHROPIC_AUTH_TOKEN` masked and preserve non-interactive `setup --yes` behavior.
+
+### Tests
+
+- Added self-check coverage for fresh placeholders, valid rerun values, invalid persisted values, and empty-input fallback resolution.
+
 ## [0.2.5] - 2026-07-31
 
 **Setup output now stays readable when progress meets diagnostics.**
