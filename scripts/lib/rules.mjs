@@ -80,7 +80,7 @@ export async function clearEccRules({ target, dryRun = false }) {
   }
 }
 
-export async function applyEccRules({ target, dryRun = false, ruleMode = "auto", rules = null, operations = {} }) {
+export async function applyEccRules({ target, dryRun = false, ruleMode = "auto", rules = null, operations = {}, progress = null }) {
   const detection = await detectProject(target);
   const invalidRules = ruleMode === "manual" ? invalidEccRules(rules) : [];
   if (invalidRules.length > 0) throw new Error(`Unknown ECC rule pack(s): ${invalidRules.join(", ")}`);
@@ -88,7 +88,7 @@ export async function applyEccRules({ target, dryRun = false, ruleMode = "auto",
   printSummary("Detected stack", [["Repo type", detection.repoType], ["Languages", list(detection.languages)], ["Frameworks", list(detection.frameworks)], ["Tools", list(detection.tools)], ["Package manager", detection.packageManager || "unknown"], ["Monorepo", detection.monorepo ? "yes" : "no"]]);
   printSummary("Selected ECC rules", [["Rules", selectedRules.join(", ")]]);
   const cacheRoot = path.join(target, ".repo-pattern", "cache");
-  const eccCache = await ensureEccCache(target, { dryRun });
+  const eccCache = await ensureEccCache(target, { dryRun, progress });
   const destRoot = path.join(target, ".claude", "rules", "ecc");
   const claudeMdPath = path.join(target, ".claude", "CLAUDE.md");
   const claudeMd = exists(claudeMdPath) ? await fs.readFile(claudeMdPath, "utf8") : "";
@@ -103,7 +103,7 @@ export async function applyEccRules({ target, dryRun = false, ruleMode = "auto",
     ...lock,
     ecc: { ...(lock.ecc || {}), rulesSyncedBy: "repo-pattern-auto-cache", rulesProfile: ruleMode, rulesScope: "project", recommendedRules: selectedRules, appliedRules: selectedRules, detectedStack: detection, rulesSource: ECC_REPO_URL, rulesCache: null, rulesAppliedAt: new Date().toISOString() }
   };
-  const agentResult = await syncEccRulesAndAgents({ target, eccCache, selectedRules, repoConfig: nextRepoConfig, lock: nextLock, claudeMd, nextClaudeMd, dryRun, operations });
+  const agentResult = await syncEccRulesAndAgents({ target, eccCache, selectedRules, repoConfig: nextRepoConfig, lock: nextLock, claudeMd, nextClaudeMd, dryRun, operations, progress });
   if (!dryRun) {
     try {
       await removePath(cacheRoot);

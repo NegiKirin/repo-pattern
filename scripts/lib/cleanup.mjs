@@ -3,7 +3,7 @@ import path from "node:path";
 import { backupPaths, ensureDir, readJson, removePath, writePrivateJson } from "./fs-utils.mjs";
 import { gstackCheckoutPath, isValidGstackCheckout } from "./gstack.mjs";
 
-export async function cleanupProject({ sourceRoot, target, dryRun = false, preserveGstack = false }) {
+export async function cleanupProject({ sourceRoot, target, dryRun = false, preserveGstack = false, progress = null }) {
   console.log(`Cleaning target: ${target}`);
 
   const claudeDir = path.join(target, ".claude");
@@ -29,7 +29,7 @@ export async function cleanupProject({ sourceRoot, target, dryRun = false, prese
     ".claude/settings.json",
     ...(preserveLocalGstack ? [] : [".claude/skills"])
   ];
-  await backupPaths(target, backupList, { dryRun });
+  await backupPaths(target, backupList, { dryRun, progress });
 
   const removeList = [
     ".claude/commands",

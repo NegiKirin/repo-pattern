@@ -64,16 +64,20 @@ async function assertSafeTransactionParents(target, claudeDir, rulesDir) {
   await assertSafeDirectory(path.join(target, ".repo-pattern", "backups"), ".repo-pattern/backups");
 }
 
-async function copyAgentTree(source, stage, operations) {
-  const sourceFiles = await inspectRegularTree(source, { requireNonEmpty: true });
+async function copyAgentTree(source, stage, operations, onProgress = null, { requireNonEmpty = false } = {}) {
+  const sourceFiles = await inspectRegularTree(source, { requireNonEmpty });
+  await ensureDir(stage);
+  let completed = 0;
   for (const file of sourceFiles) {
     const destination = path.join(stage, path.relative(source, file));
     await ensureDir(path.dirname(destination));
     await (operations.copyFile || fs.copyFile)(file, destination);
+    onProgress?.(++completed, sourceFiles.length);
   }
+  return sourceFiles.length;
 }
 
-export async function syncEccRulesAndAgents({ target, eccCache, selectedRules, repoConfig, lock, claudeMd, nextClaudeMd, dryRun = false, operations = {} }) {
+export async function syncEccRulesAndAgents({ target, eccCache, selectedRules, repoConfig, lock, claudeMd, nextClaudeMd, dryRun = false, operations = {}, progress = null }) {
   const claudeDir = path.join(target, ".claude");
   const rulesDir = path.join(claudeDir, "rules");
   const rulesDestination = path.join(rulesDir, "ecc");
@@ -84,6 +88,11 @@ export async function syncEccRulesAndAgents({ target, eccCache, selectedRules, r
   }
   const { agentsRoot, revision } = await validateEccAgentSource(eccCache);
   const ruleSources = await validateRuleSource(path.join(eccCache, "rules"), selectedRules);
+  const agentFiles = await inspectRegularTree(agentsRoot, { requireNonEmpty: true });
+  const ruleFiles = (await Promise.all(ruleSources.map(async ({ source }) => inspectRegularTree(source)))).flat();
+  const totalFiles = agentFiles.length + ruleFiles.length;
+  const operation = progress?.beginOperation?.({ id: "ecc-sync", label: "Staging ECC rules and agents", totalUnits: totalFiles + 4, unitLabel: "files", weight: 3 });
+  let completed = 0;
   assertEccSourceMatchesHead(eccCache);
   await assertSafeTransactionParents(target, claudeDir, rulesDir);
   await ensureDir(claudeDir);
@@ -108,10 +117,31 @@ export async function syncEccRulesAndAgents({ target, eccCache, selectedRules, r
     await ensureRepoPatternGitignore(target, { dryRun });
     rulesStage = await fs.mkdtemp(path.join(rulesDir, ".ecc-stage-"));
     agentsStage = await fs.mkdtemp(path.join(claudeDir, ".agents-stage-"));
-    for (const { rule, source } of ruleSources) await (operations.copyRules || copyRecursive)(source, path.join(rulesStage, rule));
-    await copyAgentTree(agentsRoot, agentsStage, operations);
+    for (const { rule, source } of ruleSources) {
+      if (operations.copyRules) {
+        await operations.copyRules(source, path.join(rulesStage, rule));
+        const files = await inspectRegularTree(source);
+        completed += files.length;
+        operation?.update({ completedUnits: completed, totalUnits: totalFiles + 4, detail: `${completed}/${totalFiles} files` });
+      } else {
+        await copyAgentTree(source, path.join(rulesStage, rule), operations, (count, total) => {
+          operation?.update({ completedUnits: completed + count, totalUnits: totalFiles + 4, detail: `${completed + count}/${totalFiles} files` });
+          if (count === total) completed += total;
+        });
+      }
+    }
+    await copyAgentTree(agentsRoot, agentsStage, operations, (count, total) => {
+      operation?.update({ completedUnits: completed + count, totalUnits: totalFiles + 4, detail: `${completed + count}/${totalFiles} files` });
+      if (count === total) completed += total;
+    }, { requireNonEmpty: true });
     const manifest = await buildAgentManifest(agentsStage);
-    await backupPaths(target, [".claude/rules/ecc"], { dryRun });
+    await backupPaths(target, [".claude/rules/ecc"], {
+      dryRun,
+      progress,
+      progressId: "ecc-backup",
+      progressLabel: "Backing up ECC rules",
+      progressWeight: 1
+    });
     if (exists(rulesDestination)) {
       await (operations.rename || fs.rename)(rulesDestination, rulesBackup);
       movedRules = true;
@@ -122,8 +152,10 @@ export async function syncEccRulesAndAgents({ target, eccCache, selectedRules, r
     }
     await (operations.rename || fs.rename)(rulesStage, rulesDestination);
     promotedRules = true;
+    operation?.update({ completedUnits: ++completed, totalUnits: totalFiles + 4, detail: "Promoting ECC rules" });
     await (operations.rename || fs.rename)(agentsStage, agentsDestination);
     promotedAgents = true;
+    operation?.update({ completedUnits: ++completed, totalUnits: totalFiles + 4, detail: "Promoting ECC agents" });
     const nextLock = {
       ...lock,
       ecc: { ...(lock.ecc || {}), agentsSyncedBy: "repo-pattern-auto-cache", agentsSource: ECC_REPO_URL, agentsRevision: revision, appliedAgents: manifest, agentsAppliedAt: new Date().toISOString() }
@@ -131,6 +163,8 @@ export async function syncEccRulesAndAgents({ target, eccCache, selectedRules, r
     if (nextClaudeMd !== claudeMd) await (operations.writeClaudeMd || fs.writeFile)(claudeMdPath, nextClaudeMd, "utf8");
     await (operations.writeConfig || writeJson)(configPath, repoConfig, { dryRun });
     await (operations.writeLock || writeJson)(lockPath, nextLock, { dryRun });
+    operation?.update({ completedUnits: ++completed, totalUnits: totalFiles + 4, detail: "Writing ECC metadata" });
+    operation?.complete({ detail: "completed" });
     try {
       await Promise.all([movedRules ? (operations.removeBackup || fs.rm)(rulesBackup, { recursive: true, force: true }) : undefined, movedAgents ? (operations.removeBackup || fs.rm)(agentsBackup, { recursive: true, force: true }) : undefined]);
     } catch (cleanupError) {
@@ -138,6 +172,7 @@ export async function syncEccRulesAndAgents({ target, eccCache, selectedRules, r
     }
     return { manifest, revision, lock: nextLock };
   } catch (error) {
+    operation?.fail({ detail: "failed" });
     try {
       if (promotedAgents) await fs.rm(agentsDestination, { recursive: true, force: true });
       if (promotedRules) await fs.rm(rulesDestination, { recursive: true, force: true });

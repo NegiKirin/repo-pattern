@@ -3,8 +3,9 @@ import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { appendGitignoreLine, ensureDir, exists, isTracked, readJson, removePath, writeJson, writePrivateJson } from "./fs-utils.mjs";
-import { printSummary, withSpinner } from "./prompt.mjs";
+import { appendGitignoreLine, copyRecursiveWithProgress, ensureDir, exists, isTracked, readJson, removePath, writeJson, writePrivateJson } from "./fs-utils.mjs";
+import { runGitWithProgress } from "./git-progress.mjs";
+import { printSummary } from "./prompt.mjs";
 
 const GSTACK_REPOSITORY = "https://github.com/garrytan/gstack.git";
 const GSTACK_DIAGNOSTIC_MAX_CHARS = 4000;
@@ -325,7 +326,7 @@ async function expectedGstackSidecars(checkout) {
   }));
 }
 
-export async function bootstrapGstack({ target, checkout = gstackCheckoutPath(target), statePath = gstackStatePath(target), dryRun = false }) {
+export async function bootstrapGstack({ target, checkout = gstackCheckoutPath(target), statePath = gstackStatePath(target), dryRun = false, progress = null }) {
   await assertNoSymlinkPath(target, path.relative(target, checkout));
   await assertNoSymlinkPath(target, path.relative(target, statePath));
   const wrappers = await expectedGstackWrappers(target, checkout, statePath);
@@ -334,44 +335,46 @@ export async function bootstrapGstack({ target, checkout = gstackCheckoutPath(ta
   for (const { wrapper } of wrappers) await assertNoSymlinkPath(target, wrapper);
   for (const { asset } of assets) await assertNoSymlinkPath(target, path.join(".claude", "skills", asset));
   for (const { sidecar } of sidecars) await assertNoSymlinkPath(target, path.join(".claude", "skills", sidecar));
-  for (const { wrapper, content } of wrappers) {
-    const destination = path.join(target, wrapper);
-    if (dryRun) console.log(`[dry-run] write gstack skill wrapper ${destination}`);
-    else await writeSkillWrapper(destination, content);
-  }
-  for (const { asset, content } of assets) {
-    const destination = path.join(target, ".claude", "skills", asset);
-    if (dryRun) console.log(`[dry-run] write gstack skill asset ${destination}`);
-    else {
-      await ensureDir(path.dirname(destination));
-      await fs.writeFile(destination, content, "utf8");
-    }
-  }
-  for (const { sidecar, content } of sidecars) {
-    const destination = path.join(target, ".claude", "skills", sidecar);
-    if (dryRun) console.log(`[dry-run] write gstack review sidecar ${destination}`);
-    else {
-      await ensureDir(path.dirname(destination));
-      await fs.writeFile(destination, content, "utf8");
-    }
-  }
-  if (!dryRun) {
-    await ensureDir(statePath);
-    const stateFile = path.join(statePath, "state.json");
-    try {
-      if ((await fs.lstat(stateFile)).isSymbolicLink()) {
-        throw new Error(`gstack target path contains a symlink: ${stateFile}`);
+  const work = [
+    ...wrappers.map(({ wrapper, content }) => ({ label: "Writing gstack wrappers", destination: path.join(target, wrapper), content, kind: "wrapper" })),
+    ...assets.map(({ asset, content }) => ({ label: "Writing gstack assets", destination: path.join(target, ".claude", "skills", asset), content, kind: "asset" })),
+    ...sidecars.map(({ sidecar, content }) => ({ label: "Writing gstack sidecars", destination: path.join(target, ".claude", "skills", sidecar), content, kind: "sidecar" }))
+  ];
+  const operation = progress?.beginOperation?.({ id: "gstack-bootstrap", label: "Bootstrapping gstack", totalUnits: work.length + 1, unitLabel: "items", weight: 2 });
+  try {
+    let completed = 0;
+    for (const item of work) {
+      if (dryRun) console.log(`[dry-run] write gstack ${item.kind} ${item.destination}`);
+      else if (item.kind === "wrapper") await writeSkillWrapper(item.destination, item.content);
+      else {
+        await ensureDir(path.dirname(item.destination));
+        await fs.writeFile(item.destination, item.content, "utf8");
       }
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
+      operation?.update({ completedUnits: ++completed, totalUnits: work.length + 1, detail: `${completed}/${work.length + 1} items` });
     }
-    await writeJson(stateFile, {
-      checkout: path.relative(target, checkout),
-      wrappers: wrappers.map(({ wrapper }) => wrapper),
-      assets: assets.map(({ asset }) => asset),
-      sidecars: sidecars.map(({ sidecar }) => sidecar),
-      bootstrappedAt: new Date().toISOString()
-    });
+    if (!dryRun) {
+      await ensureDir(statePath);
+      const stateFile = path.join(statePath, "state.json");
+      try {
+        if ((await fs.lstat(stateFile)).isSymbolicLink()) {
+          throw new Error(`gstack target path contains a symlink: ${stateFile}`);
+        }
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+      await writeJson(stateFile, {
+        checkout: path.relative(target, checkout),
+        wrappers: wrappers.map(({ wrapper }) => wrapper),
+        assets: assets.map(({ asset }) => asset),
+        sidecars: sidecars.map(({ sidecar }) => sidecar),
+        bootstrappedAt: new Date().toISOString()
+      });
+    }
+    operation?.update({ completedUnits: ++completed, totalUnits: work.length + 1, detail: `${completed}/${work.length + 1} items` });
+    operation?.complete({ detail: "completed" });
+  } catch (error) {
+    operation?.fail({ detail: "failed" });
+    throw error;
   }
   return wrappers.map(({ wrapper }) => wrapper);
 }
@@ -421,17 +424,24 @@ export function applyPlanTuneHooks(settings = {}, { checkout, statePath, enabled
   return { ...settings, hooks };
 }
 
-export async function writePlanTuneHooks({ target, planTuneHooks, dryRun = false }) {
-  const checkout = gstackCheckoutPath(target);
-  if (planTuneHooks && !dryRun) await assertPlanTuneHooks(checkout);
-  const file = path.join(target, ".claude", "settings.json");
-  await assertNoSymlinkPath(target, path.relative(target, file));
-  const settings = await readJson(file, {});
-  await writeJson(file, applyPlanTuneHooks(settings, {
-    checkout: gstackCheckoutPath(target),
-    statePath: gstackStatePath(target),
-    enabled: planTuneHooks
-  }), { dryRun });
+export async function writePlanTuneHooks({ target, planTuneHooks, dryRun = false, progress = null }) {
+  const operation = progress?.beginOperation?.({ id: "gstack-hooks", label: "Writing gstack hooks", totalUnits: 1, weight: 1 });
+  try {
+    const checkout = gstackCheckoutPath(target);
+    if (planTuneHooks && !dryRun) await assertPlanTuneHooks(checkout);
+    const file = path.join(target, ".claude", "settings.json");
+    await assertNoSymlinkPath(target, path.relative(target, file));
+    const settings = await readJson(file, {});
+    await writeJson(file, applyPlanTuneHooks(settings, {
+      checkout: gstackCheckoutPath(target),
+      statePath: gstackStatePath(target),
+      enabled: planTuneHooks
+    }), { dryRun });
+    operation?.complete({ detail: "completed" });
+  } catch (error) {
+    operation?.fail({ detail: "failed" });
+    throw error;
+  }
 }
 
 export async function resolveGstackCheckout({
@@ -439,13 +449,15 @@ export async function resolveGstackCheckout({
   dryRun = false,
   globalCheckout = globalGstackCheckoutPath(),
   run: runCommand = run,
-  copy = fs.cp,
-  clone = (destination) => runCommand("git", ["clone", "--single-branch", "--depth", "1", GSTACK_REPOSITORY, destination], { stdio: ["ignore", "pipe", "pipe"], maxBuffer: Infinity }),
-  withSpinner: runWithSpinner = withSpinner
+  copy = copyRecursiveWithProgress,
+  clone = null,
+  progress = null
 }) {
   const localCheckout = gstackCheckoutPath(target);
   await assertNoSymlinkPath(target, path.relative(target, localCheckout));
   if (await isValidGstackCheckout(localCheckout, { run: runCommand })) {
+    const operation = progress?.beginOperation?.({ id: "gstack-checkout", label: "Using gstack checkout", totalUnits: 1, weight: 2 });
+    operation?.complete({ detail: "local checkout ready" });
     return {
       checkout: localCheckout,
       source: "local",
@@ -468,11 +480,35 @@ export async function resolveGstackCheckout({
   await ensureDir(parent);
   const temporary = await fs.mkdtemp(path.join(parent, ".gstack-"));
   try {
-    if (globalValid) await copy(globalCheckout, temporary, { recursive: true, force: true });
-    else await runWithSpinner("Downloading gstack", async () => {
+    if (globalValid) {
+      const operation = progress?.beginOperation?.({ id: "gstack-checkout", label: "Copying gstack checkout", totalUnits: 0, unitLabel: "files", weight: 2 });
       try {
-        await clone(temporary);
+        await copy(globalCheckout, temporary, {
+          recursive: true,
+          force: true,
+          onProgress: ({ completedFiles, totalFiles, completedBytes, totalBytes }) => {
+            const detail = totalBytes > 0
+              ? `${completedFiles}/${totalFiles} files · ${completedBytes}/${totalBytes} bytes`
+              : `${completedFiles}/${totalFiles} files`;
+            operation?.update({ completedUnits: completedFiles, totalUnits: totalFiles, detail });
+          }
+        });
+        operation?.complete({ detail: "completed" });
       } catch (error) {
+        operation?.fail({ detail: "failed" });
+        throw error;
+      }
+    } else {
+      const operation = progress?.beginOperation?.({ id: "gstack-checkout", label: "Downloading gstack", totalUnits: 100, weight: 3 });
+      try {
+        if (clone) await clone(temporary);
+        else await runGitWithProgress(["clone", "--progress", "--single-branch", "--depth", "1", GSTACK_REPOSITORY, temporary], {
+          cwd: target,
+          onProgress: ({ percent, detail }) => operation?.update({ completedUnits: percent, totalUnits: 100, detail })
+        });
+        operation?.complete({ detail: "completed" });
+      } catch (error) {
+        operation?.fail({ detail: "failed" });
         const cloneError = new Error(error.message, { cause: error });
         cloneError.gstackCloneFailure = true;
         cloneError.stderr = error.stderr;
@@ -480,7 +516,7 @@ export async function resolveGstackCheckout({
         cloneError.status = error.status;
         throw cloneError;
       }
-    });
+    }
     if (!await isValidGstackCheckout(temporary, { run: runCommand })) {
       throw new Error("Resolved gstack checkout is invalid.");
     }
@@ -539,7 +575,7 @@ export function gstackEnvironment(bun, environment = process.env) {
   return { ...environment, PATH: `${path.dirname(bun)}${path.delimiter}${environment.PATH || ""}` };
 }
 
-export async function setupGstack({ target, dryRun = false, planTuneHooks = false, resolveCheckout = resolveGstackCheckout }) {
+export async function setupGstack({ target, dryRun = false, planTuneHooks = false, resolveCheckout = resolveGstackCheckout, progress = null }) {
   const checkout = gstackCheckoutPath(target);
   const statePath = gstackStatePath(target);
   let checkoutLease = null;
@@ -547,16 +583,16 @@ export async function setupGstack({ target, dryRun = false, planTuneHooks = fals
   try {
     if (!dryRun) ensureBun();
     const install = async () => {
-      const resolved = await resolveCheckout({ target, dryRun });
+      const resolved = await resolveCheckout({ target, dryRun, progress });
       checkoutLease = resolved;
       if (!dryRun) {
         const wrappers = await expectedGstackWrappers(target, checkout, statePath);
         const assets = await expectedGstackAssets(target, checkout, statePath);
         const sidecars = await expectedGstackSidecars(checkout);
         transaction = await snapshotGstackArtifacts(target, wrappers, assets, sidecars, statePath);
-        await bootstrapGstack({ target, checkout, statePath, dryRun });
+        await bootstrapGstack({ target, checkout, statePath, dryRun, progress });
       } else console.log(`[dry-run] write gstack skill wrapper ${path.join(path.dirname(checkout), "_gstack-command")}`);
-      await writePlanTuneHooks({ target, planTuneHooks, dryRun });
+      await writePlanTuneHooks({ target, planTuneHooks, dryRun, progress });
       if (!dryRun) {
         await checkoutLease.commit();
         try {

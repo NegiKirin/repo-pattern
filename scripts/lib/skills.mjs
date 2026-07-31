@@ -1,11 +1,10 @@
-import { execFile, execFileSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
-import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, ensureRepoPatternGitignore, exists, isTracked, readJson, readRepoConfig, readRepoLock, removePath, repoConfigPath, repoLockPath, writeJson, writePrivateJson } from "./fs-utils.mjs";
-import { isInteractive, printSummary, withSpinner } from "./prompt.mjs";
+import { appendGitignoreLine, backupPaths, copyRecursiveWithProgress, ensureDir, ensureRepoPatternGitignore, exists, isTracked, readRepoConfig, readRepoLock, removePath, repoConfigPath, repoLockPath, scanCopyTree, writeJson, writePrivateJson } from "./fs-utils.mjs";
+import { runGitWithProgress } from "./git-progress.mjs";
+import { printSummary } from "./prompt.mjs";
 
-const execFileAsync = promisify(execFile);
 
 export const OPTIONAL_SKILLS = [
   {
@@ -168,19 +167,8 @@ async function writePluginSkillSettings({ target, skills, dryRun }) {
   await appendGitignoreLine(target, ".claude/", { dryRun });
 }
 
-function runGit(args, cwd, { quiet = false } = {}) {
-  execFileSync("git", args, {
-    cwd,
-    stdio: quiet ? "ignore" : "inherit"
-  });
-}
-
 function gitOutput(args, cwd) {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
-}
-
-async function runGitAsync(args, cwd) {
-  await execFileAsync("git", args, { cwd });
 }
 
 function verifyRevision(cacheDir, skill) {
@@ -199,16 +187,26 @@ async function rejectSymlinks(root) {
   }
 }
 
-async function syncSkillCache(target, skill, { dryRun = false } = {}) {
+async function syncSkillCache(target, skill, { dryRun = false, progress = null } = {}) {
   const cacheRoot = path.join(target, ".repo-pattern", "cache", "skills");
   const cacheDir = path.join(cacheRoot, skill.value);
-  const cloneArgs = ["clone", ...(skill.partialClone ? ["--filter=blob:none"] : []), skill.source, cacheDir];
+  const cloneArgs = ["clone", "--progress", ...(skill.partialClone ? ["--filter=blob:none"] : []), skill.source, cacheDir];
+  const operation = progress?.beginOperation?.({ id: `skill-git-${skill.value}`, label: `Syncing ${skill.value}`, totalUnits: 100, weight: 2 });
 
   if (exists(path.join(cacheDir, ".git"))) {
     if (!dryRun) {
-      runGit(["fetch", "--quiet", "origin", skill.revision], cacheDir);
-      runGit(["checkout", "--quiet", skill.revision], cacheDir);
-      verifyRevision(cacheDir, skill);
+      try {
+        await runGitWithProgress(["fetch", "--progress", "origin", skill.revision], {
+          cwd: cacheDir,
+          onProgress: ({ percent, detail }) => operation?.update({ completedUnits: percent, totalUnits: 100, detail })
+        });
+        await runGitWithProgress(["checkout", "--quiet", skill.revision], { cwd: cacheDir });
+        verifyRevision(cacheDir, skill);
+        operation?.complete({ detail: "completed" });
+      } catch (error) {
+        operation?.fail({ detail: "failed" });
+        throw error;
+      }
     }
     return cacheDir;
   }
@@ -220,68 +218,94 @@ async function syncSkillCache(target, skill, { dryRun = false } = {}) {
   }
 
   await ensureDir(cacheRoot);
-  if (isInteractive()) {
-    await withSpinner(`Syncing ${skill.value}`, async () => {
-      await runGitAsync(["clone", "--quiet", ...cloneArgs.slice(1)], target);
-      await runGitAsync(["checkout", "--quiet", skill.revision], cacheDir);
+  try {
+    await runGitWithProgress(cloneArgs, {
+      cwd: target,
+      onProgress: ({ percent, detail }) => operation?.update({ completedUnits: percent, totalUnits: 100, detail })
     });
-  } else {
-    console.log(`Syncing ${skill.value} from ${skill.source}`);
-    runGit(cloneArgs, target);
-    runGit(["checkout", "--quiet", skill.revision], cacheDir);
+    await runGitWithProgress(["checkout", "--quiet", skill.revision], { cwd: cacheDir });
+    verifyRevision(cacheDir, skill);
+    operation?.complete({ detail: "completed" });
+  } catch (error) {
+    operation?.fail({ detail: "failed" });
+    throw error;
   }
-  verifyRevision(cacheDir, skill);
   return cacheDir;
 }
 
-async function copySkill(skill, cacheDir, destRoot, { dryRun = false } = {}) {
+async function copySkill(skill, cacheDir, destRoot, { dryRun = false, progress = null } = {}) {
+  const resources = [];
+  let installedDirs = [];
+
   if (skill.includePaths) {
-    const dest = path.join(destRoot, skill.destName);
+    const destination = path.join(destRoot, skill.destName);
     for (const relPath of skill.includePaths) {
-      const sourcePath = path.join(cacheDir, relPath);
-      if (!dryRun && !exists(sourcePath)) throw new Error(`${skill.value} source path not found: ${relPath}`);
-      if (!dryRun) await rejectSymlinks(sourcePath);
-      await copyRecursive(sourcePath, path.join(dest, relPath), { dryRun });
+      const source = path.join(cacheDir, relPath);
+      if (!dryRun && !exists(source)) throw new Error(`${skill.value} source path not found: ${relPath}`);
+      if (!dryRun) await rejectSymlinks(source);
+      resources.push({ source, destination: path.join(destination, relPath) });
     }
-    return [skill.destName];
-  }
-
-  if (skill.sourceSubdir) {
-    const sourceDir = path.join(cacheDir, skill.sourceSubdir);
-    if (!dryRun && !exists(sourceDir)) throw new Error(`${skill.value} source dir not found: ${skill.sourceSubdir}`);
-    if (!dryRun) await rejectSymlinks(sourceDir);
-    const dest = path.join(destRoot, skill.destName);
-    await copyRecursive(sourceDir, dest, { dryRun });
-    return [skill.destName];
-  }
-
-  if (skill.sourceDir) {
+    installedDirs = [skill.destName];
+  } else if (skill.sourceSubdir) {
+    const source = path.join(cacheDir, skill.sourceSubdir);
+    if (!dryRun && !exists(source)) throw new Error(`${skill.value} source dir not found: ${skill.sourceSubdir}`);
+    if (!dryRun) await rejectSymlinks(source);
+    resources.push({ source, destination: path.join(destRoot, skill.destName) });
+    installedDirs = [skill.destName];
+  } else if (skill.sourceDir) {
     const sourceDir = path.join(cacheDir, skill.sourceDir);
     if (!dryRun && !exists(sourceDir)) throw new Error(`${skill.value} source dir not found: ${skill.sourceDir}`);
     if (dryRun) {
-      await copyRecursive(sourceDir, destRoot, { dryRun });
+      console.log(`[dry-run] copy ${sourceDir} -> ${destRoot}`);
       return [skill.sourceDir];
     }
     await rejectSymlinks(sourceDir);
-    const installedDirs = [];
     const entries = await fs.readdir(sourceDir, { withFileTypes: true });
     for (const entry of entries.filter((item) => item.isDirectory())) {
-      await copyRecursive(path.join(sourceDir, entry.name), path.join(destRoot, entry.name), { dryRun });
+      resources.push({ source: path.join(sourceDir, entry.name), destination: path.join(destRoot, entry.name) });
       installedDirs.push(entry.name);
     }
-    return installedDirs;
+  } else {
+    if (!dryRun) await rejectSymlinks(cacheDir);
+    const destination = path.join(destRoot, skill.destName);
+    if (dryRun) {
+      console.log(`[dry-run] copy ${cacheDir} -> ${destination}`);
+      console.log(`[dry-run] rm -rf ${path.join(destination, ".git")}`);
+      return [skill.destName];
+    }
+    resources.push({ source: cacheDir, destination });
+    installedDirs = [skill.destName];
   }
 
-  if (!dryRun) await rejectSymlinks(cacheDir);
-  const dest = path.join(destRoot, skill.destName);
-  if (dryRun) {
-    console.log(`[dry-run] copy ${cacheDir} -> ${dest}`);
-    console.log(`[dry-run] rm -rf ${path.join(dest, ".git")}`);
-    return [skill.destName];
+  const trees = dryRun ? [] : await Promise.all(resources.map(async (resource) => ({ ...resource, tree: await scanCopyTree(resource.source) })));
+  const totalFiles = trees.reduce((total, resource) => total + resource.tree.files, 0);
+  const totalBytes = trees.reduce((total, resource) => total + resource.tree.bytes, 0);
+  const operation = progress?.beginOperation?.({ id: `skill-copy-${skill.value}`, label: `Copying ${skill.value}`, totalUnits: totalFiles || resources.length, unitLabel: "files", weight: 2 });
+  let completedFiles = 0;
+  let completedBytes = 0;
+
+  try {
+    for (const resource of trees) {
+      await copyRecursiveWithProgress(resource.source, resource.destination, {
+        onProgress: ({ completedFiles: files, completedBytes: bytes }) => {
+          const nextFiles = completedFiles + files;
+          const nextBytes = completedBytes + bytes;
+          const detail = totalBytes > 0
+            ? `${nextFiles}/${totalFiles} files · ${nextBytes}/${totalBytes} bytes`
+            : `${nextFiles}/${totalFiles} files`;
+          operation?.update({ completedUnits: nextFiles, totalUnits: totalFiles || resources.length, detail });
+        }
+      });
+      completedFiles += resource.tree.files;
+      completedBytes += resource.tree.bytes;
+    }
+    if (!skill.sourceDir) await removePath(path.join(destRoot, skill.destName, ".git"), { dryRun });
+    operation?.complete({ detail: "completed" });
+  } catch (error) {
+    operation?.fail({ detail: "failed" });
+    throw error;
   }
-  await copyRecursive(cacheDir, dest, { dryRun });
-  await removePath(path.join(dest, ".git"), { dryRun });
-  return [skill.destName];
+  return installedDirs;
 }
 
 export async function applyOptionalSkills({
@@ -289,7 +313,8 @@ export async function applyOptionalSkills({
   skills = [],
   dryRun = false,
   reconcile = false,
-  previousOptionalSkills = null
+  previousOptionalSkills = null,
+  progress = null
 }) {
   const selected = normalizeOptionalSkills(skills);
   const invalid = invalidOptionalSkills(selected);
@@ -311,7 +336,13 @@ export async function applyOptionalSkills({
 
   const appliedSkills = [];
   if (shouldSyncLocalSkills) {
-    await backupPaths(target, [".claude/skills"], { dryRun });
+    await backupPaths(target, [".claude/skills"], {
+      dryRun,
+      progress,
+      progressId: "skills-backup",
+      progressLabel: "Backing up local skills",
+      progressWeight: 1
+    });
     const previousLocalSkills = previousSkills.filter((entry) => {
       const skill = knownSkill(entry.name);
       return skill && !skill.plugin;
@@ -323,8 +354,8 @@ export async function applyOptionalSkills({
       await ensureDir(destRoot, { dryRun });
       await ensureRepoPatternGitignore(target, { dryRun });
       for (const skill of localSkills) {
-        const cacheDir = await syncSkillCache(target, skill, { dryRun });
-        const installedDirs = await copySkill(skill, cacheDir, destRoot, { dryRun });
+        const cacheDir = await syncSkillCache(target, skill, { dryRun, progress });
+        const installedDirs = await copySkill(skill, cacheDir, destRoot, { dryRun, progress });
         appliedSkills.push({ name: skill.value, source: skill.source, revision: skill.revision, license: skill.license, installedDirs });
       }
     } else if (!dryRun) {
