@@ -298,11 +298,22 @@ export function needsLocalSettingsPrompt(values = {}) {
   return LOCAL_SETTINGS_FIELDS.some(([name, , , validate]) => validate(values[name]) !== true);
 }
 
-async function chooseLocalSettingsEnv(initialValues = {}) {
+export function localSettingsPromptOptions(initialValues = {}, environment = process.env) {
+  return Object.fromEntries(LOCAL_SETTINGS_FIELDS.map(([name, fallback, , validate]) => {
+    const initial = environment[name] || initialValues[name] || "";
+    return [name, {
+      initial: validate(initial) === true ? initial : "",
+      placeholder: fallback
+    }];
+  }));
+}
+
+async function chooseLocalSettingsEnv(initialValues = {}, promptInitialValues = initialValues) {
   printBox("Step 4/6 — Local Claude provider settings", ["These values are written to .claude/settings.local.json and gitignored."]);
   const env = { ...initialValues };
-  for (const [name, fallback, ask, validate] of LOCAL_SETTINGS_FIELDS) {
-    env[name] = await ask(name, { initial: process.env[name] || initialValues[name] || fallback, validate });
+  const promptOptions = localSettingsPromptOptions(promptInitialValues);
+  for (const [name, , ask, validate] of LOCAL_SETTINGS_FIELDS) {
+    env[name] = await ask(name, { ...promptOptions[name], validate });
   }
   return env;
 }
@@ -500,9 +511,10 @@ export async function setupProject({ sourceRoot, target, profile = "web", setupP
     "CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY"
   ].filter((name) => process.env[name]).map((name) => [name, process.env[name]]));
   const retryLocalSettingsEnv = { ...localSettingsTemplate.env, ...previousOptions?.localSettingsEnv, ...currentSettingsEnv, ...defaultOverrides };
+  const promptInitialValues = { ...previousOptions?.localSettingsEnv, ...currentSettingsEnv, ...defaultOverrides };
   const localSettingsEnv = previousOptions && !needsLocalSettingsPrompt(retryLocalSettingsEnv)
     ? retryLocalSettingsEnv
-    : await chooseLocalSettingsEnv(retryLocalSettingsEnv);
+    : await chooseLocalSettingsEnv(retryLocalSettingsEnv, promptInitialValues);
   const permissionConfig = previousOptions?.permissionConfig || await choosePermissionConfig();
   const attributionConfig = previousOptions?.attributionConfig || await chooseAttributionConfig();
 
