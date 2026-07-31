@@ -85,8 +85,8 @@ export async function applyEccRules({ target, dryRun = false, ruleMode = "auto",
   const invalidRules = ruleMode === "manual" ? invalidEccRules(rules) : [];
   if (invalidRules.length > 0) throw new Error(`Unknown ECC rule pack(s): ${invalidRules.join(", ")}`);
   const selectedRules = ruleMode === "manual" ? normalizeEccRules(rules) : selectEccRules(detection);
-  printSummary("Detected stack", [["Repo type", detection.repoType], ["Languages", list(detection.languages)], ["Frameworks", list(detection.frameworks)], ["Tools", list(detection.tools)], ["Package manager", detection.packageManager || "unknown"], ["Monorepo", detection.monorepo ? "yes" : "no"]]);
-  printSummary("Selected ECC rules", [["Rules", selectedRules.join(", ")]]);
+  printSummary("Detected stack", [["Repo type", detection.repoType], ["Languages", list(detection.languages)], ["Frameworks", list(detection.frameworks)], ["Tools", list(detection.tools)], ["Package manager", detection.packageManager || "unknown"], ["Monorepo", detection.monorepo ? "yes" : "no"]], { progress });
+  printSummary("Selected ECC rules", [["Rules", selectedRules.join(", ")]], { progress });
   const cacheRoot = path.join(target, ".repo-pattern", "cache");
   const eccCache = await ensureEccCache(target, { dryRun, progress });
   const destRoot = path.join(target, ".claude", "rules", "ecc");
@@ -111,6 +111,6 @@ export async function applyEccRules({ target, dryRun = false, ruleMode = "auto",
       console.warn(`WARN: ECC cache cleanup failed after commit: ${error.message}`);
     }
   } else console.log(`[dry-run] rm -rf ${cacheRoot}`);
-  printSummary("Applied ECC rules and agents", [["Rules", selectedRules.join(", ")], ["Agents", dryRun ? "staged preview" : `${agentResult.manifest.length} files`], ["Internal dir", ".repo-pattern/cache/ removed after commit"]]);
+  printSummary("Applied ECC rules and agents", [["Rules", selectedRules.join(", ")], ["Agents", dryRun ? "staged preview" : `${agentResult.manifest.length} files`], ["Internal dir", ".repo-pattern/cache/ removed after commit"]], { progress });
   return { detection, selectedRules, destRoot, rulesSource: ECC_REPO_URL, rulesCache: null, agentsRevision: agentResult.revision, appliedAgents: agentResult.manifest };
 }

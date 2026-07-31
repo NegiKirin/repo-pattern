@@ -42,6 +42,7 @@ export async function ensureEccCache(target, { dryRun = false, progress = null }
         });
         operation?.complete({ detail: "completed" });
       } catch {
+        progress?.flush?.();
         console.warn("WARN: ECC cache exists but git pull failed. Using existing cache.");
         operation?.complete({ detail: "using existing cache" });
       }

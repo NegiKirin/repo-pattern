@@ -4,6 +4,7 @@ import { backupPaths, ensureDir, readJson, removePath, writePrivateJson } from "
 import { gstackCheckoutPath, isValidGstackCheckout } from "./gstack.mjs";
 
 export async function cleanupProject({ sourceRoot, target, dryRun = false, preserveGstack = false, progress = null }) {
+  progress?.flush?.();
   console.log(`Cleaning target: ${target}`);
 
   const claudeDir = path.join(target, ".claude");
@@ -50,5 +51,6 @@ export async function cleanupProject({ sourceRoot, target, dryRun = false, prese
     parentLabel: ".claude"
   });
 
+  progress?.flush?.();
   console.log("Cleanup complete.");
 }

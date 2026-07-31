@@ -166,10 +166,11 @@ export async function collectMcpValues(mcpServers, { yes = false, values = {} } 
   return nextValues;
 }
 
-function warnMissingMcpValues(mcpServers, values) {
+function warnMissingMcpValues(mcpServers, values, progress = null) {
   const missing = missingRequiredInputs(findMcpInputs(mcpServers), { ...process.env, ...values });
   if (missing.length === 0) return [];
   const names = missing.map((input) => input.name);
+  progress?.flush?.();
   console.warn(style("info", `MCP values missing: ${names.join(", ")}. Export env vars or edit .mcp.json before using those servers.`));
   return names;
 }
@@ -229,11 +230,11 @@ export async function generateMcp({ sourceRoot, target, profile = "web", mcpServ
     throw error;
   }
 
-  const missingValues = warnMissingMcpValues(mcpServers, values);
+  const missingValues = warnMissingMcpValues(mcpServers, values, progress);
   printSummary("MCP generated", [
     ["Profile", profile],
     ["Enabled servers", Object.keys(mcpServers).join(", ")],
     ["Claude enabled", profileServers.join(", ")]
-  ]);
+  ], { progress });
   return { missingValues };
 }

@@ -397,7 +397,7 @@ export async function applyOptionalSkills({
     ["Plugin settings", pluginSkills.length ? ".claude/settings.local.json" : "none"],
     ["Local skill path", localSkills.length ? path.relative(target, destRoot) : "none"],
     ["Skills", selected.join(", ") || "none"]
-  ]);
+  ], { progress });
 
   return { selectedSkills: selected, appliedSkills };
 }

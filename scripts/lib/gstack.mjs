@@ -605,7 +605,7 @@ export async function setupGstack({ target, dryRun = false, planTuneHooks = fals
       return { status: dryRun ? "dry-run" : "installed", source: resolved.source, path: checkout, statePath };
     };
     const result = await install();
-    if (!dryRun) printSummary("gstack", gstackSummaryRows(target, planTuneHooks));
+    if (!dryRun) printSummary("gstack", gstackSummaryRows(target, planTuneHooks), { progress });
     return result;
   } catch (error) {
     if (transaction) {
