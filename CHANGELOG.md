@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.2.5.1] - 2026-07-31
+## [0.2.6] - 2026-07-31
 
 **Interactive provider defaults are easier to replace without accidental edits.**
 
@@ -13,6 +13,7 @@
 ### Tests
 
 - Added self-check coverage for fresh placeholders, valid rerun values, invalid persisted values, and empty-input fallback resolution.
+- Corrected the package version to npm-compatible SemVer for release publication.
 
 ## [0.2.5] - 2026-07-31
 
