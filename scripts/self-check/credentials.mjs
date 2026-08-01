@@ -108,12 +108,10 @@ try {
   assert.equal(localSettings.model, "sonnet");
   assert.equal(localSettings.workflowSizeGuideline, "small");
   assert.deepEqual({
-    CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: localSettings.env.CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION,
     CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: localSettings.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY,
     MAX_THINKING_TOKENS: localSettings.env.MAX_THINKING_TOKENS,
     CLAUDE_CODE_SUBAGENT_MODEL: localSettings.env.CLAUDE_CODE_SUBAGENT_MODEL
   }, {
-    CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: "4",
     CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: "2",
     MAX_THINKING_TOKENS: "10000",
     CLAUDE_CODE_SUBAGENT_MODEL: "haiku"
