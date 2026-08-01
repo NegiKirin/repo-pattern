@@ -15,7 +15,6 @@
   "extraKnownMarketplaces": {},
   "env": {
     "ENABLE_TOOL_SEARCH": "auto:5",
-    "CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION": "4",
     "CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY": "2",
     "MAX_THINKING_TOKENS": "10000",
     "CLAUDE_CODE_SUBAGENT_MODEL": "haiku",

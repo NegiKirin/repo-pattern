@@ -32,10 +32,8 @@ assert.deepEqual(localSettingsTemplate.enabledPlugins, {});
 assert.deepEqual(localSettingsTemplate.extraKnownMarketplaces, {});
 assert.equal(localSettingsTemplate.workflowSizeGuideline, "small");
 assert.deepEqual({
-  CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: localSettingsTemplate.env.CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION,
   CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: localSettingsTemplate.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY
 }, {
-  CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: "4",
   CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: "2"
 });
 assert.equal("workflowSizeGuideline" in localSettingsTemplate.env, false);
