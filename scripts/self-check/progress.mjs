@@ -30,9 +30,49 @@ export async function runProgressChecks() {
   const interactiveOperation = interactiveReporter.beginOperation({ id: "write", label: "Generating workspace", totalUnits: 2 });
   interactiveOperation.update({ completedUnits: 1, detail: "1/2 files" });
   interactiveOperation.complete({ detail: "completed" });
-  assert.match(interactive.join("\n"), /Generating workspace \[[█░]+\] 50% · 1\/2 files/);
+  assert.match(interactive.join(""), /Generating workspace \[[█░]+\] 0%/);
   assert.match(interactive.at(-1), /Generating workspace \[[█░]+\] 100% · completed/);
-  assert(interactive.some((line) => line.includes("\x1b[2K\r")));
+  assert(interactive.some((frame) => frame.includes("\x1b[2K\r")));
+
+  const ordered = [];
+  const orderedSetup = createSetupProgress([
+    { id: "first", label: "First operation", weight: 1 },
+    { id: "second", label: "Second operation", weight: 1 }
+  ], { interactive: true, ansi: true, write: (frame) => ordered.push(frame) });
+  const initialRows = ordered[0].split("\n").filter(Boolean).map((row) => row.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").replace(/\r/g, ""));
+  assert.deepEqual(initialRows, [
+    "First operation [░░░░░░░░░░░░░░░░░░░░] 0%",
+    "Second operation [░░░░░░░░░░░░░░░░░░░░] 0%",
+    "Setup [░░░░░░░░░░░░░░░░░░░░] 0% · preparing resources"
+  ]);
+  const second = orderedSetup.beginOperation({ id: "second", label: "Second operation", totalUnits: 1 });
+  second.complete({ detail: "completed" });
+  const first = orderedSetup.beginOperation({ id: "first", label: "First operation", totalUnits: 2 });
+  first.update({ completedUnits: 1, detail: "working" });
+  orderedSetup.flush();
+  const latestOrdered = ordered.at(-2);
+  assert(latestOrdered.indexOf("First operation") < latestOrdered.indexOf("Second operation"));
+  assert(latestOrdered.indexOf("Second operation") < latestOrdered.indexOf("Setup"));
+  assert.match(latestOrdered, /Second operation \[[█░]+\] 100% · completed/);
+  assert.match(latestOrdered, /First operation \[[█░]+\] 50% · working/);
+  assert.match(latestOrdered, /\x1b\[3A\x1b\[0G/);
+  assert.equal((latestOrdered.match(/\x1b\[2K\r/g) || []).length, 3);
+
+  const failedRows = [];
+  const failedSetup = createSetupProgress([
+    { id: "failure", label: "Failure operation", weight: 1 },
+    { id: "skipped", label: "Skipped operation", weight: 1 }
+  ], { interactive: true, ansi: true, write: (frame) => failedRows.push(frame) });
+  const failure = failedSetup.beginOperation({ id: "failure", label: "Failure operation", totalUnits: 4 });
+  failure.update({ completedUnits: 2, detail: "halfway" });
+  failure.fail();
+  failedSetup.skipOperation("skipped");
+  const failedFrame = failedRows.at(-1);
+  assert.match(failedFrame, /Failure operation \[[█░]+\] 50% · failed/);
+  assert.match(failedFrame, /Skipped operation \[[█░]+\] 100% · skipped/);
+  assert.equal((failedFrame.match(/Skipped operation/g) || []).length, 1);
+  assert.match(failedFrame, /Setup \[[█░]+\] 25% · failed/);
+
   const interleaved = [];
   const interleavedReporter = createProgressReporter({ interactive: true, ansi: true, write: (line) => interleaved.push(line) });
   const interleavedOperation = interleavedReporter.beginOperation({ id: "copy", label: "Copying files", totalUnits: 2 });
@@ -41,7 +81,19 @@ export async function runProgressChecks() {
   interleaved.push("ordinary output\n");
   interleavedOperation.complete({ detail: "completed" });
   assert.equal(interleaved[3], "ordinary output\n");
-  assert.match(interleaved[2], /\x1b\[2K\r\n$/);
+  assert.equal(interleaved[2], "\x1b[2K\r");
+  assert.match(interleaved[1], /Copying files \[[█░]+\] 50% · 1\/2 files/);
+  assert.match(interleaved.at(-1), /Copying files \[[█░]+\] 100% · completed/);
+
+  const throttled = [];
+  const throttledReporter = createProgressReporter({ interactive: true, ansi: true, write: (frame) => throttled.push(frame) });
+  const throttledOperation = throttledReporter.beginOperation({ id: "throttle", label: "Throttled operation", totalUnits: 10 });
+  for (let completedUnits = 1; completedUnits <= 9; completedUnits++) throttledOperation.update({ completedUnits });
+  assert(throttled.length < 10);
+  throttledOperation.complete({ detail: "completed" });
+  assert.match(throttled.at(-1), /Throttled operation \[[█░]+\] 100% · completed/);
+  throttledOperation.update({ completedUnits: 1, detail: "late" });
+  assert.match(throttled.at(-1), /Throttled operation \[[█░]+\] 100% · completed/);
 
   const setupLines = [];
   const setup = createSetupProgress([
@@ -57,10 +109,20 @@ export async function runProgressChecks() {
   gstack.complete({ detail: "completed" });
   assert(setupLines.some((line) => line.startsWith("Setup 25% · Generating workspace")));
   assert(setupLines.some((line) => line.startsWith("Setup 50% · Downloading gstack")));
+  setup.complete({ detail: "completed" });
   assert.equal(setupLines.at(-1), "Setup 100% · completed");
   assert.equal(setupLines.filter((line) => line === "Setup 100% · completed").length, 1);
   assert.equal(setupLines.some((line) => line.startsWith("Setup 100% · completed")), true);
   setup.complete({ detail: "completed" });
+
+  const lateFailureLines = [];
+  const lateFailure = createSetupProgress([
+    { id: "workspace", label: "Generating workspace", weight: 1 }
+  ], { interactive: false, ansi: false, write: (line) => lateFailureLines.push(line) });
+  lateFailure.beginOperation({ id: "workspace", label: "Generating workspace", totalUnits: 1 }).complete();
+  lateFailure.complete();
+  lateFailure.fail({ detail: "doctor failed" });
+  assert.equal(lateFailureLines.at(-1), "Setup 100% · doctor failed");
 
   const interactiveSetupLines = [];
   const interactiveSetup = createSetupProgress([
@@ -70,10 +132,11 @@ export async function runProgressChecks() {
   interactiveSetup.beginOperation({ id: "workspace", label: "Generating workspace", totalUnits: 1 }).complete();
   assert.match(interactiveSetupLines.at(-1), /Setup \[[█░]+\] 50% · Generating workspace\n$/);
   interactiveSetup.beginOperation({ id: "gstack", label: "Downloading gstack", totalUnits: 1 }).complete();
+  interactiveSetup.complete();
   assert.match(interactiveSetupLines.at(-1), /Setup \[[█░]+\] 100% · completed\n$/);
   setup.fail({ detail: "failed" });
   assert.equal(setupLines.filter((line) => line === "Setup 100% · completed").length, 1);
-  assert.equal(setupLines.filter((line) => line === "Setup 100% · failed").length, 0);
+  assert.equal(setupLines.filter((line) => line === "Setup 100% · failed").length, 1);
   const unstartedLines = [];
   const unstarted = createSetupProgress([
     { id: "workspace", label: "Generating workspace", weight: 1 },

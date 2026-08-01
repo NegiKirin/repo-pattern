@@ -1,4 +1,5 @@
 const MILESTONES = [0, 25, 50, 75, 100];
+const REDRAW_INTERVAL_MS = 66;
 
 function clampPercent(value) {
   return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
@@ -18,30 +19,101 @@ function detailSuffix(detail) {
   return detail ? ` · ${detail}` : "";
 }
 
-export function createProgressReporter({ interactive = false, ansi = false, write = null } = {}) {
+function createRecord({ id, label, totalUnits = 0, unitLabel = "", weight = 1, detail = "" }) {
+  return {
+    id,
+    label,
+    totalUnits: Math.max(0, Number(totalUnits) || 0),
+    unitLabel,
+    weight: Math.max(0, Number(weight) || 0),
+    completedUnits: 0,
+    percent: 0,
+    detail,
+    renderedMilestones: new Set(),
+    completed: false,
+    failed: false,
+    skipped: false,
+    started: false
+  };
+}
+
+function formatInteractiveOperation(operation) {
+  const detail = operation.skipped ? "skipped" : operation.detail;
+  return `${operation.label} [${progressBar(operation.percent)}] ${operation.percent}%${detailSuffix(detail)}`;
+}
+
+export function createProgressReporter({ interactive = false, ansi = false, write = null, plan = [], setupId = "setup" } = {}) {
   const operations = new Map();
   const output = write || ((line) => process.stdout.write(interactive && ansi ? line : `${line}\n`));
-  let activeInteractive = false;
+  let orderedIds = [];
+  let liveActive = false;
+  let liveLineCount = 0;
+  let lastRenderAt = 0;
+  let redrawTimer = null;
+  let dirty = false;
 
-  function render(operation, { terminal = false } = {}) {
-    const detail = detailSuffix(operation.detail);
-    if (interactive && ansi) {
-      const prefix = activeInteractive ? "\x1b[2K\r" : "";
-      output(`${prefix}${operation.label} [${progressBar(operation.percent)}] ${operation.percent}%${detail}${terminal ? "\n" : ""}`);
-      activeInteractive = !terminal;
-      return;
+  for (const entry of plan) {
+    if (entry.id && !operations.has(entry.id)) {
+      operations.set(entry.id, createRecord(entry));
+      orderedIds.push(entry.id);
     }
+  }
 
+  function orderedOperations() {
+    return orderedIds.map((id) => operations.get(id)).filter(Boolean);
+  }
+
+  function renderDurable(operation, terminal) {
     const milestones = terminal
       ? [operation.percent]
       : MILESTONES.filter((milestone) => milestone <= operation.percent && !operation.renderedMilestones.has(milestone));
     for (const milestone of milestones) {
       operation.renderedMilestones.add(milestone);
-      output(`${operation.label} ${milestone}%${detail}`);
+      output(`${operation.label} ${milestone}%${detailSuffix(operation.detail)}`);
     }
   }
 
+  function renderLive(force = false) {
+    if (!interactive || !ansi || (!dirty && !force)) return;
+    const rows = orderedOperations().map(formatInteractiveOperation);
+    const frame = liveActive
+      ? `\x1b[${liveLineCount}A\x1b[0G${rows.map((row) => `\x1b[2K\r${row}\n`).join("")}`
+      : `${rows.map((row) => `${row}\n`).join("")}`;
+    output(frame);
+    liveActive = true;
+    liveLineCount = rows.length;
+    lastRenderAt = Date.now();
+    dirty = false;
+  }
+
+  function scheduleRender() {
+    if (redrawTimer !== null) return;
+    const delay = Math.max(0, REDRAW_INTERVAL_MS - (Date.now() - lastRenderAt));
+    redrawTimer = setTimeout(() => {
+      redrawTimer = null;
+      renderLive();
+    }, delay);
+  }
+
+  function render(operation, { terminal = false } = {}) {
+    if (interactive && ansi) {
+      dirty = true;
+      if (terminal) {
+        if (redrawTimer !== null) clearTimeout(redrawTimer);
+        redrawTimer = null;
+        renderLive(true);
+      } else if (!liveActive || Date.now() - lastRenderAt >= REDRAW_INTERVAL_MS) {
+        renderLive(true);
+      } else {
+        scheduleRender();
+      }
+      return;
+    }
+    renderDurable(operation, terminal);
+  }
+
   function update(operation, { completedUnits = operation.completedUnits, totalUnits = operation.totalUnits, detail, terminal = false } = {}) {
+    if (operation.completed || operation.failed || operation.skipped) return operation;
     operation.totalUnits = Math.max(0, Number(totalUnits) || 0);
     operation.completedUnits = Math.max(operation.completedUnits, Math.max(0, Number(completedUnits) || 0));
     operation.percent = Math.max(operation.percent, operationPercent(operation.completedUnits, operation.totalUnits));
@@ -51,34 +123,59 @@ export function createProgressReporter({ interactive = false, ansi = false, writ
   }
 
   function flush() {
-    if (!activeInteractive) return;
-    output("\x1b[2K\r\n");
-    activeInteractive = false;
+    if (redrawTimer !== null) clearTimeout(redrawTimer);
+    redrawTimer = null;
+    if (!liveActive) return;
+    renderLive(true);
+    output("\x1b[2K\r");
+    liveActive = false;
+    liveLineCount = 0;
+    dirty = false;
+  }
+
+  function failOperation(id, detail = "failed") {
+    const operation = operations.get(id);
+    if (!operation || operation.failed) return operation;
+    operation.completed = false;
+    operation.failed = true;
+    operation.detail = detail;
+    render(operation, { terminal: true });
+    return operation;
+  }
+
+  function skipOperation(id) {
+    const operation = operations.get(id);
+    if (!operation || operation.completed || operation.failed || operation.skipped) return operation;
+    operation.skipped = true;
+    operation.percent = 100;
+    operation.detail = "skipped";
+    render(operation, { terminal: true });
+    return operation;
   }
 
   function beginOperation({ id, label, totalUnits = 0, unitLabel = "", weight = 1, detail = "" }) {
     if (!id) throw new Error("Progress operation id is required.");
-    const operation = {
-      id,
-      label,
-      totalUnits: Math.max(0, Number(totalUnits) || 0),
-      unitLabel,
-      weight: Math.max(0, Number(weight) || 0),
-      completedUnits: 0,
-      percent: 0,
-      detail,
-      renderedMilestones: new Set(),
-      completed: false,
-      failed: false
-    };
-    operations.set(id, operation);
+    let operation = operations.get(id);
+    if (!operation) {
+      operation = createRecord({ id, label, totalUnits, unitLabel, weight, detail });
+      const hasSetup = operations.has(setupId);
+      operations.set(id, operation);
+      orderedIds = [...orderedIds.filter((value) => value !== setupId), id, ...(hasSetup ? [setupId] : [])];
+    } else {
+      operation.label = label || operation.label;
+      operation.totalUnits = Math.max(0, Number(totalUnits) || 0);
+      operation.unitLabel = unitLabel;
+      operation.weight = Math.max(0, Number(weight) || 0);
+      if (detail !== undefined) operation.detail = detail;
+    }
+    operation.started = true;
     render(operation);
     return {
       get percent() { return operation.percent; },
       get state() { return { ...operation }; },
       update(values = {}) { return update(operation, values); },
       complete({ detail } = {}) {
-        if (operation.completed || operation.failed) return operation;
+        if (operation.completed || operation.failed || operation.skipped) return operation;
         operation.completedUnits = operation.totalUnits;
         operation.percent = 100;
         operation.completed = true;
@@ -87,7 +184,7 @@ export function createProgressReporter({ interactive = false, ansi = false, writ
         return operation;
       },
       fail({ detail = "failed" } = {}) {
-        if (operation.completed || operation.failed) return operation;
+        if (operation.completed || operation.failed || operation.skipped) return operation;
         operation.failed = true;
         operation.detail = detail;
         render(operation, { terminal: true });
@@ -96,17 +193,18 @@ export function createProgressReporter({ interactive = false, ansi = false, writ
     };
   }
 
-  return { beginOperation, operations, flush };
+  return { beginOperation, failOperation, skipOperation, operations, flush };
 }
 
 export function createSetupProgress(plan = [], options = {}) {
   if (!plan.length) return null;
-  const reporter = createProgressReporter(options);
+  const reporter = createProgressReporter({ ...options, plan });
   const weights = new Map(plan.map((entry) => [entry.id, Math.max(0, Number(entry.weight) || 0)]));
   const setup = reporter.beginOperation({ id: "setup", label: "Setup", totalUnits: 100, weight: 0, detail: "preparing resources" });
   const operations = new Map();
   let lastPercent = 0;
   let activeLabel = "preparing resources";
+  let setupFailed = false;
 
   function updateSetup(nextLabel = activeLabel, { terminal = false } = {}) {
     activeLabel = nextLabel;
@@ -114,14 +212,9 @@ export function createSetupProgress(plan = [], options = {}) {
     const weighted = totalWeight === 0 ? 0 : [...weights.keys()].reduce((total, id) => {
       return total + (weights.get(id) || 0) * (operations.get(id)?.percent || 0) / 100;
     }, 0) * 100 / totalWeight;
-    const complete = [...weights.keys()].every((id) => {
-      const operation = operations.get(id);
-      return operation?.skipped || operation?.state?.completed;
-    });
-    const nextPercent = complete ? 100 : Math.min(99, clampPercent(weighted));
+    const nextPercent = Math.min(99, clampPercent(weighted));
     lastPercent = Math.max(lastPercent, nextPercent);
-    if (complete) setup.complete({ detail: "completed" });
-    else setup.update({ completedUnits: lastPercent, totalUnits: 100, detail: activeLabel, terminal });
+    if (!setupFailed) setup.update({ completedUnits: lastPercent, totalUnits: 100, detail: activeLabel, terminal });
   }
 
   return {
@@ -141,23 +234,28 @@ export function createSetupProgress(plan = [], options = {}) {
         complete: wrap("complete"),
         fail: (values = {}) => {
           const result = operation.fail(values);
-          setup.fail({ detail: values.detail || "failed" });
+          if (result.failed) {
+            setupFailed = true;
+            reporter.failOperation("setup", values.detail || "failed");
+          }
           return result;
         }
       };
     },
     complete({ detail = "completed" } = {}) {
+      if (setupFailed) return;
       updateSetup(detail);
-      const operation = reporter.operations.get("setup");
-      if (!operation.completed && !operation.failed) operation.detail = detail;
+      setup.complete({ detail });
     },
     skipOperation(id) {
-      if (!weights.has(id) || operations.has(id)) return;
+      if (!weights.has(id) || operations.get(id)?.skipped || operations.get(id)?.state?.completed) return;
+      reporter.skipOperation(id);
       operations.set(id, { percent: 100, skipped: true });
       updateSetup();
     },
     fail({ detail = "failed" } = {}) {
-      setup.fail({ detail });
+      setupFailed = true;
+      reporter.failOperation("setup", detail);
     },
     operations: reporter.operations
   };
