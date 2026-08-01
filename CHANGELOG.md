@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.2.7.0] - 2026-08-01
+## [0.2.7] - 2026-08-01
 
 **Interactive setup progress now stays ordered and readable from start to finish.**
 
