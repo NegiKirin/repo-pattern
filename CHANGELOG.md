@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.2.8] - 2026-08-01
+
+**New workspaces start without an arbitrary subagent session ceiling.**
+
+Fresh `repo-pattern setup` runs no longer write a default `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION` value. Claude Code can use its own session behavior unless the user chooses an explicit limit. Existing generated settings are not migrated, and setup still preserves user-provided values.
+
+### The setup numbers that matter
+
+These figures come from `.claude.example/settings.local.example.json` and the reproducible `npm test` self-check suite.
+
+| Metric | Before | After | Δ |
+| --- | ---: | ---: | ---: |
+| Default subagent session limit | 4 | unset | removed |
+| Explicit override scenarios preserved | 3 | 3 | 0 |
+| Test line coverage | 100% | 100% | 0 |
+
+The template drops one default without removing the supported setting. Users who need a fixed cap can still configure one explicitly.
+
+### What this means for repo-pattern users
+
+New projects no longer inherit a four-subagent session ceiling from repo-pattern. Run `repo-pattern setup` normally, or set `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION` yourself when your workflow needs a specific limit.
+
+### Itemized changes
+
+### Changed
+
+- Removed the default `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION` value from new local settings templates.
+- Preserved explicit user-provided session limits during setup and retries.
+
 ## [0.2.7] - 2026-08-01
 
 **Interactive setup progress now stays ordered and readable from start to finish.**
