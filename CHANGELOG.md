@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.7.0] - 2026-08-01
+
+**Interactive setup progress now stays ordered and readable from start to finish.**
+
+### Changed
+
+- Predeclare setup operations in plan order so every progress row remains stable while work runs concurrently.
+- Keep completed, failed, and skipped operations visible in one multiline live region, with Setup as the final row.
+- Preserve durable milestone output, weighted aggregate progress, rollback behavior, and existing setup APIs.
+
+### Tests
+
+- Added regression coverage for ordered rows, terminal states, live-region redraw and flush behavior, throttling, weighted progress, and late updates.
+
 ## [0.2.6] - 2026-07-31
 
 **Interactive provider defaults are easier to replace without accidental edits.**
