@@ -166,16 +166,15 @@ export async function collectMcpValues(mcpServers, { yes = false, values = {} } 
   return nextValues;
 }
 
-function warnMissingMcpValues(mcpServers, values, progress = null) {
+function warnMissingMcpValues(mcpServers, values, { progress = null, silent = false } = {}) {
   const missing = missingRequiredInputs(findMcpInputs(mcpServers), { ...process.env, ...values });
   if (missing.length === 0) return [];
   const names = missing.map((input) => input.name);
-  progress?.flush?.();
-  console.warn(style("info", `MCP values missing: ${names.join(", ")}. Export env vars or edit .mcp.json before using those servers.`));
+  if (!silent) console.warn(style("info", `MCP values missing: ${names.join(", ")}. Export env vars or edit .mcp.json before using those servers.`));
   return names;
 }
 
-async function syncEnabledMcpServers(target, servers, { dryRun = false } = {}) {
+async function syncEnabledMcpServers(target, servers, { dryRun = false, silent = false } = {}) {
   const settingsPath = path.join(target, ".claude", "settings.json");
   const settings = await readJson(settingsPath, {
     "$schema": "https://json.schemastore.org/claude-code-settings.json",
@@ -192,29 +191,29 @@ async function syncEnabledMcpServers(target, servers, { dryRun = false } = {}) {
 
   settings.enabledMcpjsonServers = servers;
 
-  await writeJson(settingsPath, settings, { dryRun });
+  await writeJson(settingsPath, settings, { dryRun, silent });
 }
 
-export async function generateMcp({ sourceRoot, target, profile = "web", mcpServers: selectedServers = null, mcpValues = {}, yes = false, dryRun = false, progress = null }) {
+export async function generateMcp({ sourceRoot, target, profile = "web", mcpServers: selectedServers = null, mcpValues = {}, yes = false, dryRun = false, progress = null, silent = false }) {
   const operation = progress?.beginOperation?.({ id: "mcp-generation", label: "Generating MCP workspace", totalUnits: 4, unitLabel: "items", weight: 1 });
   let completed = 0;
   const advance = (detail) => operation?.update({ completedUnits: ++completed, totalUnits: 4, detail });
   const { profileServers, mcpServers } = await readMcpConfig({ sourceRoot, profile, mcpServers: selectedServers });
   if (isTracked(target, ".mcp.json")) throw new Error(".mcp.json is tracked. Untrack it before generating MCP config with local values.");
   if (isTracked(target, ".claude/settings.json")) throw new Error(".claude/settings.json is tracked. Untrack it before enabling MCP servers.");
-  const values = await collectMcpValues(mcpServers, { yes, values: mcpValues });
+  const values = await collectMcpValues(mcpServers, { yes: yes || silent, values: mcpValues });
   const resolvedMcpServers = applyMcpValues(mcpServers, values);
 
   try {
-    await ensureDir(target, { dryRun });
-    await writePrivateJson(path.join(target, ".mcp.json"), { mcpServers: resolvedMcpServers }, { dryRun, label: ".mcp.json" });
-    await appendGitignoreLine(target, ".mcp.json", { dryRun });
+    await ensureDir(target, { dryRun, silent });
+    await writePrivateJson(path.join(target, ".mcp.json"), { mcpServers: resolvedMcpServers }, { dryRun, label: ".mcp.json", silent });
+    await appendGitignoreLine(target, ".mcp.json", { dryRun, silent });
     advance("Writing .mcp.json");
 
-    await syncEnabledMcpServers(target, profileServers, { dryRun });
+    await syncEnabledMcpServers(target, profileServers, { dryRun, silent });
     advance("Enabling MCP servers");
 
-    await ensureRepoPatternGitignore(target, { dryRun });
+    await ensureRepoPatternGitignore(target, { dryRun, silent });
     advance("Writing workspace state");
     const lockPath = repoLockPath(target);
     const lock = await readRepoLock(target, {});
@@ -222,19 +221,21 @@ export async function generateMcp({ sourceRoot, target, profile = "web", mcpServ
     lock.mcp.profile = profile;
     lock.mcp.enabledServers = profileServers;
     lock.mcp.generatedAt = new Date().toISOString();
-    await writeJson(lockPath, lock, { dryRun });
+    await writeJson(lockPath, lock, { dryRun, silent });
     advance("Writing setup lock");
-    operation?.complete({ detail: "completed" });
+    operation?.complete({ detail: dryRun ? "preview" : "completed" });
   } catch (error) {
     operation?.fail({ detail: "failed" });
     throw error;
   }
 
-  const missingValues = warnMissingMcpValues(mcpServers, values, progress);
-  printSummary("MCP generated", [
-    ["Profile", profile],
-    ["Enabled servers", Object.keys(mcpServers).join(", ")],
-    ["Claude enabled", profileServers.join(", ")]
-  ], { progress });
-  return { missingValues };
+  const missingValues = warnMissingMcpValues(mcpServers, values, { progress, silent });
+  if (!silent) {
+    printSummary("MCP generated", [
+      ["Profile", profile],
+      ["Enabled servers", Object.keys(mcpServers).join(", ")],
+      ["Claude enabled", profileServers.join(", ")]
+    ], { progress });
+  }
+  return { missingValues, ...(missingValues.length > 0 ? { warnings: [`MCP values pending: ${missingValues.join(", ")}`] } : {}) };
 }

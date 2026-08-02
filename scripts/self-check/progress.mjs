@@ -17,6 +17,19 @@ export async function runProgressChecks() {
   ]);
   assert.equal(operation.percent, 100);
 
+  const completeAfterUpdate = [];
+  const completeAfterUpdateReporter = createProgressReporter({ interactive: false, ansi: false, write: (line) => completeAfterUpdate.push(line) });
+  const completeAfterUpdateOperation = completeAfterUpdateReporter.beginOperation({ id: "copy", label: "Copying files", totalUnits: 1 });
+  completeAfterUpdateOperation.update({ completedUnits: 1, detail: "1/1 files" });
+  completeAfterUpdateOperation.complete({ detail: "completed" });
+  assert.deepEqual(completeAfterUpdate, [
+    "Copying files 0%",
+    "Copying files 25% · 1/1 files",
+    "Copying files 50% · 1/1 files",
+    "Copying files 75% · 1/1 files",
+    "Copying files 100% · completed"
+  ]);
+
   const failed = [];
   const failureReporter = createProgressReporter({ interactive: false, ansi: false, write: (line) => failed.push(line) });
   const failedOperation = failureReporter.beginOperation({ id: "copy", label: "Copying skill", totalUnits: 4 });
@@ -57,6 +70,10 @@ export async function runProgressChecks() {
   assert.match(latestOrdered, /First operation \[[█░]+\] 50% · working/);
   assert.match(latestOrdered, /\x1b\[3A\x1b\[0G/);
   assert.equal((latestOrdered.match(/\x1b\[2K\r/g) || []).length, 3);
+  const framesBeforeCleanFlush = ordered.length;
+  orderedSetup.flush();
+  assert.equal(ordered.length, framesBeforeCleanFlush);
+  assert.equal(ordered.at(-1), "\x1b[3A\x1b[0G\x1b[2K\r\n\x1b[2K\r\n\x1b[2K\r");
 
   const failedRows = [];
   const failedSetup = createSetupProgress([
@@ -81,9 +98,19 @@ export async function runProgressChecks() {
   interleaved.push("ordinary output\n");
   interleavedOperation.complete({ detail: "completed" });
   assert.equal(interleaved[3], "ordinary output\n");
-  assert.equal(interleaved[2], "\x1b[2K\r");
+  assert.equal(interleaved[2], "\x1b[1A\x1b[0G\x1b[2K\r");
   assert.match(interleaved[1], /Copying files \[[█░]+\] 50% · 1\/2 files/);
   assert.match(interleaved.at(-1), /Copying files \[[█░]+\] 100% · completed/);
+
+  const stdinOnlyTty = [];
+  const stdinOnlyReporter = createProgressReporter({ interactive: false, ansi: true, write: (line) => stdinOnlyTty.push(line) });
+  stdinOnlyReporter.beginOperation({ id: "stdin-only", label: "Redirected output", totalUnits: 1 }).complete();
+  assert.equal(stdinOnlyTty.some((frame) => frame.includes("\x1b[")), false);
+
+  const stdoutOnlyTty = [];
+  const stdoutOnlyReporter = createProgressReporter({ interactive: true, ansi: false, write: (line) => stdoutOnlyTty.push(line) });
+  stdoutOnlyReporter.beginOperation({ id: "stdout-only", label: "Redirected input", totalUnits: 1 }).complete();
+  assert.equal(stdoutOnlyTty.some((frame) => frame.includes("\x1b[")), false);
 
   const throttled = [];
   const throttledReporter = createProgressReporter({ interactive: true, ansi: true, write: (frame) => throttled.push(frame) });

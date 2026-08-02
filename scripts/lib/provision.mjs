@@ -130,13 +130,14 @@ export function applyPermissionSettings(settings, permissionConfig = { bypass: "
   return { ...settings, permissions };
 }
 
-async function writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun }) {
+async function writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun, silent = false }) {
   const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.example.json"), {});
   const settings = applyPermissionSettings(applyAttributionSetting(template, attributionConfig), permissionConfig);
   await writePrivateJson(path.join(target, ".claude", "settings.json"), settings, {
     dryRun,
     label: ".claude/settings.json",
-    parentLabel: ".claude"
+    parentLabel: ".claude",
+    silent
   });
 }
 
@@ -210,11 +211,15 @@ async function rejectClaudeSymlink(target, { dryRun = false } = {}) {
 async function snapshotProvisionState(target, { dryRun = false } = {}) {
   if (dryRun) return null;
   const files = [
+    path.join(target, "CLAUDE.md"),
+    path.join(target, ".gitignore"),
     path.join(target, ".mcp.json"),
+    path.join(target, ".claude", "CLAUDE.md"),
+    path.join(target, ".claude", "settings.json"),
+    path.join(target, ".claude", "settings.local.json"),
     repoConfigPath(target),
     repoLockPath(target),
-    path.join(target, ".repo-pattern", ".gitignore"),
-    path.join(target, ".claude", "CLAUDE.md")
+    path.join(target, ".repo-pattern", ".gitignore")
   ];
   const snapshots = await Promise.all(files.map(async (file) => {
     try {
@@ -227,7 +232,9 @@ async function snapshotProvisionState(target, { dryRun = false } = {}) {
   const snapshotRoot = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-provision-transaction-"));
   const directories = [
     { path: path.join(target, ".claude", "agents"), snapshot: path.join(snapshotRoot, "agents") },
-    { path: path.join(target, ".claude", "rules", "ecc"), snapshot: path.join(snapshotRoot, "ecc-rules") }
+    { path: path.join(target, ".claude", "rules", "ecc"), snapshot: path.join(snapshotRoot, "ecc-rules") },
+    { path: path.join(target, ".claude", "skills"), snapshot: path.join(snapshotRoot, "skills") },
+    { path: path.join(target, ".repo-pattern", "cache"), snapshot: path.join(snapshotRoot, "cache") }
   ].map((entry) => ({ ...entry, exists: exists(entry.path) }));
   for (const directory of directories) {
     if (directory.exists) await fs.cp(directory.path, directory.snapshot, { recursive: true, force: true });
@@ -253,7 +260,7 @@ async function removeProvisionSnapshot(snapshot) {
   if (snapshot) await fs.rm(snapshot.snapshotRoot, { recursive: true, force: true });
 }
 
-async function writeLocalSettings({ sourceRoot, target, localSettingsEnv = {}, setupPipeline, optionalSkills, dryRun }) {
+async function writeLocalSettings({ sourceRoot, target, localSettingsEnv = {}, setupPipeline, optionalSkills, dryRun, silent = false }) {
   if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local provider settings.");
   const claudeDir = path.join(target, ".claude");
   await rejectClaudeSymlink(target, { dryRun });
@@ -265,19 +272,20 @@ async function writeLocalSettings({ sourceRoot, target, localSettingsEnv = {}, s
     env: { ...(template.env || {}), ...(current.env || {}) }
   }, localSettingsEnv), { setupPipeline, optionalSkills }), {
     dryRun,
-    label: ".claude/settings.local.json"
+    label: ".claude/settings.local.json",
+    silent
   });
-  await appendGitignoreLine(target, ".claude/", { dryRun });
+  await appendGitignoreLine(target, ".claude/", { dryRun, silent });
 }
 
-export async function provisionProject({ sourceRoot, target, profile = "web", setupPipeline = "ecc", planTuneHooks = false, mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, attributionConfig = { mode: "off" }, permissionConfig = { bypass: "deny" }, ruleMode = "auto", rules = null, applyRules = null, optionalSkills = [] }) {
+export async function provisionProject({ sourceRoot, target, profile = "web", setupPipeline = "ecc", planTuneHooks = false, mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, attributionConfig = { mode: "off" }, permissionConfig = { bypass: "deny" }, ruleMode = "auto", rules = null, applyRules = null, optionalSkills = [], interactiveSetup = false, onBeforeSuccessSummary = null }) {
   if (!SETUP_PIPELINES.includes(setupPipeline)) throw new Error(`Unknown setup pipeline: ${setupPipeline}. Available: ${SETUP_PIPELINES.join(", ")}`);
   const shouldApplyRules = applyRules ?? usesEcc(setupPipeline);
   if (planTuneHooks && !usesGstack(setupPipeline)) throw new Error("--with-plan-tune-hooks requires --setup-pipeline gstack or both.");
-  printSummary("Provisioning target", [["Target", target]]);
+  if (!interactiveSetup) printSummary("Provisioning target", [["Target", target]]);
   await rejectClaudeSymlink(target, { dryRun });
   const audit = await auditProject(target);
-  printAudit(audit);
+  if (!interactiveSetup) printAudit(audit);
 
   if (audit.state === "LEGACY_VENDOR" && !migrate) {
     throw new Error("Target has legacy/local Claude runtime surfaces. Re-run setup with --migrate, not --force.");
@@ -288,7 +296,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
   const localOptionalSkills = optionalSkills
     .map((value) => OPTIONAL_SKILLS.find((skill) => skill.value === value))
     .filter((skill) => skill && !skill.plugin);
-  const progressPlan = dryRun ? [] : [
+  const progressPlan = [
     { id: "backup", label: "Backing up workspace", weight: 1 },
     { id: "workspace", label: "Generating workspace", weight: 2 },
     { id: "mcp-generation", label: "Generating MCP workspace", weight: 1 },
@@ -309,88 +317,140 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
     ] : [])
   ];
   const progress = createSetupProgress(progressPlan, {
-    interactive: Boolean(process.stdout.isTTY),
-    ansi: Boolean(process.stdout.isTTY && !process.env.NO_COLOR && process.env.TERM !== "dumb")
+    interactive: Boolean(interactiveSetup && process.stdin.isTTY && process.stdout.isTTY),
+    ansi: Boolean(interactiveSetup && process.stdin.isTTY && process.stdout.isTTY && !process.env.NO_COLOR && process.env.TERM !== "dumb")
   });
   const provisionSnapshot = await snapshotProvisionState(target, { dryRun });
+  let backupRoot = null;
   const lockPath = repoLockPath(target);
   let eccStatus = null;
   let gstackStatus = null;
   let mcpResult = null;
+  let eccWarnings = [];
+  let setupWarnings = [];
   try {
     const previousRepoConfig = await readRepoConfig(target, {});
 
     if (audit.state === "LEGACY_VENDOR") {
-      await cleanupProject({
+      backupRoot = await cleanupProject({
         sourceRoot,
         target,
         dryRun,
         preserveGstack: usesGstack(setupPipeline),
-        progress
+        progress,
+        silent: interactiveSetup
       });
+
     } else {
-      await backupPaths(target, ["CLAUDE.md", ".claude/CLAUDE.md", ".claude/settings.json", ".claude/rules", ".claude/agents", ".claude/skills", ".claude/commands", ".claude/hooks", ".claude/scripts", ".repo-pattern/.repo-pattern.json", ".repo-pattern/.repo-pattern.lock.json"], { dryRun, progress });
+      backupRoot = await backupPaths(target, ["CLAUDE.md", ".claude/CLAUDE.md", ".claude/settings.json", ".claude/rules", ".claude/agents", ".claude/skills", ".claude/commands", ".claude/hooks", ".claude/scripts", ".repo-pattern/.repo-pattern.json", ".repo-pattern/.repo-pattern.lock.json"], { dryRun, progress, silent: interactiveSetup });
     }
 
     const workspace = progress?.beginOperation?.({ id: "workspace", label: "Generating workspace", totalUnits: 5, unitLabel: "items", weight: 2 });
     let workspaceCompleted = 0;
     const advanceWorkspace = (detail) => workspace?.update({ completedUnits: ++workspaceCompleted, totalUnits: 5, detail });
-    await ensureDir(path.join(target, ".claude"), { dryRun });
+    await ensureDir(path.join(target, ".claude"), { dryRun, silent: interactiveSetup });
 
     // Target CLAUDE.md is created empty when missing so project-specific instructions can be added later. Existing target CLAUDE.md is preserved.
-    await writeIfMissing(path.join(target, "CLAUDE.md"), TARGET_CLAUDE_MD, { dryRun });
-    for (const line of BASIC_GITIGNORE_LINES) await appendGitignoreLine(target, line, { dryRun });
+    await writeIfMissing(path.join(target, "CLAUDE.md"), TARGET_CLAUDE_MD, { dryRun, silent: interactiveSetup });
+    for (const line of BASIC_GITIGNORE_LINES) await appendGitignoreLine(target, line, { dryRun, silent: interactiveSetup });
     advanceWorkspace("Writing project instructions");
 
     await copyRecursive(
       path.join(sourceRoot, ".claude.example", "CLAUDE.md"),
       path.join(target, ".claude", "CLAUDE.md"),
-      { dryRun }
+      { dryRun, silent: interactiveSetup }
     );
     advanceWorkspace("Copying workspace template");
 
-    await writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun });
+    await writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun, silent: interactiveSetup });
     advanceWorkspace("Writing Claude settings");
-    await appendGitignoreLine(target, ".claude/", { dryRun });
-    await writeLocalSettings({ sourceRoot, target, localSettingsEnv, setupPipeline, optionalSkills, dryRun });
+    await appendGitignoreLine(target, ".claude/", { dryRun, silent: interactiveSetup });
+    await writeLocalSettings({ sourceRoot, target, localSettingsEnv, setupPipeline, optionalSkills, dryRun, silent: interactiveSetup });
     advanceWorkspace("Writing local settings");
-    await ensureRepoPatternGitignore(target, { dryRun });
+    await ensureRepoPatternGitignore(target, { dryRun, silent: interactiveSetup });
     advanceWorkspace("Writing workspace state");
-    mcpResult = await generateMcp({ sourceRoot, target, profile, mcpServers, mcpValues, dryRun, progress });
-    workspace?.complete({ detail: "completed" });
-    eccStatus = usesEcc(setupPipeline) ? await setupEcc({ sourceRoot, target, dryRun, configurePlugin: false }) : null;
+    mcpResult = await generateMcp({ sourceRoot, target, profile, mcpServers, mcpValues, dryRun, progress, silent: interactiveSetup });
+    if (mcpResult.warnings) setupWarnings.push(...mcpResult.warnings);
+    workspace?.complete({ detail: dryRun ? "preview" : "completed" });
+    eccStatus = usesEcc(setupPipeline) ? await setupEcc({ sourceRoot, target, dryRun, configurePlugin: false, silent: interactiveSetup }) : null;
     await writePrivateJson(repoConfigPath(target), await repoPatternConfig(sourceRoot, profile, setupPipeline), {
       dryRun,
       label: ".repo-pattern/.repo-pattern.json",
-      parentLabel: ".repo-pattern"
+      parentLabel: ".repo-pattern",
+      silent: interactiveSetup
     });
-    if (shouldApplyRules) await applyEccRules({ target, dryRun, ruleMode, rules, progress });
-    else await clearEccRules({ target, dryRun });
+    const eccRulesResult = shouldApplyRules
+      ? await applyEccRules({ target, dryRun, ruleMode, rules, progress, silent: interactiveSetup })
+      : await clearEccRules({ target, dryRun, silent: interactiveSetup });
+    if (eccRulesResult?.warnings) eccWarnings = eccRulesResult.warnings;
     await applyOptionalSkills({
       target,
       skills: optionalSkills,
       dryRun,
       reconcile: true,
       previousOptionalSkills: previousRepoConfig.optionalSkills,
-      progress
+      progress,
+      silent: interactiveSetup
     });
   } catch (error) {
     progress?.fail({ detail: "failed" });
+    progress?.flush?.();
+    let rollbackResult = "Rollback: completed.";
     try {
       await restoreProvisionState(provisionSnapshot);
     } catch (rollbackError) {
-      console.warn(`WARN: Provision rollback failed: ${rollbackError.message}`);
+      rollbackResult = `Rollback: failed — ${rollbackError.message}`;
+      if (!interactiveSetup) console.warn(`WARN: Provision rollback failed: ${rollbackError.message}`);
+    }
+    if (interactiveSetup) {
+      throw new Error([
+        error.message,
+        rollbackResult,
+        ...(backupRoot ? [`Backup: ${backupRoot}`] : []),
+        `Recovery: rerun repo-pattern setup --target ${shellQuote(target)} --setup-pipeline ${setupPipeline}`
+      ].join("\n"));
     }
     throw error;
   } finally {
     try {
       await removeProvisionSnapshot(provisionSnapshot);
     } catch (cleanupError) {
-      console.warn(`WARN: Provision rollback snapshot cleanup failed: ${cleanupError.message}`);
+      if (!interactiveSetup) console.warn(`WARN: Provision rollback snapshot cleanup failed: ${cleanupError.message}`);
+      else setupWarnings.push(`Provision rollback snapshot cleanup failed: ${cleanupError.message}`);
     }
   }
 
-  if (usesGstack(setupPipeline)) gstackStatus = await setupGstack({ target, dryRun, planTuneHooks, progress });
+  if (usesGstack(setupPipeline)) gstackStatus = await setupGstack({ target, dryRun, planTuneHooks, progress, silent: interactiveSetup });
+  const gstackFailed = gstackStatus?.status === "failed";
+  if (gstackFailed) {
+    progress?.fail({ detail: "gstack setup failed" });
+    progress?.flush?.();
+    const gstackError = `gstack setup failed: ${gstackStatus.error}`;
+    const recovery = `Recovery: install Bun v1.0+ or fix gstack, then rerun repo-pattern setup --target ${shellQuote(target)} --setup-pipeline ${setupPipeline} --yes`;
+    const currentLock = await readPrivateJson(lockPath, {}, {
+      label: ".repo-pattern/.repo-pattern.lock.json",
+      parentLabel: ".repo-pattern"
+    });
+    await writePrivateJson(lockPath, lockConfig(target, profile, setupPipeline, currentLock, { ecc: eccStatus, gstack: gstackStatus }, planTuneHooks), {
+      dryRun,
+      label: ".repo-pattern/.repo-pattern.lock.json",
+      parentLabel: ".repo-pattern",
+      silent: interactiveSetup
+    });
+    if (interactiveSetup) {
+      const rollback = gstackStatus.rollbackErrors?.length
+        ? `Rollback: failed — ${gstackStatus.rollbackErrors.join("; ")}`
+        : "Rollback: completed.";
+      throw new Error([
+        gstackError,
+        rollback,
+        ...(backupRoot ? [`Backup: ${backupRoot}`] : []),
+        recovery
+      ].join("\n"));
+    }
+    throw new Error([gstackError, recovery].join("\n"));
+  }
+
   const currentLock = await readPrivateJson(lockPath, {}, {
     label: ".repo-pattern/.repo-pattern.lock.json",
     parentLabel: ".repo-pattern"
@@ -398,51 +458,62 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
   await writePrivateJson(lockPath, lockConfig(target, profile, setupPipeline, currentLock, { ecc: eccStatus, gstack: gstackStatus }, planTuneHooks), {
     dryRun,
     label: ".repo-pattern/.repo-pattern.lock.json",
-    parentLabel: ".repo-pattern"
+    parentLabel: ".repo-pattern",
+    silent: interactiveSetup
   });
-  await ensureRepoPatternGitignore(target, { dryRun });
+  await ensureRepoPatternGitignore(target, { dryRun, silent: interactiveSetup });
 
   if (dryRun) {
-    progress?.flush?.();
-    console.log("[dry-run] doctor skipped because no files were written.");
-  } else if (gstackStatus?.status === "failed") {
-    progress?.flush?.();
-    console.log("gstack doctor skipped because gstack bootstrap failed.");
-    progress?.fail({ detail: "gstack setup failed" });
+    progress?.complete({ detail: "preview" });
   } else {
-    await doctorProject(target, { updateLock: true, dryRun });
+    await doctorProject(target, { updateLock: true, dryRun, silent: interactiveSetup });
     progress?.complete({ detail: "completed" });
   }
 
+  const warnings = [
+    ...(eccStatus === "manual-plugin-install-required" ? ["ECC plugin pending: run /plugin install ecc@ecc in Claude Code"] : []),
+    ...eccWarnings,
+    ...setupWarnings
+  ];
   const pending = [
     ...(eccStatus === "manual-plugin-install-required" ? ["ECC plugin"] : []),
     ...(mcpResult.missingValues.length > 0 ? ["MCP values"] : [])
   ];
-  const gstackFailed = gstackStatus?.status === "failed";
-  const pendingText = gstackFailed
-    ? "gstack setup failed"
-    : pending.length
-      ? `${pending.join(", ")} pending`
-      : style("success", "ready");
   const next = dryRun
     ? "review output, then rerun without --dry-run"
-    : gstackFailed
-      ? `install Bun v1.0+ or fix gstack, then rerun repo-pattern setup --target ${shellQuote(target)} --setup-pipeline ${setupPipeline} --yes`
-      : pending.length
-        ? `resolve ${pending.join(" and ")}, then run claude`
-        : `cd ${shellQuote(target)} && claude`;
-  printSummary("Setup complete", [
-    ["Status", dryRun ? `preview only; ${pendingText}` : pendingText],
+    : warnings.length
+      ? "resolve warnings, then run claude"
+      : `cd ${shellQuote(target)} && claude`;
+  const compactSummary = [
+    ["Status", dryRun ? "preview only" : style("success", "ready")],
+    ["Target", target],
+    ...(warnings.length > 0 ? [["Warnings", warnings.join("; ")]] : []),
+    ["Next", next]
+  ];
+  const detailedSummary = [
+    ["Status", dryRun ? `preview only; ${pending.length ? `${pending.join(", ")} pending` : style("success", "ready")}` : pending.length ? `${pending.join(", ")} pending` : style("success", "ready")],
     ["Target", target],
     ["Setup pipeline", setupPipeline],
     ["Pipeline scope", setupPipelineScope(setupPipeline)],
-    ...(usesGstack(setupPipeline) ? [
-      ["gstack", gstackFailed ? `FAILED — ${gstackStatus.error}` : "installed at .claude/skills/gstack"],
-      ["Plan-tune hooks", !gstackFailed && planTuneHooks ? "installed in .claude/settings.json" : "not installed"]
-    ] : []),
+    ...(usesGstack(setupPipeline) ? [["gstack", "installed at .claude/skills/gstack"], ["Plan-tune hooks", planTuneHooks ? "installed in .claude/settings.json" : "not installed"]] : []),
     ["Profile", profile],
     [dryRun ? "Would write" : "Written", `CLAUDE.md (if missing), .claude/, .mcp.json, .repo-pattern/.repo-pattern.json, .repo-pattern/.repo-pattern.lock.json${optionalSkills.length ? ", optional skill/plugin config" : ""}`],
-    ["Doctor", dryRun ? "skipped (dry-run)" : gstackFailed ? "skipped because gstack failed" : style("success", "passed")],
+    ["Doctor", dryRun ? "skipped (dry-run)" : style("success", "passed")],
     ["Next", next]
-  ], { progress });
+  ];
+  try {
+    await onBeforeSuccessSummary?.();
+  } catch (error) {
+    progress?.fail({ detail: "failed" });
+    progress?.flush?.();
+    if (interactiveSetup) {
+      throw new Error([
+        error.message,
+        "Rollback: not required; setup content was completed.",
+        `Recovery: rerun repo-pattern setup --target ${shellQuote(target)} --setup-pipeline ${setupPipeline}`
+      ].join("\n"));
+    }
+    throw error;
+  }
+  printSummary("Setup complete", interactiveSetup ? compactSummary : detailedSummary, { progress });
 }

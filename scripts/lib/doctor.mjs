@@ -40,7 +40,7 @@ async function assertNoDoctorLockSymlink(target) {
   }
 }
 
-export async function doctorProject(target, { updateLock = false, dryRun = false } = {}) {
+export async function doctorProject(target, { updateLock = false, dryRun = false, silent = false } = {}) {
   await assertNoDoctorLockSymlink(target);
   const audit = await auditProject(target);
   const checks = [];
@@ -167,7 +167,7 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
     });
   }
 
-  renderDoctor(target, checks, infoRows);
+  if (!silent) renderDoctor(target, checks, infoRows);
 
   const failures = checks.filter((row) => !row.ok);
   if (failures.length > 0) {

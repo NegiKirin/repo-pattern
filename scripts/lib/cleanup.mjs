@@ -3,9 +3,11 @@ import path from "node:path";
 import { backupPaths, ensureDir, readJson, removePath, writePrivateJson } from "./fs-utils.mjs";
 import { gstackCheckoutPath, isValidGstackCheckout } from "./gstack.mjs";
 
-export async function cleanupProject({ sourceRoot, target, dryRun = false, preserveGstack = false, progress = null }) {
-  progress?.flush?.();
-  console.log(`Cleaning target: ${target}`);
+export async function cleanupProject({ sourceRoot, target, dryRun = false, preserveGstack = false, progress = null, silent = false }) {
+  if (!silent) {
+    progress?.flush?.();
+    console.log(`Cleaning target: ${target}`);
+  }
 
   const claudeDir = path.join(target, ".claude");
   if (!dryRun) {
@@ -30,7 +32,7 @@ export async function cleanupProject({ sourceRoot, target, dryRun = false, prese
     ".claude/settings.json",
     ...(preserveLocalGstack ? [] : [".claude/skills"])
   ];
-  await backupPaths(target, backupList, { dryRun, progress });
+  const backupRoot = await backupPaths(target, backupList, { dryRun, progress, silent });
 
   const removeList = [
     ".claude/commands",
@@ -41,16 +43,20 @@ export async function cleanupProject({ sourceRoot, target, dryRun = false, prese
   ];
 
   for (const rel of removeList) {
-    await removePath(path.join(target, rel), { dryRun });
+    await removePath(path.join(target, rel), { dryRun, silent });
   }
   const settings = await readJson(path.join(sourceRoot, ".claude.example", "settings.example.json"), {});
-  await ensureDir(path.join(target, ".claude"), { dryRun });
+  await ensureDir(path.join(target, ".claude"), { dryRun, silent });
   await writePrivateJson(path.join(target, ".claude", "settings.json"), settings, {
     dryRun,
     label: ".claude/settings.json",
-    parentLabel: ".claude"
+    parentLabel: ".claude",
+    silent
   });
 
-  progress?.flush?.();
-  console.log("Cleanup complete.");
+  if (!silent) {
+    progress?.flush?.();
+    console.log("Cleanup complete.");
+  }
+  return backupRoot;
 }

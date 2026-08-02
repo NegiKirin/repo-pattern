@@ -66,7 +66,7 @@ export function createProgressReporter({ interactive = false, ansi = false, writ
   function renderDurable(operation, terminal) {
     const milestones = terminal
       ? [operation.percent]
-      : MILESTONES.filter((milestone) => milestone <= operation.percent && !operation.renderedMilestones.has(milestone));
+      : MILESTONES.filter((milestone) => milestone < 100 && milestone <= operation.percent && !operation.renderedMilestones.has(milestone));
     for (const milestone of milestones) {
       operation.renderedMilestones.add(milestone);
       output(`${operation.label} ${milestone}%${detailSuffix(operation.detail)}`);
@@ -76,11 +76,13 @@ export function createProgressReporter({ interactive = false, ansi = false, writ
   function renderLive(force = false) {
     if (!interactive || !ansi || (!dirty && !force)) return;
     const rows = orderedOperations().map(formatInteractiveOperation);
+    const previousRows = liveLineCount;
+    const rowCount = Math.max(previousRows, rows.length);
     const frame = liveActive
-      ? `\x1b[${liveLineCount}A\x1b[0G${rows.map((row) => `\x1b[2K\r${row}\n`).join("")}`
+      ? `\x1b[${previousRows}A\x1b[0G${Array.from({ length: rowCount }, (_, index) => `\x1b[2K\r${rows[index] || ""}\n`).join("")}`
       : `${rows.map((row) => `${row}\n`).join("")}`;
     output(frame);
-    liveActive = true;
+    liveActive = rows.length > 0;
     liveLineCount = rows.length;
     lastRenderAt = Date.now();
     dirty = false;
@@ -126,8 +128,9 @@ export function createProgressReporter({ interactive = false, ansi = false, writ
     if (redrawTimer !== null) clearTimeout(redrawTimer);
     redrawTimer = null;
     if (!liveActive) return;
-    renderLive(true);
-    output("\x1b[2K\r");
+    renderLive();
+    const frame = `\x1b[${liveLineCount}A\x1b[0G${Array.from({ length: liveLineCount }, () => "\x1b[2K\r\n").join("")}`.slice(0, -1);
+    output(frame);
     liveActive = false;
     liveLineCount = 0;
     dirty = false;

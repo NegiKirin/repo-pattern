@@ -45,13 +45,13 @@ export async function readRepoLock(target, fallback = null) {
   return await readJson(repoLockPath(target), null) ?? await readJson(legacyRepoLockPath(target), fallback);
 }
 
-export async function ensureRepoPatternGitignore(target, { dryRun = false } = {}) {
-  await writeIfMissing(path.join(target, ".repo-pattern", ".gitignore"), "*\n", { dryRun });
+export async function ensureRepoPatternGitignore(target, { dryRun = false, silent = false } = {}) {
+  await writeIfMissing(path.join(target, ".repo-pattern", ".gitignore"), "*\n", { dryRun, silent });
 }
 
-export async function ensureDir(dir, { dryRun = false } = {}) {
+export async function ensureDir(dir, { dryRun = false, silent = false } = {}) {
   if (dryRun) {
-    console.log(`[dry-run] mkdir -p ${dir}`);
+    if (!silent) console.log(`[dry-run] mkdir -p ${dir}`);
     return;
   }
   await fs.mkdir(dir, { recursive: true });
@@ -88,18 +88,18 @@ export async function readPrivateJson(file, fallback = null, { label = path.base
   }
 }
 
-export async function writeJson(file, data, { dryRun = false } = {}) {
+export async function writeJson(file, data, { dryRun = false, silent = false } = {}) {
   if (dryRun) {
-    console.log(`[dry-run] write JSON ${file}`);
+    if (!silent) console.log(`[dry-run] write JSON ${file}`);
     return;
   }
-  await ensureDir(path.dirname(file));
+  await ensureDir(path.dirname(file), { silent });
   await fs.writeFile(file, `${JSON.stringify(data, null, 2)}\n`, "utf8");
 }
 
-export async function writePrivateJson(file, data, { dryRun = false, label = path.basename(file), parentLabel = null } = {}) {
+export async function writePrivateJson(file, data, { dryRun = false, label = path.basename(file), parentLabel = null, silent = false } = {}) {
   if (dryRun) {
-    console.log(`[dry-run] write JSON ${file}`);
+    if (!silent) console.log(`[dry-run] write JSON ${file}`);
     return;
   }
   const parent = path.dirname(file);
@@ -134,13 +134,13 @@ export async function writePrivateJson(file, data, { dryRun = false, label = pat
   }
 }
 
-export async function copyRecursive(src, dest, { dryRun = false } = {}) {
+export async function copyRecursive(src, dest, { dryRun = false, silent = false } = {}) {
   if (!exists(src)) return;
   if (dryRun) {
-    console.log(`[dry-run] copy ${src} -> ${dest}`);
+    if (!silent) console.log(`[dry-run] copy ${src} -> ${dest}`);
     return;
   }
-  await ensureDir(path.dirname(dest));
+  await ensureDir(path.dirname(dest), { silent });
   await fs.cp(src, dest, { recursive: true, force: true });
 }
 
@@ -166,10 +166,42 @@ export async function scanCopyTree(source) {
   return { entries, files, bytes };
 }
 
-export async function copyRecursiveWithProgress(source, destination, { dryRun = false, onProgress = null } = {}) {
+async function assertCopyDestinationIsNotSymlink(target) {
+  try {
+    if ((await fs.lstat(target)).isSymbolicLink()) {
+      throw new Error(`copy destination must not be a symlink: ${target}`);
+    }
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+}
+
+async function copyFileWithoutFollowingDestination(source, destination, mode) {
+  let handle;
+  try {
+    handle = await fs.open(
+      destination,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+      mode
+    );
+  } catch (error) {
+    if (error.code === "ELOOP") {
+      throw new Error(`copy destination must not be a symlink: ${destination}`);
+    }
+    throw error;
+  }
+  try {
+    await handle.writeFile(fsSync.createReadStream(source));
+    await handle.chmod(mode);
+  } finally {
+    await handle.close();
+  }
+}
+
+export async function copyRecursiveWithProgress(source, destination, { dryRun = false, onProgress = null, silent = false } = {}) {
   if (!exists(source)) return { files: 0, bytes: 0 };
   if (dryRun) {
-    console.log(`[dry-run] copy ${source} -> ${destination}`);
+    if (!silent) console.log(`[dry-run] copy ${source} -> ${destination}`);
     return { files: 0, bytes: 0 };
   }
   const tree = await scanCopyTree(source);
@@ -179,14 +211,14 @@ export async function copyRecursiveWithProgress(source, destination, { dryRun = 
   for (const entry of tree.entries) {
     const relative = path.relative(source, entry.path);
     const target = relative ? path.join(destination, relative) : destination;
+    await assertCopyDestinationIsNotSymlink(target);
     if (entry.stat.isDirectory()) {
       await ensureDir(target);
       continue;
     }
     await ensureDir(path.dirname(target));
     if (entry.stat.isFile()) {
-      await fs.copyFile(entry.path, target);
-      await fs.chmod(target, entry.stat.mode);
+      await copyFileWithoutFollowingDestination(entry.path, target, entry.stat.mode);
       copiedFiles++;
       copiedBytes += entry.stat.size;
       onProgress?.({ completedFiles: copiedFiles, totalFiles: tree.files, completedBytes: copiedBytes, totalBytes: tree.bytes });
@@ -197,22 +229,22 @@ export async function copyRecursiveWithProgress(source, destination, { dryRun = 
   return { files: tree.files, bytes: tree.bytes };
 }
 
-export async function removePath(p, { dryRun = false } = {}) {
+export async function removePath(p, { dryRun = false, silent = false } = {}) {
   if (!exists(p)) return;
   if (dryRun) {
-    console.log(`[dry-run] rm -rf ${p}`);
+    if (!silent) console.log(`[dry-run] rm -rf ${p}`);
     return;
   }
   await fs.rm(p, { recursive: true, force: true });
 }
 
-export async function writeIfMissing(file, content, { dryRun = false } = {}) {
+export async function writeIfMissing(file, content, { dryRun = false, silent = false } = {}) {
   if (exists(file)) return false;
   if (dryRun) {
-    console.log(`[dry-run] write if missing ${file}`);
+    if (!silent) console.log(`[dry-run] write if missing ${file}`);
     return true;
   }
-  await ensureDir(path.dirname(file));
+  await ensureDir(path.dirname(file), { silent });
   await fs.writeFile(file, content, "utf8");
   return true;
 }
@@ -226,7 +258,7 @@ export async function replaceFile(file, content, { dryRun = false } = {}) {
   await fs.writeFile(file, content, "utf8");
 }
 
-export async function appendGitignoreLine(target, line, { dryRun = false } = {}) {
+export async function appendGitignoreLine(target, line, { dryRun = false, silent = false } = {}) {
   const file = path.join(target, ".gitignore");
   let content = "";
   try {
@@ -237,7 +269,7 @@ export async function appendGitignoreLine(target, line, { dryRun = false } = {})
   if (content.split(/\r?\n/).includes(line)) return;
   const next = `${content}${content && !content.endsWith("\n") ? "\n" : ""}${line}\n`;
   if (dryRun) {
-    console.log(`[dry-run] append ${line} to ${file}`);
+    if (!silent) console.log(`[dry-run] append ${line} to ${file}`);
     return;
   }
   await fs.writeFile(file, next, "utf8");
@@ -252,12 +284,16 @@ export async function backupPaths(targetRoot, relativePaths, {
   progress = null,
   progressId = "backup",
   progressLabel = "Backing up workspace",
-  progressWeight = 1
+  progressWeight = 1,
+  silent = false
 } = {}) {
   const backupRoot = path.join(targetRoot, ".repo-pattern", "backups", timestamp());
   const sources = relativePaths.map((rel) => ({ rel, src: path.join(targetRoot, rel) })).filter(({ src }) => exists(src));
   if (sources.length === 0) {
-    progress?.skipOperation?.(progressId);
+    if (dryRun) {
+      const operation = progress?.beginOperation?.({ id: progressId, label: progressLabel, totalUnits: 1, unitLabel: "items", weight: progressWeight });
+      operation?.complete({ detail: "preview" });
+    } else progress?.skipOperation?.(progressId);
     return null;
   }
 
@@ -279,12 +315,13 @@ export async function backupPaths(targetRoot, relativePaths, {
     for (const { rel, src } of sources) {
       const dest = path.join(backupRoot, rel);
       if (dryRun) {
-        console.log(`[dry-run] backup ${src} -> ${dest}`);
+        if (!silent) console.log(`[dry-run] backup ${src} -> ${dest}`);
         copied++;
         continue;
       }
       const tree = trees.find((entry) => entry.src === src).tree;
       await copyRecursiveWithProgress(src, dest, {
+        silent,
         onProgress: ({ completedFiles: files, completedBytes: bytes }) => {
           const nextFiles = completedFiles + files;
           const nextBytes = completedBytes + bytes;
@@ -298,13 +335,15 @@ export async function backupPaths(targetRoot, relativePaths, {
       completedBytes += tree.bytes;
       copied++;
     }
-    operation?.complete({ detail: "completed" });
+    operation?.complete({ detail: dryRun ? "preview" : "completed" });
   } catch (error) {
     operation?.fail({ detail: "failed" });
     throw error;
   }
 
-  progress?.flush?.();
-  console.log(`Backup created: ${backupRoot}`);
-  return backupRoot;
+  if (!silent && !dryRun) {
+    progress?.flush?.();
+    console.log(`Backup created: ${backupRoot}`);
+  }
+  return dryRun ? null : backupRoot;
 }
