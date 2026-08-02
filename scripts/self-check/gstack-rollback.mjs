@@ -172,4 +172,26 @@ export async function runGstackRollbackChecks() {
   } finally {
     await fs.rm(rollbackTarget, { recursive: true, force: true });
   }
+
+  const rollbackFailureTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-rollback-failure-"));
+  try {
+    const checkout = gstackCheckoutPath(rollbackFailureTarget);
+    await fs.mkdir(checkout, { recursive: true });
+    await fs.writeFile(path.join(checkout, "setup"), "#!/bin/sh\n", { mode: 0o755 });
+    spawnSync("git", ["init"], { cwd: checkout, stdio: "ignore" });
+    const result = await setupGstack({
+      target: rollbackFailureTarget,
+      resolveCheckout: async () => ({
+        checkout,
+        source: "fixture",
+        async commit() {},
+        async rollback() { throw new Error("injected checkout rollback failure"); }
+      }),
+      silent: true
+    });
+    assert.equal(result.status, "failed");
+    assert.deepEqual(result.rollbackErrors, ["gstack checkout rollback failed: injected checkout rollback failure"]);
+  } finally {
+    await fs.rm(rollbackFailureTarget, { recursive: true, force: true });
+  }
 }

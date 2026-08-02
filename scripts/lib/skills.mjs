@@ -155,16 +155,17 @@ export function applyPluginSkillSettings(settings = {}, skills = []) {
   return next;
 }
 
-async function writePluginSkillSettings({ target, skills, dryRun }) {
+async function writePluginSkillSettings({ target, skills, dryRun, silent = false }) {
   if (skills.length === 0) return;
   if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local plugin settings.");
   const file = path.join(target, ".claude", "settings.local.json");
   await writePrivateJson(file, (settings) => applyPluginSkillSettings(settings, skills), {
     dryRun,
     label: ".claude/settings.local.json",
-    parentLabel: ".claude"
+    parentLabel: ".claude",
+    silent
   });
-  await appendGitignoreLine(target, ".claude/", { dryRun });
+  await appendGitignoreLine(target, ".claude/", { dryRun, silent });
 }
 
 function gitOutput(args, cwd) {
@@ -187,7 +188,7 @@ async function rejectSymlinks(root) {
   }
 }
 
-async function syncSkillCache(target, skill, { dryRun = false, progress = null } = {}) {
+async function syncSkillCache(target, skill, { dryRun = false, progress = null, silent = false } = {}) {
   const cacheRoot = path.join(target, ".repo-pattern", "cache", "skills");
   const cacheDir = path.join(cacheRoot, skill.value);
   const cloneArgs = ["clone", "--progress", ...(skill.partialClone ? ["--filter=blob:none"] : []), skill.source, cacheDir];
@@ -207,13 +208,16 @@ async function syncSkillCache(target, skill, { dryRun = false, progress = null }
         operation?.fail({ detail: "failed" });
         throw error;
       }
-    }
+    } else operation?.complete({ detail: "preview" });
     return cacheDir;
   }
 
   if (dryRun) {
-    console.log(`[dry-run] git ${cloneArgs.join(" ")}`);
-    console.log(`[dry-run] git -C ${cacheDir} checkout ${skill.revision}`);
+    if (!silent) {
+      console.log(`[dry-run] git ${cloneArgs.join(" ")}`);
+      console.log(`[dry-run] git -C ${cacheDir} checkout ${skill.revision}`);
+    }
+    operation?.complete({ detail: "preview" });
     return cacheDir;
   }
 
@@ -233,9 +237,12 @@ async function syncSkillCache(target, skill, { dryRun = false, progress = null }
   return cacheDir;
 }
 
-async function copySkill(skill, cacheDir, destRoot, { dryRun = false, progress = null } = {}) {
+async function copySkill(skill, cacheDir, destRoot, { dryRun = false, progress = null, silent = false } = {}) {
   const resources = [];
   let installedDirs = [];
+  let operation = dryRun
+    ? progress?.beginOperation?.({ id: `skill-copy-${skill.value}`, label: `Copying ${skill.value}`, totalUnits: 1, unitLabel: "items", weight: 2 })
+    : null;
 
   if (skill.includePaths) {
     const destination = path.join(destRoot, skill.destName);
@@ -256,7 +263,8 @@ async function copySkill(skill, cacheDir, destRoot, { dryRun = false, progress =
     const sourceDir = path.join(cacheDir, skill.sourceDir);
     if (!dryRun && !exists(sourceDir)) throw new Error(`${skill.value} source dir not found: ${skill.sourceDir}`);
     if (dryRun) {
-      console.log(`[dry-run] copy ${sourceDir} -> ${destRoot}`);
+      if (!silent) console.log(`[dry-run] copy ${sourceDir} -> ${destRoot}`);
+      operation?.complete({ detail: "preview" });
       return [skill.sourceDir];
     }
     await rejectSymlinks(sourceDir);
@@ -269,8 +277,11 @@ async function copySkill(skill, cacheDir, destRoot, { dryRun = false, progress =
     if (!dryRun) await rejectSymlinks(cacheDir);
     const destination = path.join(destRoot, skill.destName);
     if (dryRun) {
-      console.log(`[dry-run] copy ${cacheDir} -> ${destination}`);
-      console.log(`[dry-run] rm -rf ${path.join(destination, ".git")}`);
+      if (!silent) {
+        console.log(`[dry-run] copy ${cacheDir} -> ${destination}`);
+        console.log(`[dry-run] rm -rf ${path.join(destination, ".git")}`);
+      }
+      operation?.complete({ detail: "preview" });
       return [skill.destName];
     }
     resources.push({ source: cacheDir, destination });
@@ -280,13 +291,14 @@ async function copySkill(skill, cacheDir, destRoot, { dryRun = false, progress =
   const trees = dryRun ? [] : await Promise.all(resources.map(async (resource) => ({ ...resource, tree: await scanCopyTree(resource.source) })));
   const totalFiles = trees.reduce((total, resource) => total + resource.tree.files, 0);
   const totalBytes = trees.reduce((total, resource) => total + resource.tree.bytes, 0);
-  const operation = progress?.beginOperation?.({ id: `skill-copy-${skill.value}`, label: `Copying ${skill.value}`, totalUnits: totalFiles || resources.length, unitLabel: "files", weight: 2 });
+  operation = progress?.beginOperation?.({ id: `skill-copy-${skill.value}`, label: `Copying ${skill.value}`, totalUnits: totalFiles || resources.length, unitLabel: "files", weight: 2 });
   let completedFiles = 0;
   let completedBytes = 0;
 
   try {
     for (const resource of trees) {
       await copyRecursiveWithProgress(resource.source, resource.destination, {
+        silent,
         onProgress: ({ completedFiles: files, completedBytes: bytes }) => {
           const nextFiles = completedFiles + files;
           const nextBytes = completedBytes + bytes;
@@ -299,8 +311,8 @@ async function copySkill(skill, cacheDir, destRoot, { dryRun = false, progress =
       completedFiles += resource.tree.files;
       completedBytes += resource.tree.bytes;
     }
-    if (!skill.sourceDir) await removePath(path.join(destRoot, skill.destName, ".git"), { dryRun });
-    operation?.complete({ detail: "completed" });
+    if (!skill.sourceDir) await removePath(path.join(destRoot, skill.destName, ".git"), { dryRun, silent });
+    operation?.complete({ detail: dryRun ? "preview" : "completed" });
   } catch (error) {
     operation?.fail({ detail: "failed" });
     throw error;
@@ -314,7 +326,8 @@ export async function applyOptionalSkills({
   dryRun = false,
   reconcile = false,
   previousOptionalSkills = null,
-  progress = null
+  progress = null,
+  silent = false
 }) {
   const selected = normalizeOptionalSkills(skills);
   const invalid = invalidOptionalSkills(selected);
@@ -332,7 +345,7 @@ export async function applyOptionalSkills({
   const localSkills = desired.filter((skill) => !skill.plugin);
   const shouldSyncLocalSkills = reconcile || chosen.some((skill) => !skill.plugin);
   const destRoot = path.join(target, ".claude", "skills");
-  if (!reconcile) await writePluginSkillSettings({ target, skills: pluginSkills, dryRun });
+  if (!reconcile) await writePluginSkillSettings({ target, skills: pluginSkills, dryRun, silent });
 
   const appliedSkills = [];
   if (shouldSyncLocalSkills) {
@@ -341,21 +354,22 @@ export async function applyOptionalSkills({
       progress,
       progressId: "skills-backup",
       progressLabel: "Backing up local skills",
-      progressWeight: 1
+      progressWeight: 1,
+      silent
     });
     const previousLocalSkills = previousSkills.filter((entry) => {
       const skill = knownSkill(entry.name);
       return skill && !skill.plugin;
     });
     for (const skill of previousLocalSkills) {
-      for (const dir of skill.installedDirs || []) await removePath(path.join(destRoot, dir), { dryRun });
+      for (const dir of skill.installedDirs || []) await removePath(path.join(destRoot, dir), { dryRun, silent });
     }
     if (localSkills.length > 0) {
-      await ensureDir(destRoot, { dryRun });
-      await ensureRepoPatternGitignore(target, { dryRun });
+      await ensureDir(destRoot, { dryRun, silent });
+      await ensureRepoPatternGitignore(target, { dryRun, silent });
       for (const skill of localSkills) {
-        const cacheDir = await syncSkillCache(target, skill, { dryRun, progress });
-        const installedDirs = await copySkill(skill, cacheDir, destRoot, { dryRun, progress });
+        const cacheDir = await syncSkillCache(target, skill, { dryRun, progress, silent });
+        const installedDirs = await copySkill(skill, cacheDir, destRoot, { dryRun, progress, silent });
         appliedSkills.push({ name: skill.value, source: skill.source, revision: skill.revision, license: skill.license, installedDirs });
       }
     } else if (!dryRun) {
@@ -367,10 +381,12 @@ export async function applyOptionalSkills({
     }
     const repoPatternDir = path.join(target, ".repo-pattern");
     if (dryRun) {
-      console.log(`[dry-run] rm -rf ${path.join(repoPatternDir, "cache")}`);
-      console.log(`[dry-run] rmdir ${repoPatternDir} if empty`);
+      if (!silent) {
+        console.log(`[dry-run] rm -rf ${path.join(repoPatternDir, "cache")}`);
+        console.log(`[dry-run] rmdir ${repoPatternDir} if empty`);
+      }
     } else {
-      await removePath(path.join(repoPatternDir, "cache"));
+      await removePath(path.join(repoPatternDir, "cache"), { silent });
       try {
         await fs.rmdir(repoPatternDir);
       } catch (error) {
@@ -385,19 +401,21 @@ export async function applyOptionalSkills({
 
   repoConfig.runtime = { ...(repoConfig.runtime || {}), localSkills: localSkills.length > 0 };
   repoConfig.optionalSkills = appliedSkills.map(({ name, source, revision, license, installedDirs, plugin }) => ({ name, source, revision, license, installedDirs, ...(plugin ? { plugin } : {}) }));
-  await writeJson(repoConfigPath(target), repoConfig, { dryRun });
+  await writeJson(repoConfigPath(target), repoConfig, { dryRun, silent });
 
-  await ensureRepoPatternGitignore(target, { dryRun });
+  await ensureRepoPatternGitignore(target, { dryRun, silent });
   const lockPath = repoLockPath(target);
   const lock = await readRepoLock(target, {});
   lock.optionalSkills = { appliedSkills, appliedAt: new Date().toISOString() };
-  await writeJson(lockPath, lock, { dryRun });
+  await writeJson(lockPath, lock, { dryRun, silent });
 
-  printSummary("Applied optional skills", [
-    ["Plugin settings", pluginSkills.length ? ".claude/settings.local.json" : "none"],
-    ["Local skill path", localSkills.length ? path.relative(target, destRoot) : "none"],
-    ["Skills", selected.join(", ") || "none"]
-  ], { progress });
+  if (!silent) {
+    printSummary("Applied optional skills", [
+      ["Plugin settings", pluginSkills.length ? ".claude/settings.local.json" : "none"],
+      ["Local skill path", localSkills.length ? path.relative(target, destRoot) : "none"],
+      ["Skills", selected.join(", ") || "none"]
+    ], { progress });
+  }
 
   return { selectedSkills: selected, appliedSkills };
 }

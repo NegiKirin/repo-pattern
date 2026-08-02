@@ -55,10 +55,10 @@ export function isValidEccAgentProvenance(ecc) {
   return validAgentProvenance(ecc, ECC_REPO_URL);
 }
 
-export async function clearEccRules({ target, dryRun = false }) {
+export async function clearEccRules({ target, dryRun = false, silent = false }) {
   const destRoot = path.join(target, ".claude", "rules", "ecc");
-  await backupPaths(target, [".claude/rules/ecc"], { dryRun });
-  await removePath(destRoot, { dryRun });
+  await backupPaths(target, [".claude/rules/ecc"], { dryRun, silent });
+  await removePath(destRoot, { dryRun, silent });
   if (!dryRun) {
     try {
       await fs.rmdir(path.join(target, ".claude", "rules"));
@@ -70,32 +70,36 @@ export async function clearEccRules({ target, dryRun = false }) {
   if (repoConfig.ecc) {
     const { rulesSync, rulesProfile, rulesScope, copyRuntimeSurfaces, ...ecc } = repoConfig.ecc;
     repoConfig.ecc = ecc;
-    await writeJson(repoConfigPath(target), repoConfig, { dryRun });
+    await writeJson(repoConfigPath(target), repoConfig, { dryRun, silent });
   }
   const lock = await readRepoLock(target, {});
   if (lock.ecc) {
     const { rulesSyncedBy, rulesProfile, rulesScope, recommendedRules, appliedRules, detectedStack, rulesSource, rulesCache, rulesAppliedAt, ...ecc } = clearAgentMetadata(lock.ecc);
     lock.ecc = { ...ecc, rulesSyncedBy: null, rulesScope: "project", recommendedRules: [], appliedRules: [] };
-    await writeJson(repoLockPath(target), lock, { dryRun });
+    await writeJson(repoLockPath(target), lock, { dryRun, silent });
   }
 }
 
-export async function applyEccRules({ target, dryRun = false, ruleMode = "auto", rules = null, operations = {}, progress = null }) {
+export async function applyEccRules({ target, dryRun = false, ruleMode = "auto", rules = null, operations = {}, progress = null, silent = false }) {
   const detection = await detectProject(target);
   const invalidRules = ruleMode === "manual" ? invalidEccRules(rules) : [];
   if (invalidRules.length > 0) throw new Error(`Unknown ECC rule pack(s): ${invalidRules.join(", ")}`);
   const selectedRules = ruleMode === "manual" ? normalizeEccRules(rules) : selectEccRules(detection);
-  printSummary("Detected stack", [["Repo type", detection.repoType], ["Languages", list(detection.languages)], ["Frameworks", list(detection.frameworks)], ["Tools", list(detection.tools)], ["Package manager", detection.packageManager || "unknown"], ["Monorepo", detection.monorepo ? "yes" : "no"]], { progress });
-  printSummary("Selected ECC rules", [["Rules", selectedRules.join(", ")]], { progress });
+  if (!silent) {
+    printSummary("Detected stack", [["Repo type", detection.repoType], ["Languages", list(detection.languages)], ["Frameworks", list(detection.frameworks)], ["Tools", list(detection.tools)], ["Package manager", detection.packageManager || "unknown"], ["Monorepo", detection.monorepo ? "yes" : "no"]], { progress });
+    printSummary("Selected ECC rules", [["Rules", selectedRules.join(", ")]], { progress });
+  }
   const cacheRoot = path.join(target, ".repo-pattern", "cache");
-  const eccCache = await ensureEccCache(target, { dryRun, progress });
+  const eccCacheResult = await ensureEccCache(target, { dryRun, progress, silent });
+  const eccCache = typeof eccCacheResult === "string" ? eccCacheResult : eccCacheResult.cache;
+  const cacheWarning = typeof eccCacheResult === "string" ? null : eccCacheResult.warning;
   const destRoot = path.join(target, ".claude", "rules", "ecc");
   const claudeMdPath = path.join(target, ".claude", "CLAUDE.md");
   const claudeMd = exists(claudeMdPath) ? await fs.readFile(claudeMdPath, "utf8") : "";
   const nextClaudeMd = selectedRules.includes("python") && !claudeMd.includes("<!-- USE UV:Start -->")
     ? `${claudeMd}${claudeMd ? (claudeMd.endsWith("\n") ? "\n" : "\n\n") : ""}${USE_UV_RULES}\n`
     : claudeMd;
-  if (dryRun && nextClaudeMd !== claudeMd) console.log(`[dry-run] append uv rules to ${claudeMdPath}`);
+  if (dryRun && nextClaudeMd !== claudeMd && !silent) console.log(`[dry-run] append uv rules to ${claudeMdPath}`);
   const repoConfig = await readRepoConfig(target, {});
   const nextRepoConfig = { ...repoConfig, ecc: { ...(repoConfig.ecc || {}), rulesSync: "repo-pattern-auto-cache", rulesProfile: ruleMode, rulesScope: "project", copyRuntimeSurfaces: false } };
   const lock = await readRepoLock(target, {});
@@ -103,14 +107,16 @@ export async function applyEccRules({ target, dryRun = false, ruleMode = "auto",
     ...lock,
     ecc: { ...(lock.ecc || {}), rulesSyncedBy: "repo-pattern-auto-cache", rulesProfile: ruleMode, rulesScope: "project", recommendedRules: selectedRules, appliedRules: selectedRules, detectedStack: detection, rulesSource: ECC_REPO_URL, rulesCache: null, rulesAppliedAt: new Date().toISOString() }
   };
-  const agentResult = await syncEccRulesAndAgents({ target, eccCache, selectedRules, repoConfig: nextRepoConfig, lock: nextLock, claudeMd, nextClaudeMd, dryRun, operations, progress });
+  const agentResult = await syncEccRulesAndAgents({ target, eccCache, selectedRules, repoConfig: nextRepoConfig, lock: nextLock, claudeMd, nextClaudeMd, dryRun, operations, progress, silent });
   if (!dryRun) {
     try {
-      await removePath(cacheRoot);
+      await removePath(cacheRoot, { silent });
     } catch (error) {
-      console.warn(`WARN: ECC cache cleanup failed after commit: ${error.message}`);
+      if (!silent) console.warn(`WARN: ECC cache cleanup failed after commit: ${error.message}`);
     }
-  } else console.log(`[dry-run] rm -rf ${cacheRoot}`);
-  printSummary("Applied ECC rules and agents", [["Rules", selectedRules.join(", ")], ["Agents", dryRun ? "staged preview" : `${agentResult.manifest.length} files`], ["Internal dir", ".repo-pattern/cache/ removed after commit"]], { progress });
-  return { detection, selectedRules, destRoot, rulesSource: ECC_REPO_URL, rulesCache: null, agentsRevision: agentResult.revision, appliedAgents: agentResult.manifest };
+  } else if (!silent) console.log(`[dry-run] rm -rf ${cacheRoot}`);
+  if (!silent) {
+    printSummary("Applied ECC rules and agents", [["Rules", selectedRules.join(", ")], ["Agents", dryRun ? "staged preview" : `${agentResult.manifest.length} files`], ["Internal dir", ".repo-pattern/cache/ removed after commit"]], { progress });
+  }
+  return { detection, selectedRules, destRoot, rulesSource: ECC_REPO_URL, rulesCache: null, agentsRevision: agentResult.revision, appliedAgents: agentResult.manifest, ...(cacheWarning ? { warnings: [cacheWarning] } : {}) };
 }

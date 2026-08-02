@@ -41,6 +41,17 @@ try {
   assert.deepEqual(events.at(-1), { completedFiles: 2, totalFiles: 2, completedBytes: 3, totalBytes: 3 });
   assert.equal((await fs.stat(path.join(destination, "one.txt"))).mode & 0o777, 0o640);
 
+  const outside = path.join(copyProgressRoot, "outside.txt");
+  const symlinkDestination = path.join(copyProgressRoot, "symlink-destination");
+  await fs.mkdir(symlinkDestination);
+  await fs.writeFile(outside, "unchanged");
+  await fs.symlink(outside, path.join(symlinkDestination, "one.txt"));
+  await assert.rejects(
+    () => copyRecursiveWithProgress(source, symlinkDestination),
+    /copy destination must not be a symlink/
+  );
+  assert.equal(await fs.readFile(outside, "utf8"), "unchanged");
+
   const backupEvents = [];
   const progress = { beginOperation(spec) {
     backupEvents.push({ type: "begin", ...spec });

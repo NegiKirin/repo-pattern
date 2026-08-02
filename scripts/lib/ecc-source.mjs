@@ -29,12 +29,15 @@ export function formatEccCloneError(error) {
   return `Could not sync ECC rules from ${ECC_REPO_URL}. GitHub HTTPS access on github.com:443 may be blocked by your proxy, firewall, or VPN. Check with: git ls-remote ${ECC_REPO_URL}\nOriginal error: ${detail}`;
 }
 
-export async function ensureEccCache(target, { dryRun = false, progress = null } = {}) {
+export async function ensureEccCache(target, { dryRun = false, progress = null, silent = false } = {}) {
   const cacheRoot = path.join(target, ".repo-pattern", "cache");
   const eccCache = path.join(cacheRoot, "ECC");
   if (exists(path.join(eccCache, "rules")) || exists(path.join(eccCache, "agents"))) {
-    if (!dryRun && exists(path.join(eccCache, ".git")) && hasGitUpstream(eccCache)) {
-      const operation = progress?.beginOperation?.({ id: "ecc-cache", label: "Updating ECC rules", totalUnits: 100, weight: 2 });
+    if (dryRun) {
+      const operation = progress?.beginOperation?.({ id: "ecc-cache", label: "Syncing ECC cache", totalUnits: 1, weight: 2 });
+      operation?.complete({ detail: "preview" });
+    } else if (exists(path.join(eccCache, ".git")) && hasGitUpstream(eccCache)) {
+      const operation = progress?.beginOperation?.({ id: "ecc-cache", label: "Syncing ECC cache", totalUnits: 100, weight: 2 });
       try {
         await runGitWithProgress(["pull", "--progress", "--ff-only"], {
           cwd: eccCache,
@@ -42,18 +45,20 @@ export async function ensureEccCache(target, { dryRun = false, progress = null }
         });
         operation?.complete({ detail: "completed" });
       } catch {
-        progress?.flush?.();
-        console.warn("WARN: ECC cache exists but git pull failed. Using existing cache.");
+        if (!silent) console.warn("WARN: ECC cache exists but git pull failed. Using existing cache.");
         operation?.complete({ detail: "using existing cache" });
+        return { cache: eccCache, warning: "ECC cache update failed; using existing cache." };
       }
     } else progress?.skipOperation?.("ecc-cache");
     return eccCache;
   }
   if (dryRun) {
-    console.log(`[dry-run] git clone --depth 1 ${ECC_REPO_URL} ${eccCache}`);
+    const operation = progress?.beginOperation?.({ id: "ecc-cache", label: "Syncing ECC cache", totalUnits: 1, weight: 3 });
+    if (!silent) console.log(`[dry-run] git clone --depth 1 ${ECC_REPO_URL} ${eccCache}`);
+    operation?.complete({ detail: "preview" });
     return eccCache;
   }
-  await ensureDir(cacheRoot);
+  await ensureDir(cacheRoot, { silent });
   const operation = progress?.beginOperation?.({ id: "ecc-cache", label: "Syncing ECC rules and agents", totalUnits: 100, weight: 3 });
   try {
     await runGitWithProgress(["clone", "--progress", "--depth", "1", ECC_REPO_URL, eccCache], {

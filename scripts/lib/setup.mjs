@@ -84,12 +84,12 @@ function setupOptionsFromLock(lock) {
   };
 }
 
-async function writeSetupStatus(target, setup, { dryRun = false } = {}) {
+async function writeSetupStatus(target, setup, { dryRun = false, silent = false } = {}) {
   const file = setupLockPath(target);
-  await ensureRepoPatternGitignore(target, { dryRun });
+  await ensureRepoPatternGitignore(target, { dryRun, silent });
   const lock = await readJson(file, {});
   lock.setup = { ...(lock.setup || {}), ...setup };
-  await writeJson(file, lock, { dryRun });
+  await writeJson(file, lock, { dryRun, silent });
 }
 
 async function currentLocalSettingsEnv(target) {
@@ -523,7 +523,7 @@ export async function setupProject({ sourceRoot, target, profile = "web", setupP
   }
 
   const retryOptions = setupRetryOptions({ action, setupPipeline: selectedSetupPipeline, planTuneHooks: selectedPlanTuneHooks, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, attributionConfig, permissionConfig, dryRun });
-  await writeSetupStatus(target, { status: "running", startedAt: new Date().toISOString(), failedStep: null, error: null, options: retryOptions }, { dryRun });
+  await writeSetupStatus(target, { status: "running", startedAt: new Date().toISOString(), failedStep: null, error: null, options: retryOptions }, { dryRun, silent: true });
   try {
     await provisionProject({
       sourceRoot,
@@ -542,11 +542,12 @@ export async function setupProject({ sourceRoot, target, profile = "web", setupP
       optionalSkills: selectedOptionalSkills,
       localSettingsEnv,
       attributionConfig,
-      permissionConfig
+      permissionConfig,
+      interactiveSetup: true,
+      onBeforeSuccessSummary: () => writeSetupStatus(target, { status: "succeeded", succeededAt: new Date().toISOString(), failedStep: null, error: null, options: retryOptions }, { dryRun, silent: true })
     });
-    await writeSetupStatus(target, { status: "succeeded", succeededAt: new Date().toISOString(), failedStep: null, error: null, options: retryOptions }, { dryRun });
   } catch (error) {
-    await writeSetupStatus(target, { status: "failed", failedAt: new Date().toISOString(), failedStep: "provision", error: error.message, options: retryOptions }, { dryRun });
+    await writeSetupStatus(target, { status: "failed", failedAt: new Date().toISOString(), failedStep: "provision", error: error.message, options: retryOptions }, { dryRun, silent: true });
     throw error;
   }
 }

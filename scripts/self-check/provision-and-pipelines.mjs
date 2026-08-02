@@ -10,6 +10,7 @@ import { GSTACK_REVIEW_SIDECARS, removeEccPluginSettings, setupGstack } from "..
 import { provisionProject, updateClaudePermissions } from "../lib/provision.mjs";
 import { setupProject } from "../lib/setup.mjs";
 import { writeEccGitFixture } from "./fixtures.mjs";
+import { runInteractiveProvisionChecks } from "./interactive-provision.mjs";
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.dirname(path.dirname(cliDir));
@@ -33,6 +34,10 @@ try {
   await fs.writeFile(path.join(provisionRollbackTarget, ".claude", "rules", "ecc", "old", "rule.md"), "old rule", "utf8");
   await fs.mkdir(path.join(provisionRollbackTarget, ".claude", "agents"), { recursive: true });
   await fs.writeFile(path.join(provisionRollbackTarget, ".claude", "agents", "old-agent.md"), "old", "utf8");
+  await fs.mkdir(path.join(provisionRollbackTarget, ".claude", "skills", "document-specialist-skill"), { recursive: true });
+  await fs.writeFile(path.join(provisionRollbackTarget, ".claude", "skills", "document-specialist-skill", "SKILL.md"), "old skill", "utf8");
+  await fs.mkdir(path.join(provisionRollbackTarget, ".repo-pattern", "cache", "skills", "document-specialist"), { recursive: true });
+  await fs.writeFile(path.join(provisionRollbackTarget, ".repo-pattern", "cache", "skills", "document-specialist", "cached.txt"), "old cache", "utf8");
   await fs.mkdir(path.join(provisionRollbackTarget, ".repo-pattern"), { recursive: true });
   const provisionConfig = "{\"workflow\":\"none\"}\n";
   const provisionLock = "{\"ecc\":{\"rulesSyncedBy\":\"repo-pattern-auto-cache\",\"agentsSyncedBy\":\"repo-pattern-auto-cache\"}}\n";
@@ -59,6 +64,8 @@ try {
   );
   assert.equal(await fs.readFile(path.join(provisionRollbackTarget, ".claude", "rules", "ecc", "old", "rule.md"), "utf8"), "old rule");
   assert.equal(await fs.readFile(path.join(provisionRollbackTarget, ".claude", "agents", "old-agent.md"), "utf8"), "old");
+  assert.equal(await fs.readFile(path.join(provisionRollbackTarget, ".claude", "skills", "document-specialist-skill", "SKILL.md"), "utf8"), "old skill");
+  assert.equal(await fs.readFile(path.join(provisionRollbackTarget, ".repo-pattern", "cache", "skills", "document-specialist", "cached.txt"), "utf8"), "old cache");
   assert.equal(await fs.readFile(path.join(provisionRollbackTarget, ".repo-pattern", ".repo-pattern.json"), "utf8"), provisionConfig);
   assert.equal(await fs.readFile(path.join(provisionRollbackTarget, ".repo-pattern", ".repo-pattern.lock.json"), "utf8"), provisionLock);
   assert.equal(await fs.readFile(path.join(provisionRollbackTarget, ".repo-pattern", ".gitignore"), "utf8"), provisionGitignore);
@@ -69,6 +76,44 @@ try {
   await fs.rm(provisionRollbackTarget, { recursive: true, force: true });
 }
 
+
+const optionalSkillRollbackTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-optional-skill-rollback-"));
+console.log = () => {};
+try {
+  const skillRoot = path.join(optionalSkillRollbackTarget, ".claude", "skills", "document-specialist-skill");
+  const cacheRoot = path.join(optionalSkillRollbackTarget, ".repo-pattern", "cache", "skills", "document-specialist");
+  await fs.mkdir(skillRoot, { recursive: true });
+  await fs.writeFile(path.join(skillRoot, "SKILL.md"), "existing optional skill", "utf8");
+  await fs.mkdir(cacheRoot, { recursive: true });
+  spawnSync("git", ["init"], { cwd: cacheRoot, stdio: "ignore" });
+  await fs.mkdir(path.join(optionalSkillRollbackTarget, ".repo-pattern"), { recursive: true });
+  await fs.writeFile(path.join(optionalSkillRollbackTarget, ".repo-pattern", ".repo-pattern.json"), JSON.stringify({
+    workflow: "none",
+    optionalSkills: [{
+      name: "document-specialist",
+      source: "https://github.com/SpillwaveSolutions/document-specialist-skill.git",
+      revision: "4d50d302b9f40e8eafec72d78a86676cdd9511ac",
+      license: "NOASSERTION",
+      installedDirs: ["document-specialist-skill"]
+    }]
+  }), "utf8");
+  await fs.writeFile(path.join(optionalSkillRollbackTarget, ".repo-pattern", ".repo-pattern.lock.json"), "{}\n", "utf8");
+  await assert.rejects(
+    () => provisionProject({
+      sourceRoot: repoRoot,
+      target: optionalSkillRollbackTarget,
+      profile: "minimal",
+      setupPipeline: "none",
+      optionalSkills: ["document-specialist"]
+    }),
+    /fetch|origin|remote|repository/i
+  );
+  assert.equal(await fs.readFile(path.join(skillRoot, "SKILL.md"), "utf8"), "existing optional skill");
+  await fs.access(path.join(cacheRoot, ".git"));
+} finally {
+  console.log = originalLog;
+  await fs.rm(optionalSkillRollbackTarget, { recursive: true, force: true });
+}
 
 const failedGstackTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-failed-"));
 console.log = () => {};
@@ -104,13 +149,16 @@ try {
   const gitPath = spawnSync("which", ["git"], { encoding: "utf8" }).stdout.trim();
   process.env.PATH = path.dirname(gitPath);
   try {
-    await provisionProject({
-      sourceRoot: repoRoot,
-      target: failedGstackProvisionTarget,
-      profile: "minimal",
-      setupPipeline: "both",
-      localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: "replacement-token" }
-    });
+    await assert.rejects(
+      () => provisionProject({
+        sourceRoot: repoRoot,
+        target: failedGstackProvisionTarget,
+        profile: "minimal",
+        setupPipeline: "both",
+        localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: "replacement-token" }
+      }),
+      /gstack setup failed/
+    );
   } finally {
     process.env.PATH = originalPath;
   }
@@ -284,6 +332,8 @@ try {
   console.log = originalLog;
   await fs.rm(noPipelineProvisionTarget, { recursive: true, force: true });
 }
+
+await runInteractiveProvisionChecks(repoRoot);
 
 const setupBothDryRunTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-both-dry-run-"));
 try {

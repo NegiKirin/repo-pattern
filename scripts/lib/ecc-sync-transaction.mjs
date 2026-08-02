@@ -77,13 +77,23 @@ async function copyAgentTree(source, stage, operations, onProgress = null, { req
   return sourceFiles.length;
 }
 
-export async function syncEccRulesAndAgents({ target, eccCache, selectedRules, repoConfig, lock, claudeMd, nextClaudeMd, dryRun = false, operations = {}, progress = null }) {
+export async function syncEccRulesAndAgents({ target, eccCache, selectedRules, repoConfig, lock, claudeMd, nextClaudeMd, dryRun = false, operations = {}, progress = null, silent = false }) {
   const claudeDir = path.join(target, ".claude");
   const rulesDir = path.join(claudeDir, "rules");
   const rulesDestination = path.join(rulesDir, "ecc");
   const agentsDestination = path.join(claudeDir, "agents");
   if (dryRun) {
-    console.log(`[dry-run] stage and atomically replace ${rulesDestination} and ${agentsDestination} from ${eccCache}`);
+    const operation = progress?.beginOperation?.({ id: "ecc-sync", label: "Staging ECC rules and agents", totalUnits: 1, unitLabel: "items", weight: 3 });
+    if (!silent) console.log(`[dry-run] stage and atomically replace ${rulesDestination} and ${agentsDestination} from ${eccCache}`);
+    operation?.complete({ detail: "preview" });
+    await backupPaths(target, [".claude/rules/ecc"], {
+      dryRun,
+      progress,
+      progressId: "ecc-backup",
+      progressLabel: "Backing up ECC rules",
+      progressWeight: 1,
+      silent
+    });
     return { manifest: [], revision: "dry-run" };
   }
   const { agentsRoot, revision } = await validateEccAgentSource(eccCache);
@@ -114,7 +124,7 @@ export async function syncEccRulesAndAgents({ target, eccCache, selectedRules, r
   let promotedRules = false;
   let promotedAgents = false;
   try {
-    await ensureRepoPatternGitignore(target, { dryRun });
+    await ensureRepoPatternGitignore(target, { dryRun, silent });
     rulesStage = await fs.mkdtemp(path.join(rulesDir, ".ecc-stage-"));
     agentsStage = await fs.mkdtemp(path.join(claudeDir, ".agents-stage-"));
     for (const { rule, source } of ruleSources) {
@@ -140,7 +150,8 @@ export async function syncEccRulesAndAgents({ target, eccCache, selectedRules, r
       progress,
       progressId: "ecc-backup",
       progressLabel: "Backing up ECC rules",
-      progressWeight: 1
+      progressWeight: 1,
+      silent
     });
     if (exists(rulesDestination)) {
       await (operations.rename || fs.rename)(rulesDestination, rulesBackup);
@@ -161,14 +172,14 @@ export async function syncEccRulesAndAgents({ target, eccCache, selectedRules, r
       ecc: { ...(lock.ecc || {}), agentsSyncedBy: "repo-pattern-auto-cache", agentsSource: ECC_REPO_URL, agentsRevision: revision, appliedAgents: manifest, agentsAppliedAt: new Date().toISOString() }
     };
     if (nextClaudeMd !== claudeMd) await (operations.writeClaudeMd || fs.writeFile)(claudeMdPath, nextClaudeMd, "utf8");
-    await (operations.writeConfig || writeJson)(configPath, repoConfig, { dryRun });
-    await (operations.writeLock || writeJson)(lockPath, nextLock, { dryRun });
+    await (operations.writeConfig || writeJson)(configPath, repoConfig, { dryRun, silent });
+    await (operations.writeLock || writeJson)(lockPath, nextLock, { dryRun, silent });
     operation?.update({ completedUnits: ++completed, totalUnits: totalFiles + 4, detail: "Writing ECC metadata" });
     operation?.complete({ detail: "completed" });
     try {
       await Promise.all([movedRules ? (operations.removeBackup || fs.rm)(rulesBackup, { recursive: true, force: true }) : undefined, movedAgents ? (operations.removeBackup || fs.rm)(agentsBackup, { recursive: true, force: true }) : undefined]);
     } catch (cleanupError) {
-      console.warn(`WARN: ECC synchronization backup cleanup failed after commit: ${cleanupError.message}`);
+      if (!silent) console.warn(`WARN: ECC synchronization backup cleanup failed after commit: ${cleanupError.message}`);
     }
     return { manifest, revision, lock: nextLock };
   } catch (error) {
@@ -180,7 +191,7 @@ export async function syncEccRulesAndAgents({ target, eccCache, selectedRules, r
       if (movedRules && exists(rulesBackup)) await fs.rename(rulesBackup, rulesDestination);
       await Promise.all([restoreFile(configPath, snapshots[0]), restoreFile(lockPath, snapshots[1]), restoreFile(gitignorePath, snapshots[2]), restoreFile(claudeMdPath, snapshots[3])]);
     } catch (rollbackError) {
-      console.warn(`WARN: ECC synchronization rollback failed: ${rollbackError.message}`);
+      if (!silent) console.warn(`WARN: ECC synchronization rollback failed: ${rollbackError.message}`);
     }
     throw error;
   } finally {

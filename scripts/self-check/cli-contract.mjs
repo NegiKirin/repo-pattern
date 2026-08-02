@@ -180,6 +180,7 @@ try {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /git clone --single-branch --depth 1|copy .*\.claude\/skills\/gstack/);
   assert.match(result.stdout, /write gstack skill wrapper/);
+  assert.match(result.stdout, /Setup pipeline\s+gstack/);
   assert.match(result.stdout, /Pipeline scope\s+project-local gstack at \.claude\/skills\/gstack/);
   assert.doesNotMatch(result.stdout, /Install ECC inside Claude Code/);
 } finally {

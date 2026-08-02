@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.2.9] - 2026-08-03
+
+**Interactive setup now shows one progress region, then one clear result.**
+**Dry runs preview the same plan without touching the target project.**
+
+After confirming an interactive setup, users now see live setup progress followed by a compact completion panel. Setup still creates the same workspace, validates it with Doctor, preserves backups and rollback, and keeps verbose output for `--yes`, noninteractive, and redirected runs. Interactive failures clear the live display before showing the cause, rollback result, backup path when available, and recovery steps.
+
+### The setup numbers that matter
+
+These checks come from the reproducible `npm test` self-check suite, including `scripts/self-check/interactive-provision.mjs` and `scripts/self-check/progress.mjs`.
+
+| Metric | Before | After | Δ |
+| --- | ---: | ---: | ---: |
+| Live progress regions after confirmation | multiple durable outputs | 1 | consolidated |
+| Completion-panel fields | expanded setup details | 3 required, 1 optional warning | compact |
+| Interactive dry-run filesystem writes | 0 | 0 | 0 |
+| Terminal streams required for ANSI output | 1 | 2 | +1 |
+
+The setup screen now stays focused while preserving the diagnostics needed to recover from a failed run. A dry run follows the full setup plan and labels each operation as a preview.
+
+### What this means for repo-pattern users
+
+Interactive setup is easier to follow, especially for ECC, optional skills, and gstack pipelines that used to produce several status panels. Use `repo-pattern setup` normally. Use `--dry-run` to inspect the complete plan without creating files.
+
+### Itemized changes
+
+### Changed
+
+- Show confirmed interactive setup as one live progress display and a compact `Setup complete` panel.
+- Keep verbose setup, MCP, ECC, gstack, backup, and Doctor output for `--yes`, noninteractive, and redirected execution.
+- Require both standard input and standard output to be TTYs before emitting ANSI control sequences.
+
+### Fixed
+
+- Preserve full interactive dry-run progress while preventing filesystem writes and false backup-created messages.
+- Clear live progress before failure diagnostics, rollback results, backup locations, and recovery guidance.
+- Persist successful setup status before rendering the visible success panel.
+- Reject destination symlinks during recursive copies so setup cannot write outside the target workspace.
+- Avoid duplicate durable `100%` progress lines when file copies finish.
+
 ## [0.2.8] - 2026-08-01
 
 **New workspaces start without an arbitrary subagent session ceiling.**

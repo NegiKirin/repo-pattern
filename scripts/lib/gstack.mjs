@@ -326,9 +326,15 @@ async function expectedGstackSidecars(checkout) {
   }));
 }
 
-export async function bootstrapGstack({ target, checkout = gstackCheckoutPath(target), statePath = gstackStatePath(target), dryRun = false, progress = null }) {
+export async function bootstrapGstack({ target, checkout = gstackCheckoutPath(target), statePath = gstackStatePath(target), dryRun = false, progress = null, silent = false }) {
   await assertNoSymlinkPath(target, path.relative(target, checkout));
   await assertNoSymlinkPath(target, path.relative(target, statePath));
+  if (dryRun) {
+    const operation = progress?.beginOperation?.({ id: "gstack-bootstrap", label: "Bootstrapping gstack", totalUnits: 1, unitLabel: "items", weight: 2 });
+    if (!silent) console.log(`[dry-run] write gstack skill wrappers and sidecars under ${path.join(target, ".claude", "skills")}`);
+    operation?.complete({ detail: "preview" });
+    return [];
+  }
   const wrappers = await expectedGstackWrappers(target, checkout, statePath);
   const assets = await expectedGstackAssets(target, checkout, statePath);
   const sidecars = await expectedGstackSidecars(checkout);
@@ -344,8 +350,9 @@ export async function bootstrapGstack({ target, checkout = gstackCheckoutPath(ta
   try {
     let completed = 0;
     for (const item of work) {
-      if (dryRun) console.log(`[dry-run] write gstack ${item.kind} ${item.destination}`);
-      else if (item.kind === "wrapper") await writeSkillWrapper(item.destination, item.content);
+      if (dryRun) {
+        if (!silent) console.log(`[dry-run] write gstack ${item.kind} ${item.destination}`);
+      } else if (item.kind === "wrapper") await writeSkillWrapper(item.destination, item.content);
       else {
         await ensureDir(path.dirname(item.destination));
         await fs.writeFile(item.destination, item.content, "utf8");
@@ -368,7 +375,7 @@ export async function bootstrapGstack({ target, checkout = gstackCheckoutPath(ta
         assets: assets.map(({ asset }) => asset),
         sidecars: sidecars.map(({ sidecar }) => sidecar),
         bootstrappedAt: new Date().toISOString()
-      });
+      }, { silent });
     }
     operation?.update({ completedUnits: ++completed, totalUnits: work.length + 1, detail: `${completed}/${work.length + 1} items` });
     operation?.complete({ detail: "completed" });
@@ -424,7 +431,7 @@ export function applyPlanTuneHooks(settings = {}, { checkout, statePath, enabled
   return { ...settings, hooks };
 }
 
-export async function writePlanTuneHooks({ target, planTuneHooks, dryRun = false, progress = null }) {
+export async function writePlanTuneHooks({ target, planTuneHooks, dryRun = false, progress = null, silent = false }) {
   const operation = progress?.beginOperation?.({ id: "gstack-hooks", label: "Writing gstack hooks", totalUnits: 1, weight: 1 });
   try {
     const checkout = gstackCheckoutPath(target);
@@ -436,8 +443,8 @@ export async function writePlanTuneHooks({ target, planTuneHooks, dryRun = false
       checkout: gstackCheckoutPath(target),
       statePath: gstackStatePath(target),
       enabled: planTuneHooks
-    }), { dryRun });
-    operation?.complete({ detail: "completed" });
+    }), { dryRun, silent });
+    operation?.complete({ detail: dryRun ? "preview" : "completed" });
   } catch (error) {
     operation?.fail({ detail: "failed" });
     throw error;
@@ -451,7 +458,8 @@ export async function resolveGstackCheckout({
   run: runCommand = run,
   copy = copyRecursiveWithProgress,
   clone = null,
-  progress = null
+  progress = null,
+  silent = false
 }) {
   const localCheckout = gstackCheckoutPath(target);
   await assertNoSymlinkPath(target, path.relative(target, localCheckout));
@@ -467,7 +475,9 @@ export async function resolveGstackCheckout({
   }
   const globalValid = await isValidGstackCheckout(globalCheckout, { run: runCommand });
   if (dryRun) {
-    console.log(`[dry-run] ${globalValid ? `copy ${globalCheckout} -> ${localCheckout}` : `git clone --single-branch --depth 1 ${GSTACK_REPOSITORY} ${localCheckout}`}`);
+    const operation = progress?.beginOperation?.({ id: "gstack-checkout", label: globalValid ? "Copying gstack checkout" : "Downloading gstack", totalUnits: 1, weight: 3 });
+    if (!silent) console.log(`[dry-run] ${globalValid ? `copy ${globalCheckout} -> ${localCheckout}` : `git clone --single-branch --depth 1 ${GSTACK_REPOSITORY} ${localCheckout}`}`);
+    operation?.complete({ detail: "preview" });
     return {
       checkout: localCheckout,
       source: globalValid ? "global-migration" : "clone",
@@ -477,7 +487,7 @@ export async function resolveGstackCheckout({
   }
 
   const parent = path.dirname(localCheckout);
-  await ensureDir(parent);
+  await ensureDir(parent, { silent });
   const temporary = await fs.mkdtemp(path.join(parent, ".gstack-"));
   try {
     if (globalValid) {
@@ -486,6 +496,7 @@ export async function resolveGstackCheckout({
         await copy(globalCheckout, temporary, {
           recursive: true,
           force: true,
+          silent,
           onProgress: ({ completedFiles, totalFiles, completedBytes, totalBytes }) => {
             const detail = totalBytes > 0
               ? `${completedFiles}/${totalFiles} files · ${completedBytes}/${totalBytes} bytes`
@@ -575,7 +586,7 @@ export function gstackEnvironment(bun, environment = process.env) {
   return { ...environment, PATH: `${path.dirname(bun)}${path.delimiter}${environment.PATH || ""}` };
 }
 
-export async function setupGstack({ target, dryRun = false, planTuneHooks = false, resolveCheckout = resolveGstackCheckout, progress = null }) {
+export async function setupGstack({ target, dryRun = false, planTuneHooks = false, resolveCheckout = resolveGstackCheckout, progress = null, silent = false }) {
   const checkout = gstackCheckoutPath(target);
   const statePath = gstackStatePath(target);
   let checkoutLease = null;
@@ -583,55 +594,65 @@ export async function setupGstack({ target, dryRun = false, planTuneHooks = fals
   try {
     if (!dryRun) ensureBun();
     const install = async () => {
-      const resolved = await resolveCheckout({ target, dryRun, progress });
+      const resolved = await resolveCheckout({ target, dryRun, progress, silent });
       checkoutLease = resolved;
       if (!dryRun) {
         const wrappers = await expectedGstackWrappers(target, checkout, statePath);
         const assets = await expectedGstackAssets(target, checkout, statePath);
         const sidecars = await expectedGstackSidecars(checkout);
         transaction = await snapshotGstackArtifacts(target, wrappers, assets, sidecars, statePath);
-        await bootstrapGstack({ target, checkout, statePath, dryRun, progress });
-      } else console.log(`[dry-run] write gstack skill wrapper ${path.join(path.dirname(checkout), "_gstack-command")}`);
-      await writePlanTuneHooks({ target, planTuneHooks, dryRun, progress });
+      }
+      await bootstrapGstack({ target, checkout, statePath, dryRun, progress, silent });
+      await writePlanTuneHooks({ target, planTuneHooks, dryRun, progress, silent });
       if (!dryRun) {
         await checkoutLease.commit();
         try {
           await transaction.remove();
         } catch (error) {
-          console.warn(`WARN: gstack rollback snapshot cleanup failed: ${error.message}`);
+          if (!silent) console.warn(`WARN: gstack rollback snapshot cleanup failed: ${error.message}`);
         }
         transaction = null;
       }
       return { status: dryRun ? "dry-run" : "installed", source: resolved.source, path: checkout, statePath };
     };
     const result = await install();
-    if (!dryRun) printSummary("gstack", gstackSummaryRows(target, planTuneHooks), { progress });
+    if (!dryRun && !silent) printSummary("gstack", gstackSummaryRows(target, planTuneHooks), { progress });
     return result;
   } catch (error) {
+    const rollbackErrors = [];
     if (transaction) {
       try {
         await transaction.rollback();
       } catch (rollbackError) {
-        console.warn(`WARN: gstack artifact rollback failed: ${rollbackError.message}`);
+        rollbackErrors.push(`gstack artifact rollback failed: ${rollbackError.message}`);
+        if (!silent) console.warn(`WARN: ${rollbackErrors.at(-1)}`);
       }
       try {
         await transaction.remove();
       } catch (rollbackError) {
-        console.warn(`WARN: gstack rollback snapshot cleanup failed: ${rollbackError.message}`);
+        rollbackErrors.push(`gstack rollback snapshot cleanup failed: ${rollbackError.message}`);
+        if (!silent) console.warn(`WARN: ${rollbackErrors.at(-1)}`);
       }
     }
     if (checkoutLease) {
       try {
         await checkoutLease.rollback();
       } catch (rollbackError) {
-        console.warn(`WARN: gstack checkout rollback failed: ${rollbackError.message}`);
+        rollbackErrors.push(`gstack checkout rollback failed: ${rollbackError.message}`);
+        if (!silent) console.warn(`WARN: ${rollbackErrors.at(-1)}`);
       }
     }
-    if (error.gstackCloneFailure) {
+    if (error.gstackCloneFailure && !silent) {
       const stderr = String(error.stderr || "");
       if (stderr) process.stderr.write(stderr);
     }
-    return { status: "failed", path: checkout, statePath, error: redactedGstackDiagnostic(error) };
+    return {
+      status: "failed",
+      path: checkout,
+      statePath,
+      error: redactedGstackDiagnostic(error),
+      ...(rollbackErrors.length > 0 ? { rollbackErrors } : {})
+    };
   }
 }
 

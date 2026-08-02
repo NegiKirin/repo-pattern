@@ -35,6 +35,33 @@ try {
   });
   assert.equal(resolved, cache);
   assert.deepEqual(skipped, ["ecc-cache"]);
+
+  const staleCacheTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-stale-ecc-cache-"));
+  try {
+    const staleCache = await writeEccGitFixture(staleCacheTarget);
+    const branch = spawnSync("git", ["branch", "--show-current"], { cwd: staleCache, encoding: "utf8" }).stdout.trim();
+    spawnSync("git", ["config", `branch.${branch}.remote`, "origin"], { cwd: staleCache, stdio: "ignore" });
+    spawnSync("git", ["config", `branch.${branch}.merge`, "refs/heads/main"], { cwd: staleCache, stdio: "ignore" });
+    spawnSync("git", ["config", "remote.origin.url", "file:///nonexistent/repo-pattern-ecc-upstream"], { cwd: staleCache, stdio: "ignore" });
+    spawnSync("git", ["config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"], { cwd: staleCache, stdio: "ignore" });
+    spawnSync("git", ["update-ref", "refs/remotes/origin/main", "HEAD"], { cwd: staleCache, stdio: "ignore" });
+    spawnSync("git", ["config", "branch.main.remote", "origin"], { cwd: staleCache, stdio: "ignore" });
+    spawnSync("git", ["config", "branch.main.merge", "refs/heads/main"], { cwd: staleCache, stdio: "ignore" });
+    spawnSync("git", ["branch", "-M", "main"], { cwd: staleCache, stdio: "ignore" });
+    assert.equal(spawnSync("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], { cwd: staleCache, encoding: "utf8" }).status, 0);
+    const operation = { complete: ({ detail }) => { operation.detail = detail; } };
+    const staleResult = await ensureEccCache(staleCacheTarget, {
+      silent: true,
+      progress: { beginOperation: () => operation }
+    });
+    assert.deepEqual(staleResult, {
+      cache: staleCache,
+      warning: "ECC cache update failed; using existing cache."
+    });
+    assert.equal(operation.detail, "using existing cache");
+  } finally {
+    await fs.rm(staleCacheTarget, { recursive: true, force: true });
+  }
 } finally {
   await fs.rm(existingCacheTarget, { recursive: true, force: true });
 }
