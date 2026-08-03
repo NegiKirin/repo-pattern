@@ -193,6 +193,7 @@ async function rejectClaudeSymlink(target, { dryRun = false } = {}) {
   const managedPaths = [
     [".claude", ".claude"],
     [".claude/settings.json", ".claude/settings.json"],
+    [".claude/settings.local.json", ".claude/settings.local.json"],
     [".repo-pattern", ".repo-pattern"],
     [".repo-pattern/.repo-pattern.json", ".repo-pattern/.repo-pattern.json"],
     [".repo-pattern/.repo-pattern.lock.json", ".repo-pattern/.repo-pattern.lock.json"]
@@ -296,6 +297,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
   const localOptionalSkills = optionalSkills
     .map((value) => OPTIONAL_SKILLS.find((skill) => skill.value === value))
     .filter((skill) => skill && !skill.plugin);
+  const hasPluginOnlySkills = optionalSkills.some((value) => OPTIONAL_SKILLS.find((skill) => skill.value === value)?.plugin) && localOptionalSkills.length === 0;
   const progressPlan = [
     { id: "backup", label: "Backing up workspace", weight: 1 },
     { id: "workspace", label: "Generating workspace", weight: 2 },
@@ -317,8 +319,9 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
     ] : [])
   ];
   const progress = createSetupProgress(progressPlan, {
-    interactive: Boolean(interactiveSetup && process.stdin.isTTY && process.stdout.isTTY),
-    ansi: Boolean(interactiveSetup && process.stdin.isTTY && process.stdout.isTTY && !process.env.NO_COLOR && process.env.TERM !== "dumb")
+    interactive: Boolean(interactiveSetup && process.stdin.isTTY && process.stdout.isTTY && !process.env.CI),
+    ansi: Boolean(interactiveSetup && process.stdin.isTTY && process.stdout.isTTY && !process.env.CI && !process.env.NO_COLOR && process.env.TERM !== "dumb"),
+    hasExtendedSkills: localOptionalSkills.length > 0 || hasPluginOnlySkills
   });
   const provisionSnapshot = await snapshotProvisionState(target, { dryRun });
   let backupRoot = null;
@@ -383,6 +386,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
       ? await applyEccRules({ target, dryRun, ruleMode, rules, progress, silent: interactiveSetup })
       : await clearEccRules({ target, dryRun, silent: interactiveSetup });
     if (eccRulesResult?.warnings) eccWarnings = eccRulesResult.warnings;
+    if (hasPluginOnlySkills) progress?.beginGroup?.("skills");
     await applyOptionalSkills({
       target,
       skills: optionalSkills,
@@ -392,6 +396,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
       progress,
       silent: interactiveSetup
     });
+    if (hasPluginOnlySkills) progress?.completeGroup?.("skills");
   } catch (error) {
     progress?.fail({ detail: "failed" });
     progress?.flush?.();
@@ -423,6 +428,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
   if (usesGstack(setupPipeline)) gstackStatus = await setupGstack({ target, dryRun, planTuneHooks, progress, silent: interactiveSetup });
   const gstackFailed = gstackStatus?.status === "failed";
   if (gstackFailed) {
+    progress?.failGroup?.("components", "Downloading gstack");
     progress?.fail({ detail: "gstack setup failed" });
     progress?.flush?.();
     const gstackError = `gstack setup failed: ${gstackStatus.error}`;
@@ -463,12 +469,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
   });
   await ensureRepoPatternGitignore(target, { dryRun, silent: interactiveSetup });
 
-  if (dryRun) {
-    progress?.complete({ detail: "preview" });
-  } else {
-    await doctorProject(target, { updateLock: true, dryRun, silent: interactiveSetup });
-    progress?.complete({ detail: "completed" });
-  }
+  if (!dryRun) await doctorProject(target, { updateLock: true, dryRun, silent: interactiveSetup });
 
   const warnings = [
     ...(eccStatus === "manual-plugin-install-required" ? ["ECC plugin pending: run /plugin install ecc@ecc in Claude Code"] : []),
@@ -515,5 +516,6 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
     }
     throw error;
   }
+  progress?.complete({ detail: dryRun ? "preview" : "completed" });
   printSummary("Setup complete", interactiveSetup ? compactSummary : detailedSummary, { progress });
 }

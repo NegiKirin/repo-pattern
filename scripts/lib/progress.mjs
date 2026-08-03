@@ -1,13 +1,14 @@
+import { spinner } from "@clack/prompts";
+
 const MILESTONES = [0, 25, 50, 75, 100];
-const REDRAW_INTERVAL_MS = 66;
+const GROUPS = [
+  { id: "components", label: "ECC & gstack" },
+  { id: "skills", label: "Extended skills" },
+  { id: "setup", label: "Setup" }
+];
 
 function clampPercent(value) {
   return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
-}
-
-function progressBar(percent, width = 20) {
-  const filled = Math.round(percent * width / 100);
-  return `${"█".repeat(filled)}${"░".repeat(width - filled)}`;
 }
 
 function operationPercent(completedUnits, totalUnits) {
@@ -37,20 +38,16 @@ function createRecord({ id, label, totalUnits = 0, unitLabel = "", weight = 1, d
   };
 }
 
-function formatInteractiveOperation(operation) {
-  const detail = operation.skipped ? "skipped" : operation.detail;
-  return `${operation.label} [${progressBar(operation.percent)}] ${operation.percent}%${detailSuffix(detail)}`;
+function groupForOperation(id) {
+  if (["ecc-cache", "ecc-sync", "ecc-backup", "gstack-checkout", "gstack-bootstrap", "gstack-hooks"].includes(id)) return "components";
+  if (id === "skills-backup" || id.startsWith("skill-git-") || id.startsWith("skill-copy-")) return "skills";
+  return "setup";
 }
 
-export function createProgressReporter({ interactive = false, ansi = false, write = null, plan = [], setupId = "setup" } = {}) {
+export function createProgressReporter({ write = null, plan = [], setupId = "setup" } = {}) {
   const operations = new Map();
-  const output = write || ((line) => process.stdout.write(interactive && ansi ? line : `${line}\n`));
+  const output = write || ((line) => process.stdout.write(`${line}\n`));
   let orderedIds = [];
-  let liveActive = false;
-  let liveLineCount = 0;
-  let lastRenderAt = 0;
-  let redrawTimer = null;
-  let dirty = false;
 
   for (const entry of plan) {
     if (entry.id && !operations.has(entry.id)) {
@@ -59,11 +56,7 @@ export function createProgressReporter({ interactive = false, ansi = false, writ
     }
   }
 
-  function orderedOperations() {
-    return orderedIds.map((id) => operations.get(id)).filter(Boolean);
-  }
-
-  function renderDurable(operation, terminal) {
+  function render(operation, terminal = false) {
     const milestones = terminal
       ? [operation.percent]
       : MILESTONES.filter((milestone) => milestone < 100 && milestone <= operation.percent && !operation.renderedMilestones.has(milestone));
@@ -73,67 +66,14 @@ export function createProgressReporter({ interactive = false, ansi = false, writ
     }
   }
 
-  function renderLive(force = false) {
-    if (!interactive || !ansi || (!dirty && !force)) return;
-    const rows = orderedOperations().map(formatInteractiveOperation);
-    const previousRows = liveLineCount;
-    const rowCount = Math.max(previousRows, rows.length);
-    const frame = liveActive
-      ? `\x1b[${previousRows}A\x1b[0G${Array.from({ length: rowCount }, (_, index) => `\x1b[2K\r${rows[index] || ""}\n`).join("")}`
-      : `${rows.map((row) => `${row}\n`).join("")}`;
-    output(frame);
-    liveActive = rows.length > 0;
-    liveLineCount = rows.length;
-    lastRenderAt = Date.now();
-    dirty = false;
-  }
-
-  function scheduleRender() {
-    if (redrawTimer !== null) return;
-    const delay = Math.max(0, REDRAW_INTERVAL_MS - (Date.now() - lastRenderAt));
-    redrawTimer = setTimeout(() => {
-      redrawTimer = null;
-      renderLive();
-    }, delay);
-  }
-
-  function render(operation, { terminal = false } = {}) {
-    if (interactive && ansi) {
-      dirty = true;
-      if (terminal) {
-        if (redrawTimer !== null) clearTimeout(redrawTimer);
-        redrawTimer = null;
-        renderLive(true);
-      } else if (!liveActive || Date.now() - lastRenderAt >= REDRAW_INTERVAL_MS) {
-        renderLive(true);
-      } else {
-        scheduleRender();
-      }
-      return;
-    }
-    renderDurable(operation, terminal);
-  }
-
   function update(operation, { completedUnits = operation.completedUnits, totalUnits = operation.totalUnits, detail, terminal = false } = {}) {
     if (operation.completed || operation.failed || operation.skipped) return operation;
     operation.totalUnits = Math.max(0, Number(totalUnits) || 0);
     operation.completedUnits = Math.max(operation.completedUnits, Math.max(0, Number(completedUnits) || 0));
     operation.percent = Math.max(operation.percent, operationPercent(operation.completedUnits, operation.totalUnits));
     if (detail !== undefined) operation.detail = detail;
-    render(operation, { terminal });
+    render(operation, terminal);
     return operation;
-  }
-
-  function flush() {
-    if (redrawTimer !== null) clearTimeout(redrawTimer);
-    redrawTimer = null;
-    if (!liveActive) return;
-    renderLive();
-    const frame = `\x1b[${liveLineCount}A\x1b[0G${Array.from({ length: liveLineCount }, () => "\x1b[2K\r\n").join("")}`.slice(0, -1);
-    output(frame);
-    liveActive = false;
-    liveLineCount = 0;
-    dirty = false;
   }
 
   function failOperation(id, detail = "failed") {
@@ -142,7 +82,7 @@ export function createProgressReporter({ interactive = false, ansi = false, writ
     operation.completed = false;
     operation.failed = true;
     operation.detail = detail;
-    render(operation, { terminal: true });
+    render(operation, true);
     return operation;
   }
 
@@ -152,7 +92,7 @@ export function createProgressReporter({ interactive = false, ansi = false, writ
     operation.skipped = true;
     operation.percent = 100;
     operation.detail = "skipped";
-    render(operation, { terminal: true });
+    render(operation, true);
     return operation;
   }
 
@@ -183,24 +123,143 @@ export function createProgressReporter({ interactive = false, ansi = false, writ
         operation.percent = 100;
         operation.completed = true;
         if (detail !== undefined) operation.detail = detail;
-        render(operation, { terminal: true });
+        render(operation, true);
         return operation;
       },
       fail({ detail = "failed" } = {}) {
         if (operation.completed || operation.failed || operation.skipped) return operation;
         operation.failed = true;
         operation.detail = detail;
-        render(operation, { terminal: true });
+        render(operation, true);
         return operation;
       }
     };
   }
 
-  return { beginOperation, failOperation, skipOperation, operations, flush };
+  return { beginOperation, failOperation, skipOperation, operations, flush() {} };
+}
+
+function createInteractiveSetupProgress(plan, { spinnerFactory = spinner, hasExtendedSkills = false } = {}) {
+  const operations = new Map(plan.map((entry) => [entry.id, { ...entry, started: false, completed: false, failed: false, skipped: false }]));
+  const groups = new Map(GROUPS.map(({ id, label }) => [id, {
+    id,
+    label,
+    spinner: spinnerFactory(),
+    operationIds: plan.filter((entry) => groupForOperation(entry.id) === id).map((entry) => entry.id),
+    hasWork: id === "setup" || (id === "skills" && hasExtendedSkills) || plan.some((entry) => groupForOperation(entry.id) === id),
+    started: false,
+    stopped: false,
+    managed: false
+  }]));
+
+  function startGroup(id) {
+    const group = groups.get(id);
+    if (!group || group.started || group.stopped) return;
+    group.spinner.start(group.label);
+    group.started = true;
+  }
+
+  function stopGroup(id, detail) {
+    const group = groups.get(id);
+    if (!group || group.stopped) return;
+    startGroup(id);
+    group.spinner.stop(`${group.label} ${detail}`);
+    group.stopped = true;
+  }
+
+  for (const group of groups.values()) {
+    if (!group.hasWork) stopGroup(group.id, "Skipped");
+  }
+
+  function finishGroupWhenReady(id) {
+    const group = groups.get(id);
+    if (!group || group.stopped || group.managed || id === "setup") return;
+    if (group.operationIds.every((operationId) => {
+      const operation = operations.get(operationId);
+      return operation?.completed || operation?.skipped;
+    })) stopGroup(id, "completed");
+  }
+
+  function failGroup(id, detail = "failed") {
+    stopGroup(id, detail === "failed" ? "failed" : `${detail} failed`);
+    stopGroup("setup", "failed");
+  }
+
+  function operationHandle(operation) {
+    return {
+      get percent() { return operation.percent || 0; },
+      get state() { return { ...operation }; },
+      update({ completedUnits = operation.completedUnits, totalUnits = operation.totalUnits } = {}) {
+        operation.totalUnits = Math.max(0, Number(totalUnits) || 0);
+        operation.completedUnits = Math.max(operation.completedUnits || 0, Math.max(0, Number(completedUnits) || 0));
+        operation.percent = Math.max(operation.percent || 0, operationPercent(operation.completedUnits, operation.totalUnits));
+        return operation;
+      },
+      complete() {
+        if (operation.completed || operation.failed || operation.skipped) return operation;
+        operation.completed = true;
+        operation.percent = 100;
+        finishGroupWhenReady(groupForOperation(operation.id));
+        return operation;
+      },
+      fail() {
+        if (operation.completed || operation.failed || operation.skipped) return operation;
+        operation.failed = true;
+        failGroup(groupForOperation(operation.id), operation.label);
+        return operation;
+      }
+    };
+  }
+
+  return {
+    beginOperation(spec) {
+      if (!spec.id) throw new Error("Progress operation id is required.");
+      const operation = operations.get(spec.id) || { ...spec, completedUnits: 0, percent: 0, completed: false, failed: false, skipped: false };
+      operation.label = spec.label || operation.label;
+      operation.started = true;
+      operation.totalUnits = Math.max(0, Number(spec.totalUnits) || 0);
+      operations.set(spec.id, operation);
+      startGroup(groupForOperation(spec.id));
+      startGroup("setup");
+      return operationHandle(operation);
+    },
+    skipOperation(id) {
+      const operation = operations.get(id);
+      if (!operation || operation.completed || operation.failed || operation.skipped) return;
+      operation.skipped = true;
+      operation.percent = 100;
+      finishGroupWhenReady(groupForOperation(id));
+    },
+    beginGroup(id) {
+      const group = groups.get(id);
+      if (group) group.managed = true;
+      startGroup(id);
+    },
+    completeGroup(id) {
+      stopGroup(id, "completed");
+    },
+    failGroup,
+    complete({ detail = "completed" } = {}) {
+      for (const group of groups.values()) {
+        if (!group.stopped && group.id !== "setup") stopGroup(group.id, "completed");
+      }
+      stopGroup("setup", detail);
+    },
+    fail() {
+      for (const group of groups.values()) {
+        if (group.id !== "setup" && group.started && !group.stopped) stopGroup(group.id, "failed");
+      }
+      stopGroup("setup", "failed");
+    },
+    flush() {},
+    operations
+  };
 }
 
 export function createSetupProgress(plan = [], options = {}) {
   if (!plan.length) return null;
+  if (options.interactive && options.ansi) return createInteractiveSetupProgress(plan, options);
+
   const reporter = createProgressReporter({ ...options, plan });
   const weights = new Map(plan.map((entry) => [entry.id, Math.max(0, Number(entry.weight) || 0)]));
   const setup = reporter.beginOperation({ id: "setup", label: "Setup", totalUnits: 100, weight: 0, detail: "preparing resources" });
