@@ -214,7 +214,7 @@ const settingsSymlinkDestination = path.join(os.tmpdir(), `repo-pattern-settings
 console.log = () => {};
 try {
   await fs.mkdir(path.join(settingsSymlinkTarget, ".claude"));
-  await fs.writeFile(settingsSymlinkDestination, "unchanged", "utf8");
+  await fs.mkdir(settingsSymlinkDestination);
   await fs.symlink(settingsSymlinkDestination, path.join(settingsSymlinkTarget, ".claude", "settings.local.json"));
   await assert.rejects(
     () => provisionProject({
@@ -225,11 +225,11 @@ try {
     }),
     /settings\.local\.json.*symlink/
   );
-  assert.equal(await fs.readFile(settingsSymlinkDestination, "utf8"), "unchanged");
+  assert.deepEqual(await fs.readdir(settingsSymlinkDestination), []);
 } finally {
   console.log = originalLog;
   await fs.rm(settingsSymlinkTarget, { recursive: true, force: true });
-  await fs.rm(settingsSymlinkDestination, { force: true });
+  await fs.rm(settingsSymlinkDestination, { recursive: true, force: true });
 }
 
 const doctorLockSymlinkTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-doctor-lock-symlink-target-"));

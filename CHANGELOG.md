@@ -2,10 +2,10 @@
 
 ## [0.2.9] - 2026-08-03
 
-**Interactive setup now shows one progress region, then one clear result.**
+**Interactive setup now shows three concise group spinners, then one clear result.**
 **Dry runs preview the same plan without touching the target project.**
 
-After confirming an interactive setup, users now see live setup progress followed by a compact completion panel. Setup still creates the same workspace, validates it with Doctor, preserves backups and rollback, and keeps verbose output for `--yes`, noninteractive, and redirected runs. Interactive failures clear the live display before showing the cause, rollback result, backup path when available, and recovery steps.
+After confirming an interactive setup, users now see three group spinners—ECC & gstack, Extended skills, and Setup—followed by a compact completion panel. Setup still creates the same workspace, validates it with Doctor, preserves backups and rollback, and keeps verbose output for `--yes`, noninteractive, and redirected runs. Interactive failures stop the affected group before showing the cause, rollback result, backup path when available, and recovery steps.
 
 ### The setup numbers that matter
 
@@ -13,7 +13,7 @@ These checks come from the reproducible `npm test` self-check suite, including `
 
 | Metric | Before | After | Δ |
 | --- | ---: | ---: | ---: |
-| Live progress regions after confirmation | multiple durable outputs | 1 | consolidated |
+| Interactive progress groups after confirmation | multiple durable outputs | 3 | grouped |
 | Completion-panel fields | expanded setup details | 3 required, 1 optional warning | compact |
 | Interactive dry-run filesystem writes | 0 | 0 | 0 |
 | Terminal streams required for ANSI output | 1 | 2 | +1 |
@@ -28,14 +28,14 @@ Interactive setup is easier to follow, especially for ECC, optional skills, and 
 
 ### Changed
 
-- Show confirmed interactive setup as one live progress display and a compact `Setup complete` panel.
-- Keep verbose setup, MCP, ECC, gstack, backup, and Doctor output for `--yes`, noninteractive, and redirected execution.
+- Show confirmed interactive setup as three Clack group spinners—`ECC & gstack`, `Extended skills`, and `Setup`—followed by a compact `Setup complete` panel.
+- Keep verbose setup, MCP, ECC, gstack, backup, and Doctor output for `--yes`, CI, noninteractive, and redirected execution.
 - Require both standard input and standard output to be TTYs before emitting ANSI control sequences.
 
 ### Fixed
 
 - Preserve full interactive dry-run progress while preventing filesystem writes and false backup-created messages.
-- Clear live progress before failure diagnostics, rollback results, backup locations, and recovery guidance.
+- Stop group spinners before failure diagnostics, rollback results, backup locations, and recovery guidance.
 - Persist successful setup status before rendering the visible success panel.
 - Reject destination symlinks during recursive copies so setup cannot write outside the target workspace.
 - Avoid duplicate durable `100%` progress lines when file copies finish.

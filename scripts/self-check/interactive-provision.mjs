@@ -4,17 +4,21 @@ import os from "node:os";
 import path from "node:path";
 import { provisionProject } from "../lib/provision.mjs";
 
-function withInteractiveTerminal(callback, { stdinTTY = true, stdoutTTY = true } = {}) {
+function withInteractiveTerminal(callback, { stdinTTY = true, stdoutTTY = true, env = {} } = {}) {
   const originalLog = console.log;
   const originalWarn = console.warn;
   const originalStdinTty = process.stdin.isTTY;
   const originalStdoutTty = process.stdout.isTTY;
+  const originalStdinSetRawMode = process.stdin.setRawMode;
   const originalStdoutWrite = process.stdout.write;
+  const originalEnv = Object.fromEntries(Object.keys(env).map((name) => [name, process.env[name]]));
   const output = [];
   const warnings = [];
 
   Object.defineProperties(process.stdin, { isTTY: { value: stdinTTY, configurable: true } });
   Object.defineProperties(process.stdout, { isTTY: { value: stdoutTTY, configurable: true } });
+  Object.assign(process.env, env);
+  process.stdin.setRawMode = () => {};
   process.stdout.write = (chunk) => {
     output.push(String(chunk));
     return true;
@@ -26,6 +30,11 @@ function withInteractiveTerminal(callback, { stdinTTY = true, stdoutTTY = true }
     console.log = originalLog;
     console.warn = originalWarn;
     process.stdout.write = originalStdoutWrite;
+    process.stdin.setRawMode = originalStdinSetRawMode;
+    for (const [name, value] of Object.entries(originalEnv)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
     Object.defineProperties(process.stdin, { isTTY: { value: originalStdinTty, configurable: true } });
     Object.defineProperties(process.stdout, { isTTY: { value: originalStdoutTty, configurable: true } });
   });
@@ -45,17 +54,45 @@ export async function runInteractiveProvisionChecks(repoRoot) {
         interactiveSetup: true
       });
       const rendered = output.join("");
-      assert.match(rendered, /Generating workspace/);
-      assert.match(rendered, /Generating MCP workspace/);
+      const labels = ["ECC & gstack", "Extended skills", "Setup"];
+      for (const label of labels) assert.match(rendered, new RegExp(label));
+      assert(rendered.indexOf(labels[0]) < rendered.indexOf(labels[1]));
+      assert(rendered.indexOf(labels[1]) < rendered.indexOf(labels[2]));
+      assert.match(rendered, /ECC & gstack Skipped/);
+      assert.match(rendered, /Extended skills Skipped/);
+      assert.match(rendered, /Setup preview/);
       assert.match(rendered, /Setup complete/);
       assert.match(rendered, /Status\s+preview only/);
       assert.doesNotMatch(rendered, /Warnings\s+/);
-      assert.doesNotMatch(rendered, /Provisioning target|== Audit ==|MCP generated|Detected stack|Selected ECC rules|Applied optional skills|Backup created|\[dry-run\]/);
+      assert.doesNotMatch(rendered, /Generating workspace|Generating MCP workspace|\[████|%|Provisioning target|== Audit ==|MCP generated|Detected stack|Selected ECC rules|Applied optional skills|Backup created|\[dry-run\]/);
       assert.equal(warnings.length, 0);
     });
     assert.equal((await fs.readdir(successTarget)).length, 0);
   } finally {
     await fs.rm(successTarget, { recursive: true, force: true });
+  }
+
+  const pluginTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-interactive-plugin-"));
+  try {
+    await withInteractiveTerminal(async ({ output }) => {
+      await provisionProject({
+        sourceRoot: repoRoot,
+        target: pluginTarget,
+        profile: "minimal",
+        setupPipeline: "none",
+        optionalSkills: ["taste"],
+        dryRun: true,
+        mcpValues: { CONTEXT7_API_KEY: "interactive-test-key" },
+        interactiveSetup: true
+      });
+      const rendered = output.join("");
+      assert.match(rendered, /Extended skills completed/);
+      assert.match(rendered, /Setup preview/);
+      assert.doesNotMatch(rendered, /Syncing taste|Copying taste|%|\[████/);
+    });
+    assert.equal((await fs.readdir(pluginTarget)).length, 0);
+  } finally {
+    await fs.rm(pluginTarget, { recursive: true, force: true });
   }
 
   const parityTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-interactive-parity-"));
@@ -72,31 +109,23 @@ export async function runInteractiveProvisionChecks(repoRoot) {
         interactiveSetup: true
       });
       const rendered = output.join("");
-      for (const label of [
-        "Backing up workspace",
-        "Generating workspace",
-        "Generating MCP workspace",
-        "Syncing ECC cache",
-        "Staging ECC rules and agents",
-        "Backing up ECC rules",
-        "Backing up local skills",
-        "Syncing document-specialist",
-        "Copying document-specialist",
-        "Downloading gstack",
-        "Bootstrapping gstack",
-        "Writing gstack hooks"
-      ]) {
-        assert.match(rendered, new RegExp(`${label} .*preview`));
-      }
+      for (const label of ["ECC & gstack", "Extended skills", "Setup"]) assert.match(rendered, new RegExp(label));
+      assert.match(rendered, /ECC & gstack completed/);
+      assert.match(rendered, /Extended skills completed/);
+      assert.match(rendered, /Setup preview/);
       assert.match(rendered, /Status\s+preview only/);
-      assert.doesNotMatch(rendered, /\[dry-run\]|Setup pipeline|Doctor|Applied optional skills/);
+      assert.doesNotMatch(rendered, /Backing up workspace|Generating workspace|Generating MCP workspace|Syncing ECC cache|Staging ECC rules and agents|Backing up ECC rules|Backing up local skills|Syncing document-specialist|Copying document-specialist|Downloading gstack|Bootstrapping gstack|Writing gstack hooks|\[████|%|\[dry-run\]|Setup pipeline|Doctor|Applied optional skills/);
     });
     assert.equal((await fs.readdir(parityTarget)).length, 0);
   } finally {
     await fs.rm(parityTarget, { recursive: true, force: true });
   }
 
-  for (const ttyOptions of [{ stdinTTY: true, stdoutTTY: false }, { stdinTTY: false, stdoutTTY: true }]) {
+  for (const ttyOptions of [
+    { stdinTTY: true, stdoutTTY: false },
+    { stdinTTY: false, stdoutTTY: true },
+    { env: { CI: "true" } }
+  ]) {
     const asymmetricTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-interactive-asymmetric-"));
     try {
       await withInteractiveTerminal(async ({ output }) => {
@@ -109,7 +138,9 @@ export async function runInteractiveProvisionChecks(repoRoot) {
           mcpValues: { CONTEXT7_API_KEY: "interactive-test-key" },
           interactiveSetup: true
         });
-        assert.doesNotMatch(output.join(""), /\x1b\[/);
+        const rendered = output.join("");
+        assert.doesNotMatch(rendered, /\x1b\[/);
+        if (ttyOptions.env) assert.match(rendered, /Setup 0%/);
       }, ttyOptions);
     } finally {
       await fs.rm(asymmetricTarget, { recursive: true, force: true });
@@ -140,8 +171,7 @@ export async function runInteractiveProvisionChecks(repoRoot) {
         }
       );
       const rendered = output.join("");
-      assert.match(rendered, /Generating workspace/);
-      assert.match(rendered, /\x1b\[2K\r/);
+      assert.match(rendered, /Setup failed/);
       assert.doesNotMatch(rendered, /Setup complete/);
     });
   } finally {
@@ -197,8 +227,9 @@ export async function runInteractiveProvisionChecks(repoRoot) {
         process.env.PATH = originalPath;
       }
       const rendered = output.join("");
-      assert.match(rendered, /\x1b\[2K\r/);
-      assert.ok(rendered.indexOf("\x1b\[2K\r") < rendered.indexOf("\nERROR: gstack setup failed"));
+      assert.match(rendered, /ECC & gstack Downloading gstack failed/);
+      assert.match(rendered, /Setup failed/);
+      assert.ok(rendered.indexOf("Setup failed") < rendered.indexOf("\nERROR: gstack setup failed"));
       assert.doesNotMatch(rendered, /Setup complete/);
     });
   } finally {
@@ -235,8 +266,8 @@ export async function runInteractiveProvisionChecks(repoRoot) {
         }
       );
       const rendered = output.join("");
-      assert.match(rendered, /\x1b\[2K\r/);
-      assert.ok(rendered.indexOf("\x1b[2K\r") < rendered.indexOf("\nERROR: Unknown optional skill(s): nope"));
+      assert.match(rendered, /Setup failed/);
+      assert.ok(rendered.indexOf("Setup failed") < rendered.indexOf("\nERROR: Unknown optional skill(s): nope"));
       assert.doesNotMatch(rendered, /Setup complete/);
     });
     assert.equal(await fs.readFile(path.join(failureTarget, "CLAUDE.md"), "utf8"), "existing instructions\n");
