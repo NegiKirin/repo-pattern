@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.12] - 2026-08-04
+
+### Changed
+
+- Replace the legacy filesystem, GitNexus, and sequential-thinking MCP servers with Graphify in every profile.
+- Generate and validate the local code-only Graphify graph at `graphify-out/graph.json`; Graphify requires `uv` and Python 3.10+ but no API key.
+- Reject unsafe Graphify output symlinks and tracked graph files, restore MCP state after failed generation, and make Doctor verify profile order, graph integrity, executable availability, and exact Graphify configuration.
+
 ## [0.2.11] - 2026-08-03
 
 ### Fixed

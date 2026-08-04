@@ -1,7 +1,8 @@
 {
   "servers": [
     "context7",
-    "filesystem",
-    "gitnexus"
+    "tavily",
+    "chrome-devtools",
+    "graphify"
   ]
 }

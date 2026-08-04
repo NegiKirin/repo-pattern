@@ -44,9 +44,9 @@ const mcpServers = {
     args: ["-y", "@upstash/context7-mcp"],
     env: { CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}" }
   },
-  filesystem: {
-    command: "npx",
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+  graphify: {
+    command: "graphify-mcp",
+    args: ["graphify-out/graph.json"]
   }
 };
 
@@ -73,13 +73,13 @@ assert.deepEqual(applyMcpValues(mcpServers, {
     args: ["-y", "@upstash/context7-mcp"],
     env: { CONTEXT7_API_KEY: "redacted-key" }
   },
-  filesystem: {
-    command: "npx",
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+  graphify: {
+    command: "graphify-mcp",
+    args: ["graphify-out/graph.json"]
   }
 });
 
-assert.equal(applyMcpValues(mcpServers).filesystem.args[2], ".");
+assert.equal(applyMcpValues(mcpServers).graphify.args[0], "graphify-out/graph.json");
 assert.deepEqual(applyMcpValues({
   unexpected: { env: { ANTHROPIC_AUTH_TOKEN: "${ANTHROPIC_AUTH_TOKEN}" } }
 }, {
@@ -365,7 +365,7 @@ try {
   await provisionProject({
     sourceRoot: repoRoot,
     target: mixedSkillTarget,
-    profile: "minimal",
+    profile: "research",
     setupPipeline: "none",
     applyRules: false
   });

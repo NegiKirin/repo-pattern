@@ -22,7 +22,11 @@ export async function runEccRulesAndManifestChecks() {
 async function writeDoctorFixture(target, { appliedRules = ["typescript"], createRuleDirs = true } = {}) {
   await fs.mkdir(path.join(target, ".claude"), { recursive: true });
   await fs.mkdir(path.join(target, ".repo-pattern"), { recursive: true });
-  await fs.writeFile(path.join(target, ".claude", "settings.json"), JSON.stringify({ hooks: {} }), "utf8");
+  await fs.mkdir(path.join(target, "graphify-out"), { recursive: true });
+  await fs.writeFile(path.join(target, ".claude", "settings.json"), JSON.stringify({
+    hooks: {},
+    enabledMcpjsonServers: ["context7", "tavily", "graphify"]
+  }), "utf8");
   await fs.writeFile(path.join(target, ".repo-pattern", ".repo-pattern.json"), JSON.stringify({
     workflow: "ecc-native",
     runtime: {
@@ -34,12 +38,22 @@ async function writeDoctorFixture(target, { appliedRules = ["typescript"], creat
     }
   }), "utf8");
   await fs.writeFile(path.join(target, ".repo-pattern", ".repo-pattern.lock.json"), JSON.stringify({
+    mcp: {
+      profile: "research",
+      enabledServers: ["context7", "tavily", "graphify"]
+    },
     ecc: {
       status: "not-run",
       rulesSyncedBy: "repo-pattern-auto-cache",
       appliedRules
     }
   }), "utf8");
+  await fs.writeFile(path.join(target, ".mcp.json"), JSON.stringify({ mcpServers: {
+    context7: {},
+    tavily: {},
+    graphify: { command: "graphify-mcp", args: ["graphify-out/graph.json"] }
+  } }), "utf8");
+  await fs.writeFile(path.join(target, "graphify-out", "graph.json"), "{}\n", "utf8");
   if (createRuleDirs) {
     for (const rule of appliedRules) await fs.mkdir(path.join(target, ".claude", "rules", "ecc", rule), { recursive: true });
   }
@@ -123,7 +137,11 @@ console.log = () => {};
 try {
   await fs.mkdir(path.join(pythonRulesTarget, ".claude"), { recursive: true });
   await writeDoctorFixture(pythonRulesTarget, { appliedRules: ["common", "python"], createRuleDirs: true });
-  await fs.writeFile(path.join(pythonRulesTarget, ".mcp.json"), "{}", "utf8");
+  await fs.writeFile(path.join(pythonRulesTarget, ".mcp.json"), JSON.stringify({ mcpServers: {
+    context7: {},
+    tavily: {},
+    graphify: { command: "graphify-mcp", args: ["graphify-out/graph.json"] }
+  } }), "utf8");
   await fs.writeFile(path.join(pythonRulesTarget, "pyproject.toml"), "", "utf8");
   await fs.writeFile(path.join(pythonRulesTarget, ".claude", "CLAUDE.md"), "Existing guidance\n", "utf8");
   const pythonEccCache = path.join(pythonRulesTarget, ".repo-pattern", "cache", "ECC");

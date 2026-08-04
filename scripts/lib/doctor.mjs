@@ -1,11 +1,17 @@
 import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { auditProject } from "./audit.mjs";
 import { ensureRepoPatternGitignore, isTracked, readJson, readRepoLock, repoLockPath, writePrivateJson } from "./fs-utils.mjs";
+import { readMcpConfig } from "./mcp.mjs";
 import { printBox, style } from "./prompt.mjs";
+import { assertCommand, assertGraphifyMcpDefinition, GRAPHIFY_MCP_COMMAND, validateGraphFile } from "./graphify.mjs";
 import { applyPlanTuneHooks, validateProjectGstack } from "./gstack.mjs";
 import { isValidEccAgentProvenance, verifyAgentInventory } from "./rules.mjs";
+
+const SOURCE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const MCP_PROFILES = new Set(["backend", "web", "research", "full", "custom"]);
 
 function renderDoctor(target, checks, infoRows) {
   const failed = checks.filter((row) => !row.ok);
@@ -40,7 +46,7 @@ async function assertNoDoctorLockSymlink(target) {
   }
 }
 
-export async function doctorProject(target, { updateLock = false, dryRun = false, silent = false } = {}) {
+export async function doctorProject(target, { updateLock = false, dryRun = false, silent = false, graphifyRunner = null } = {}) {
   await assertNoDoctorLockSymlink(target);
   const audit = await auditProject(target);
   const checks = [];
@@ -86,13 +92,65 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   check(repoPattern.runtime?.localRules === false, ".repo-pattern/.repo-pattern.json runtime.localRules=false");
 
   const settings = await readJson(path.join(target, ".claude", "settings.json"), {});
-  const expectedMcpServers = lock.mcp?.enabledServers || [];
-  if (expectedMcpServers.length > 0) {
-    const actualMcpServers = settings.enabledMcpjsonServers || [];
-    check(
-      JSON.stringify(actualMcpServers) === JSON.stringify(expectedMcpServers),
-      ".claude/settings.json enabledMcpjsonServers matches MCP profile"
-    );
+  const hasMcpLock = Boolean(lock.mcp?.profile) || Array.isArray(lock.mcp?.enabledServers);
+  if (!hasMcpLock) {
+    check(false, ".repo-pattern lock contains MCP profile and enabled servers. Recovery: repo-pattern mcp --profile web --yes");
+  } else {
+    const profile = MCP_PROFILES.has(lock.mcp?.profile) ? lock.mcp.profile : null;
+    const selectedServers = profile === "custom" ? lock.mcp?.enabledServers : null;
+    const recoveryProfile = profile && profile !== "custom" ? profile : "web";
+    const recovery = `Recovery: repo-pattern mcp --profile ${recoveryProfile} --yes`;
+    check(Boolean(profile), `.repo-pattern MCP profile is backend, web, research, full, or custom. ${recovery}`);
+    if (profile) {
+      let expectedMcpServers = [];
+      try {
+        expectedMcpServers = (await readMcpConfig({ sourceRoot: SOURCE_ROOT, profile, mcpServers: selectedServers })).profileServers;
+        check(
+          JSON.stringify(lock.mcp?.enabledServers || []) === JSON.stringify(expectedMcpServers),
+          ".repo-pattern lock MCP servers exactly match the current profile"
+        );
+      } catch (error) {
+        check(false, `${error.message} ${recovery}`);
+      }
+      const actualMcpServers = settings.enabledMcpjsonServers || [];
+      check(
+        JSON.stringify(actualMcpServers) === JSON.stringify(expectedMcpServers),
+        ".claude/settings.json enabledMcpjsonServers exactly matches the current MCP profile"
+      );
+      let mcpConfig = null;
+      try {
+        mcpConfig = await readJson(path.join(target, ".mcp.json"), null);
+        const mcpServerIds = Object.keys(mcpConfig?.mcpServers || {});
+        check(
+          JSON.stringify(mcpServerIds) === JSON.stringify(expectedMcpServers),
+          ".mcp.json mcpServers exactly matches the current MCP profile"
+        );
+      } catch {
+        check(false, `.mcp.json must contain valid JSON. ${recovery}`);
+      }
+      let graphValid = true;
+      try {
+        await validateGraphFile(target);
+        check(true, "graphify-out/graph.json is a valid regular JSON file");
+      } catch (error) {
+        graphValid = false;
+        check(false, `${error.message} ${recovery}`);
+      }
+      if (graphValid) {
+        try {
+          await assertCommand(GRAPHIFY_MCP_COMMAND, { runner: graphifyRunner || undefined });
+          check(true, "graphify-mcp resolves on PATH");
+        } catch (error) {
+          check(false, `${error.message} ${recovery}`);
+        }
+      }
+      try {
+        assertGraphifyMcpDefinition(mcpConfig?.mcpServers?.graphify);
+        check(true, ".mcp.json Graphify definition uses graphify-mcp graphify-out/graph.json");
+      } catch (error) {
+        check(false, `${error.message} ${recovery}`);
+      }
+    }
   }
   const appliedRules = lock.ecc?.appliedRules || [];
   const managedRulesClaimed = lock.ecc?.rulesSyncedBy === "repo-pattern-auto-cache" || appliedRules.length > 0;
