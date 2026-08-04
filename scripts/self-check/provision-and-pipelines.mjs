@@ -53,7 +53,7 @@ try {
     () => provisionProject({
       sourceRoot: repoRoot,
       target: provisionRollbackTarget,
-      profile: "minimal",
+      profile: "research",
       setupPipeline: "none",
       applyRules: true,
       ruleMode: "manual",
@@ -102,7 +102,7 @@ try {
     () => provisionProject({
       sourceRoot: repoRoot,
       target: optionalSkillRollbackTarget,
-      profile: "minimal",
+      profile: "research",
       setupPipeline: "none",
       optionalSkills: ["document-specialist"]
     }),
@@ -153,7 +153,7 @@ try {
       () => provisionProject({
         sourceRoot: repoRoot,
         target: failedGstackProvisionTarget,
-        profile: "minimal",
+        profile: "research",
         setupPipeline: "both",
         localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: "replacement-token" }
       }),
@@ -224,6 +224,22 @@ await assert.rejects(
   /--with-plan-tune-hooks requires --setup-pipeline gstack or both/
 );
 
+const graphifySnapshotTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-graphify-snapshot-"));
+const graphifySnapshotOutside = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-graphify-snapshot-outside-"));
+try {
+  await fs.writeFile(path.join(graphifySnapshotOutside, "preserve.txt"), "outside", "utf8");
+  await fs.symlink(graphifySnapshotOutside, path.join(graphifySnapshotTarget, "graphify-out"), "dir");
+  await assert.rejects(
+    () => provisionProject({ sourceRoot: repoRoot, target: graphifySnapshotTarget, profile: "research", setupPipeline: "none" }),
+    /graphify-out must not be a symlink/
+  );
+  assert.equal(await fs.readFile(path.join(graphifySnapshotOutside, "preserve.txt"), "utf8"), "outside");
+  assert.deepEqual(await fs.readdir(graphifySnapshotOutside), ["preserve.txt"]);
+} finally {
+  await fs.rm(graphifySnapshotTarget, { recursive: true, force: true });
+  await fs.rm(graphifySnapshotOutside, { recursive: true, force: true });
+}
+
 const symlinkWriteTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-symlink-write-"));
 const symlinkWriteOutside = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-symlink-write-outside-"));
 try {
@@ -243,7 +259,7 @@ try {
   await fs.writeFile(repoConfigOutside, "{}\n", "utf8");
   await fs.symlink(repoConfigOutside, path.join(symlinkWriteTarget, ".repo-pattern", ".repo-pattern.json"));
   await assert.rejects(
-    () => provisionProject({ sourceRoot: repoRoot, target: symlinkWriteTarget, profile: "minimal", setupPipeline: "none" }),
+    () => provisionProject({ sourceRoot: repoRoot, target: symlinkWriteTarget, profile: "research", setupPipeline: "none" }),
     /repo-pattern\.json must not be a symlink/
   );
   assert.equal(await fs.readFile(repoConfigOutside, "utf8"), "{}\n");
@@ -279,7 +295,7 @@ try {
   await provisionProject({
     sourceRoot: repoRoot,
     target: bothProvisionTarget,
-    profile: "minimal",
+    profile: "research",
     setupPipeline: "both",
     migrate: true,
     planTuneHooks: true,
@@ -313,7 +329,7 @@ try {
   await provisionProject({
     sourceRoot: repoRoot,
     target: noPipelineProvisionTarget,
-    profile: "minimal",
+    profile: "research",
     setupPipeline: "none",
     localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: secretSentinel },
     applyRules: true

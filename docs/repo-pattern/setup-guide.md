@@ -228,195 +228,67 @@ or regenerate later:
 node scripts/repo-pattern.mjs mcp --target /path/to/project --profile <profile>
 ```
 
-Interactive `setup` asks for selected MCP placeholders such as `CONTEXT7_API_KEY` and `TAVILY_API_KEY`, writes entered keys only as literal server environment values in gitignored `.mcp.json`, and reuses them on later `setup` and `mcp` runs. It writes `ANTHROPIC_AUTH_TOKEN` only to gitignored `.claude/settings.local.json`; the token is never substituted into MCP config or written to repo-pattern setup state. Failed setup retries recover credentials from these two files, while the lock stores only non-secret choices and MCP credential names. Setup backups exclude both credential-bearing files. The filesystem MCP server uses the target project root (`.`) as its allowed directory. Other MCP paths, when prompted, must be relative (`src`, `packages/api`); absolute machine paths and `..` are rejected. With `--yes` or non-TTY runs, unresolved secret placeholders stay in `.mcp.json` and the CLI prints the values to fill later.
+Interactive `setup` asks for selected MCP placeholders such as `CONTEXT7_API_KEY` and `TAVILY_API_KEY`, writes entered keys only as literal server environment values in gitignored `.mcp.json`, and reuses them on later `setup` and `mcp` runs. It writes `ANTHROPIC_AUTH_TOKEN` only to gitignored `.claude/settings.local.json`; the token is never substituted into MCP config or written to repo-pattern setup state. Failed setup retries recover credentials from these two files, while the lock stores only non-secret choices and MCP credential names. Setup backups exclude both credential-bearing files. With `--yes` or non-TTY runs, unresolved secret placeholders stay in `.mcp.json` and the CLI prints the values to fill later.
+
+Every profile includes Graphify. `setup` and `mcp` require `uv` and Python 3.10+, install `graphifyy[mcp]`, then run `graphify extract . --code-only`. The generated local code graph is `graphify-out/graph.json`, is gitignored, and needs no API key. A tracked graph is rejected before it can be replaced. Regenerate it with `repo-pattern mcp --profile <profile>`.
 
 ---
 
-## 4. Profile: `minimal`
-
-```bash
-node scripts/repo-pattern.mjs setup --target /path/to/project --profile minimal --yes
-```
-
-Enabled servers:
+## 4. Profile: `web`
 
 ```text
+playwright
 context7
-filesystem
+tavily
+graphify
 ```
 
-Use this when:
-
-```text
-- you want the smallest setup;
-- the project does not need browser automation;
-- the project does not need web research tools;
-- you want minimal MCP/tooling noise.
-```
-
-Best for:
-
-```text
-small libraries
-backend utilities
-CLI tools
-simple experiments
-```
+Use this for web apps and browser-focused work.
 
 ---
 
-## 5. Profile: `web`
-
-```bash
-node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --yes
-```
-
-Enabled servers:
+## 5. Profile: `backend`
 
 ```text
 context7
-filesystem
+tavily
+chrome-devtools
+graphify
+```
+
+Use this for server-side projects.
+
+---
+
+## 6. Profile: `research`
+
+```text
+context7
+tavily
+graphify
+```
+
+Use this for documentation lookup and external research.
+
+---
+
+## 7. Profile: `full`
+
+```text
+context7
 playwright
 chrome-devtools
-```
-
-Use this when:
-
-```text
-- the project has frontend or browser behavior;
-- Claude needs to inspect runtime UI behavior;
-- you want browser automation and debugging support;
-- you want a strong default for most app projects.
-```
-
-Best for:
-
-```text
-web apps
-full-stack apps
-frontend-heavy projects
-UI debugging
-E2E testing workflows
-```
-
-Recommended default:
-
-```bash
-node scripts/repo-pattern.mjs setup --target ~/Code/my-app --profile web --yes
-```
-
----
-
-## 6. Profile: `backend`
-
-```bash
-node scripts/repo-pattern.mjs setup --target /path/to/project --profile backend --yes
-```
-
-Enabled servers:
-
-```text
-context7
-filesystem
-gitnexus
-```
-
-Use this when:
-
-```text
-- the project is mainly backend;
-- codebase structure and impact analysis matter;
-- frontend/browser tooling is not needed by default.
-```
-
-Best for:
-
-```text
-APIs
-services
-monorepo backend packages
-codebase analysis
-impact analysis
-```
-
----
-
-## 7. Profile: `research`
-
-```bash
-node scripts/repo-pattern.mjs setup --target /path/to/project --profile research --yes
-```
-
-Enabled servers:
-
-```text
-context7
-filesystem
 tavily
-sequential-thinking
+graphify
 ```
 
-Use this when:
-
-```text
-- the project needs frequent documentation lookup;
-- tasks involve external research;
-- implementation decisions need structured reasoning;
-- current information is important.
-```
-
-Best for:
-
-```text
-research-heavy projects
-technical investigations
-library comparison
-architecture exploration
-documentation-driven work
-```
-
-Required or recommended environment variables:
-
-```bash
-export TAVILY_API_KEY="..."
-export CONTEXT7_API_KEY="..."
-```
+Use this when no project category is detected; it is the unclassified-project fallback.
 
 ---
 
-## 8. Profile: `full`
+## 8. Custom MCP selection
 
-```bash
-node scripts/repo-pattern.mjs setup --target /path/to/project --profile full --yes
-```
-
-Enabled servers:
-
-```text
-context7
-filesystem
-playwright
-chrome-devtools
-gitnexus
-tavily
-sequential-thinking
-```
-
-Use this only when:
-
-```text
-- you intentionally want all included example MCP servers;
-- you understand the extra tool/context surface;
-- you are testing repo-pattern itself.
-```
-
-Not recommended as the default for normal projects.
-
----
-
-## 9. Custom MCP selection
-
-In interactive setup, choose `custom` to select exact MCP servers from the available `mcp/servers/*.json` definitions.
+In interactive setup, choose `custom` to select optional MCP servers from the available `mcp/servers/*.json` definitions. Graphify is included automatically.
 
 Use this when no preset profile matches the project.
 
@@ -477,10 +349,10 @@ For example, profile `web` sets:
 
 ```json
 "enabledMcpjsonServers": [
-  "context7",
-  "filesystem",
   "playwright",
-  "chrome-devtools"
+  "context7",
+  "tavily",
+  "graphify"
 ]
 ```
 
@@ -615,6 +487,8 @@ Doctor checks that:
 unmanaged local Claude runtime surfaces are absent
 settings hooks are empty
 .mcp.json has no hardcoded machine path
+locked and enabled MCP server IDs match in exact order
+Graphify command, graph file, and JSON are valid when enabled
 .repo-pattern/.repo-pattern.json is valid
 the selected ECC or gstack setup status is recorded
 ```
@@ -673,10 +547,10 @@ node scripts/repo-pattern.mjs setup --target ~/Code/my-app
 node scripts/repo-pattern.mjs setup --target ~/Code/my-api --profile backend --yes
 ```
 
-### Minimal project
+### Unclassified project
 
 ```bash
-node scripts/repo-pattern.mjs setup --target ~/Code/my-tool --profile minimal --yes
+node scripts/repo-pattern.mjs setup --target ~/Code/my-tool --profile full --yes
 ```
 
 ### Research-heavy project
@@ -719,11 +593,10 @@ node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --ye
 Use another profile only when the project clearly needs it:
 
 ```text
-minimal  → smallest setup
-web      → default app setup
-backend  → backend/codebase analysis
-research → docs/search/reasoning-heavy work
-full     → local testing only
+web      → web and browser work
+backend  → server-side work
+research → docs and external research
+full     → unclassified-project fallback
 ```
 
 
