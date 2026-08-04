@@ -107,7 +107,7 @@ Common options:
 | `full` | `context7`, `playwright`, `chrome-devtools`, `tavily`, and Graphify. It is the unclassified-project fallback. |
 | `custom` | Choose optional MCP servers interactively; Graphify is always included. Not available with `--yes`. |
 
-Graphify requires `uv` and Python 3.10+. Setup and `mcp` install `graphifyy[mcp]`, generate a code-only local graph at `graphify-out/graph.json`, and ignore that directory. It uses no API key. Regenerate it with `repo-pattern mcp --profile <profile>`.
+Graphify requires `python3` 3.10+. Setup and `mcp` create `graphify-out/.venv`, install `graphifyy[mcp]` there, generate `graphify-out/graph.json`, and start it through the project-local `graphify-out/graphify-mcp.py` launcher. The directory is ignored, no global Graphify command is required, and it uses no API key. Regenerate it with `repo-pattern mcp --profile <profile>`.
 
 When selected, Context7 and Tavily prompts include dashboard links for getting API keys.
 

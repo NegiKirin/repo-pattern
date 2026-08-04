@@ -11,6 +11,7 @@ import { ECC_PLUGIN, applyEccPluginSettings, setupEcc } from "../lib/ecc.mjs";
 import { applyMcpValues, generateMcp, mcpSecretPrompt, persistedMcpValues, readGeneratedMcpValues, validateRelativeMcpPath } from "../lib/mcp.mjs";
 import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, provisionProject, reconcileLocalPluginSettings, setupPipelineScope, updateClaudePermissions } from "../lib/provision.mjs";
 import { writePrivateJson } from "../lib/fs-utils.mjs";
+import { GRAPHIFY_MCP_ARGS, GRAPHIFY_MCP_COMMAND } from "../lib/graphify.mjs";
 import { printSummary, renderLogo, resolveTextValue, style } from "../lib/prompt.mjs";
 import { localSettingsPromptOptions, needsLocalSettingsPrompt, setupProject, setupRetryOptions } from "../lib/setup.mjs";
 import { applyEccRules, buildAgentManifest, clearEccRules, formatEccCloneError, hasGitUpstream, validateAgentManifest } from "../lib/rules.mjs";
@@ -45,8 +46,8 @@ const mcpServers = {
     env: { CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}" }
   },
   graphify: {
-    command: "graphify-mcp",
-    args: ["graphify-out/graph.json"]
+    command: GRAPHIFY_MCP_COMMAND,
+    args: GRAPHIFY_MCP_ARGS
   }
 };
 
@@ -74,12 +75,12 @@ assert.deepEqual(applyMcpValues(mcpServers, {
     env: { CONTEXT7_API_KEY: "redacted-key" }
   },
   graphify: {
-    command: "graphify-mcp",
-    args: ["graphify-out/graph.json"]
+    command: GRAPHIFY_MCP_COMMAND,
+    args: GRAPHIFY_MCP_ARGS
   }
 });
 
-assert.equal(applyMcpValues(mcpServers).graphify.args[0], "graphify-out/graph.json");
+assert.equal(applyMcpValues(mcpServers).graphify.args[0], "graphify-out/graphify-mcp.py");
 assert.deepEqual(applyMcpValues({
   unexpected: { env: { ANTHROPIC_AUTH_TOKEN: "${ANTHROPIC_AUTH_TOKEN}" } }
 }, {

@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { GRAPHIFY_GRAPH_PATH, GRAPHIFY_MCP_ARGS, GRAPHIFY_MCP_COMMAND, assertGraphifyMcpDefinition, isCompatiblePythonVersion, prepareGraphify, validateGraphFile } from "../lib/graphify.mjs";
+import { GRAPHIFY_GRAPH_PATH, GRAPHIFY_LAUNCHER_PATH, GRAPHIFY_MCP_ARGS, GRAPHIFY_MCP_COMMAND, GRAPHIFY_VENV_PATH, assertGraphifyMcpDefinition, isCompatiblePythonVersion, prepareGraphify, validateGraphFile } from "../lib/graphify.mjs";
 import { generateMcp, listAvailableMcpServers, readMcpConfig } from "../lib/mcp.mjs";
 import { installGraphifyStubs } from "./graphify-fixtures.mjs";
 
@@ -18,14 +18,14 @@ const profiles = {
 
 export async function runGraphifyChecks() {
   assert.equal(GRAPHIFY_GRAPH_PATH, "graphify-out/graph.json");
-  assert.equal(GRAPHIFY_MCP_COMMAND, "graphify-mcp");
-  assert.deepEqual(GRAPHIFY_MCP_ARGS, ["graphify-out/graph.json"]);
+  assert.equal(GRAPHIFY_MCP_COMMAND, "python3");
+  assert.deepEqual(GRAPHIFY_MCP_ARGS, ["graphify-out/graphify-mcp.py", "graphify-out/graph.json"]);
   assert.equal(isCompatiblePythonVersion("Python 3.10.0"), true);
   assert.equal(isCompatiblePythonVersion("Python 3.14.1"), true);
   assert.equal(isCompatiblePythonVersion("Python 3.9.18"), false);
   assert.equal(isCompatiblePythonVersion("invalid"), false);
   assert.doesNotThrow(() => assertGraphifyMcpDefinition({ command: GRAPHIFY_MCP_COMMAND, args: GRAPHIFY_MCP_ARGS }));
-  assert.throws(() => assertGraphifyMcpDefinition({ command: "graphify", args: GRAPHIFY_MCP_ARGS }), /graphify-mcp/);
+  assert.throws(() => assertGraphifyMcpDefinition({ command: "graphify", args: GRAPHIFY_MCP_ARGS }), /python3/);
   assert.throws(() => assertGraphifyMcpDefinition({ command: GRAPHIFY_MCP_COMMAND, args: [] }), /arguments/);
   assert.deepEqual(await listAvailableMcpServers(sourceRoot), ["chrome-devtools", "context7", "graphify", "playwright", "tavily"]);
   for (const [profile, expectedServers] of Object.entries(profiles)) {
@@ -75,21 +75,27 @@ export async function runGraphifyChecks() {
     const calls = [];
     const runner = async (command, args, options) => {
       calls.push([command, args, options]);
-      if (command === "graphify" && args[0] === "extract") {
+      if (args[0] === "extract") {
         await fs.mkdir(path.join(target, "graphify-out"), { recursive: true });
         await fs.writeFile(path.join(target, GRAPHIFY_GRAPH_PATH), "{}\n");
       }
-      return { stdout: "ok" };
+      return { stdout: command === "python3" && args[0] === "--version" ? "Python 3.12.0\n" : "ok" };
     };
     await prepareGraphify(target, { runner, silent: true });
     assert.deepEqual(calls.map(([command, args]) => [command, args]), [
-      ["uv", ["--version"]],
-      ["uv", ["python", "find", ">=3.10"]],
-      ["uv", ["tool", "install", "--upgrade", "graphifyy[mcp]"]],
-      ["graphify", ["--version"]],
-      ["graphify-mcp", ["--version"]],
-      ["graphify", ["extract", ".", "--code-only"]]
+      ["python3", ["--version"]],
+      ["python3", ["-m", "venv", GRAPHIFY_VENV_PATH]],
+      [path.join(target, GRAPHIFY_VENV_PATH, "bin", "python"), ["-m", "pip", "install", "--upgrade", "graphifyy[mcp]"]],
+      [path.join(target, GRAPHIFY_VENV_PATH, "bin", "graphify"), ["--help"]],
+      [path.join(target, GRAPHIFY_VENV_PATH, "bin", "graphify-mcp"), ["--help"]],
+      [path.join(target, GRAPHIFY_VENV_PATH, "bin", "graphify"), ["extract", ".", "--code-only"]]
     ]);
+    assert.deepEqual(calls.slice(3).map(([, , options]) => options), [
+      {},
+      {},
+      { cwd: target }
+    ]);
+    await fs.access(path.join(target, GRAPHIFY_LAUNCHER_PATH));
 
     execFileSync("git", ["init"], { cwd: target, stdio: "ignore" });
     await fs.writeFile(path.join(target, GRAPHIFY_GRAPH_PATH), "{}\n");
@@ -123,7 +129,7 @@ export async function runGraphifyChecks() {
       yes: true,
       silent: true,
       graphifyRunner: async () => { throw new Error("expected Graphify failure"); }
-    }), /required on PATH/);
+    }), /python3 is required/);
     await assert.rejects(() => fs.lstat(failedTarget), { code: "ENOENT" });
   } finally {
     await fs.rm(failedTargetParent, { recursive: true, force: true });
@@ -179,8 +185,8 @@ export async function runGraphifyChecks() {
     const profileTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-graphify-profile-"));
     try {
       const runner = async (command, args) => {
-        if (command === "uv" && args[0] === "python") return { stdout: "/usr/bin/python3\n" };
-        if (command === "graphify" && args[0] === "extract") {
+        if (command === "python3" && args[0] === "--version") return { stdout: "Python 3.12.0\n" };
+        if (args[0] === "extract") {
           await fs.mkdir(path.join(profileTarget, "graphify-out"), { recursive: true });
           await fs.writeFile(path.join(profileTarget, GRAPHIFY_GRAPH_PATH), "{}\n");
         }

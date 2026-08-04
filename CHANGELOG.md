@@ -1,12 +1,19 @@
 # Changelog
 
+## [0.2.13] - 2026-08-04
+
+### Fixed
+
+- Install Graphify with `python3` in an ignored project-local virtual environment, so setup no longer depends on `uv` or global Graphify commands on `PATH`.
+- Launch Graphify through a portable project-local wrapper and make Doctor validate that wrapper before reporting the workspace healthy.
+
 ## [0.2.12] - 2026-08-04
 
 ### Changed
 
 - Replace the legacy filesystem, GitNexus, and sequential-thinking MCP servers with Graphify in every profile.
-- Generate and validate the local code-only Graphify graph at `graphify-out/graph.json`; Graphify requires `uv` and Python 3.10+ but no API key.
-- Reject unsafe Graphify output symlinks and tracked graph files, restore MCP state after failed generation, and make Doctor verify profile order, graph integrity, executable availability, and exact Graphify configuration.
+- Generate and validate the local code-only Graphify graph at `graphify-out/graph.json`; Graphify requires `python3` 3.10+ and uses an ignored project-local virtual environment, with no API key or global Graphify command required.
+- Reject unsafe Graphify output symlinks and tracked graph files, restore MCP state after failed generation, and make Doctor verify profile order, graph integrity, project-local launcher availability, and exact Graphify configuration.
 
 ## [0.2.11] - 2026-08-03
 

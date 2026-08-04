@@ -118,7 +118,7 @@ Advanced:
 Options:
   --target <path>                  Target project path. Default: .
   --profile <name>                 MCP profile: backend, web, research, or full. Default: web
-                                  Graphify requires uv and Python >=3.10.
+                                  Graphify requires python3 >=3.10 and creates a project-local virtual environment.
   --setup-pipeline <ecc|gstack|both|none>
                                   Setup pipeline. Default: ecc
                                   ecc: project-scoped ECC
