@@ -6,7 +6,7 @@ import { auditProject } from "./audit.mjs";
 import { ensureRepoPatternGitignore, isTracked, readJson, readRepoLock, repoLockPath, writePrivateJson } from "./fs-utils.mjs";
 import { readMcpConfig } from "./mcp.mjs";
 import { printBox, style } from "./prompt.mjs";
-import { assertGraphifyLauncher, assertGraphifyMcpDefinition, validateGraphFile } from "./graphify.mjs";
+import { assertCommand, assertGraphifyMcpDefinition, GRAPHIFY_MCP_COMMAND, validateGraphFile } from "./graphify.mjs";
 import { applyPlanTuneHooks, validateProjectGstack } from "./gstack.mjs";
 import { isValidEccAgentProvenance, verifyAgentInventory } from "./rules.mjs";
 
@@ -138,15 +138,15 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
       }
       if (graphValid) {
         try {
-          await assertGraphifyLauncher(target, { runner: graphifyRunner || undefined });
-          check(true, "Graphify project-local launcher is available");
+          await assertCommand(GRAPHIFY_MCP_COMMAND, { runner: graphifyRunner || undefined });
+          check(true, "graphify-mcp resolves on PATH");
         } catch (error) {
           check(false, `${error.message} ${recovery}`);
         }
       }
       try {
         assertGraphifyMcpDefinition(mcpConfig?.mcpServers?.graphify);
-        check(true, ".mcp.json Graphify definition uses the project-local Python launcher");
+        check(true, ".mcp.json Graphify definition uses graphify-mcp graphify-out/graph.json");
       } catch (error) {
         check(false, `${error.message} ${recovery}`);
       }

@@ -3,7 +3,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { doctorProject } from "../lib/doctor.mjs";
-import { GRAPHIFY_LAUNCHER_PATH, GRAPHIFY_MCP_ARGS, GRAPHIFY_MCP_COMMAND } from "../lib/graphify.mjs";
 
 const enabledServers = ["context7", "tavily", "graphify"];
 
@@ -22,10 +21,9 @@ async function writeDoctorFixture(target, { profile = "research", lockServers = 
   await fs.writeFile(path.join(target, ".mcp.json"), JSON.stringify({ mcpServers: mcpServers || {
     context7: {},
     tavily: {},
-    graphify: { command: GRAPHIFY_MCP_COMMAND, args: GRAPHIFY_MCP_ARGS }
+    graphify: { command: "graphify-mcp", args: ["graphify-out/graph.json"] }
   } }));
   await fs.writeFile(path.join(target, "graphify-out", "graph.json"), graph);
-  await fs.writeFile(path.join(target, GRAPHIFY_LAUNCHER_PATH), "# Graphify MCP launcher\n");
 }
 
 async function withFixture(options, check) {
@@ -65,7 +63,7 @@ export async function runDoctorGraphifyChecks() {
     lockServers: ["context7", "graphify"],
     mcpServers: {
       context7: {},
-      graphify: { command: GRAPHIFY_MCP_COMMAND, args: GRAPHIFY_MCP_ARGS }
+      graphify: { command: "graphify-mcp", args: ["graphify-out/graph.json"] }
     }
   }, async (target) => {
     await doctorProject(target, { graphifyRunner: presentGraphifyMcp });
@@ -78,7 +76,7 @@ export async function runDoctorGraphifyChecks() {
     mcpServers: {
       context7: {},
       unknown: {},
-      graphify: { command: GRAPHIFY_MCP_COMMAND, args: GRAPHIFY_MCP_ARGS }
+      graphify: { command: "graphify-mcp", args: ["graphify-out/graph.json"] }
     }
   }, async (target, logs) => {
     await assert.rejects(() => doctorProject(target, { graphifyRunner: presentGraphifyMcp }), /Doctor failed/);
@@ -99,7 +97,7 @@ export async function runDoctorGraphifyChecks() {
   await withFixture({ mcpServers: {
     context7: {},
     tavily: {},
-    graphify: { command: GRAPHIFY_MCP_COMMAND, args: GRAPHIFY_MCP_ARGS },
+    graphify: { command: "graphify-mcp", args: ["graphify-out/graph.json"] },
     foreign: {}
   } }, async (target) => {
     await assert.rejects(() => doctorProject(target, { graphifyRunner: presentGraphifyMcp }), /Doctor failed/);
@@ -146,7 +144,7 @@ export async function runDoctorGraphifyChecks() {
   await withFixture({ mcpServers: {
     context7: {},
     tavily: {},
-    graphify: { command: "graphify", args: GRAPHIFY_MCP_ARGS }
+    graphify: { command: "graphify", args: ["graphify-out/graph.json"] }
   } }, async (target) => {
     await assert.rejects(() => doctorProject(target, { graphifyRunner: presentGraphifyMcp }), /Doctor failed/);
   });
