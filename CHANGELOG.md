@@ -1,11 +1,5 @@
 # Changelog
 
-## [0.2.10] - 2026-08-03
-
-### Fixed
-+
-- Use durable setup progress, rather than interactive terminal spinners, when `CI` is set.
-
 ## [0.2.9] - 2026-08-03
 
 **Interactive setup now shows three concise group spinners, then one clear result.**
