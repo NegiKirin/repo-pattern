@@ -7,6 +7,7 @@ import { auditProject } from "../lib/audit.mjs";
 import { doctorProject } from "../lib/doctor.mjs";
 import { ECC_RULE_PACKS, explainRules, invalidEccRules, normalizeEccRules, selectEccRules } from "../lib/ecc-rules.mjs";
 import { applyEccRules, buildAgentManifest, clearEccRules, validateAgentManifest } from "../lib/rules.mjs";
+import { GRAPHIFY_LAUNCHER_PATH, GRAPHIFY_MCP_ARGS, GRAPHIFY_MCP_COMMAND } from "../lib/graphify.mjs";
 
 const originalDoctorLog = console.log;
 
@@ -51,9 +52,10 @@ async function writeDoctorFixture(target, { appliedRules = ["typescript"], creat
   await fs.writeFile(path.join(target, ".mcp.json"), JSON.stringify({ mcpServers: {
     context7: {},
     tavily: {},
-    graphify: { command: "graphify-mcp", args: ["graphify-out/graph.json"] }
+    graphify: { command: GRAPHIFY_MCP_COMMAND, args: GRAPHIFY_MCP_ARGS }
   } }), "utf8");
   await fs.writeFile(path.join(target, "graphify-out", "graph.json"), "{}\n", "utf8");
+  await fs.writeFile(path.join(target, GRAPHIFY_LAUNCHER_PATH), "# Graphify MCP launcher\n", "utf8");
   if (createRuleDirs) {
     for (const rule of appliedRules) await fs.mkdir(path.join(target, ".claude", "rules", "ecc", rule), { recursive: true });
   }
@@ -140,7 +142,7 @@ try {
   await fs.writeFile(path.join(pythonRulesTarget, ".mcp.json"), JSON.stringify({ mcpServers: {
     context7: {},
     tavily: {},
-    graphify: { command: "graphify-mcp", args: ["graphify-out/graph.json"] }
+    graphify: { command: GRAPHIFY_MCP_COMMAND, args: GRAPHIFY_MCP_ARGS }
   } }), "utf8");
   await fs.writeFile(path.join(pythonRulesTarget, "pyproject.toml"), "", "utf8");
   await fs.writeFile(path.join(pythonRulesTarget, ".claude", "CLAUDE.md"), "Existing guidance\n", "utf8");

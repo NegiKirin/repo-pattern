@@ -230,7 +230,7 @@ node scripts/repo-pattern.mjs mcp --target /path/to/project --profile <profile>
 
 Interactive `setup` asks for selected MCP placeholders such as `CONTEXT7_API_KEY` and `TAVILY_API_KEY`, writes entered keys only as literal server environment values in gitignored `.mcp.json`, and reuses them on later `setup` and `mcp` runs. It writes `ANTHROPIC_AUTH_TOKEN` only to gitignored `.claude/settings.local.json`; the token is never substituted into MCP config or written to repo-pattern setup state. Failed setup retries recover credentials from these two files, while the lock stores only non-secret choices and MCP credential names. Setup backups exclude both credential-bearing files. With `--yes` or non-TTY runs, unresolved secret placeholders stay in `.mcp.json` and the CLI prints the values to fill later.
 
-Every profile includes Graphify. `setup` and `mcp` require `uv` and Python 3.10+, install `graphifyy[mcp]`, then run `graphify extract . --code-only`. The generated local code graph is `graphify-out/graph.json`, is gitignored, and needs no API key. A tracked graph is rejected before it can be replaced. Regenerate it with `repo-pattern mcp --profile <profile>`.
+Every profile includes Graphify. `setup` and `mcp` require `python3` 3.10+, create `graphify-out/.venv`, install `graphifyy[mcp]` there, then run the environment-local `graphify extract . --code-only`. The generated `graphify-out/graphify-mcp.py` launcher starts the environment-local MCP server, so no global Graphify command is required. The local code graph is `graphify-out/graph.json`, is gitignored, and needs no API key. A tracked graph is rejected before it can be replaced. Regenerate it with `repo-pattern mcp --profile <profile>`.
 
 ---
 
