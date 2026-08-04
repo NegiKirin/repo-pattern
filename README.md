@@ -15,7 +15,7 @@
 
 * **Start fast** — generate `.claude/`, `.mcp.json`, and repo-pattern metadata.
 * **Stay clean** — no local skills, commands, hooks, scripts, or duplicated templates by default.
-* **Use MCP profiles** — choose `web`, `backend`, `research`, `full`, or `custom`; every profile includes Graphify.
+* **Use MCP profiles** — choose `minimal`, `web`, `backend`, `research`, `full`, or `custom`.
 * **Explicit pipeline** — choose ECC (default) or a project-local gstack checkout.
 * **Migrate safely** — audit, cleanup, doctor, and `setup --migrate` are built in.
 
@@ -101,13 +101,12 @@ Common options:
 
 | Profile | Use when |
 |----|----|
-| `web` | `playwright`, `context7`, `tavily`, and Graphify for web apps. |
-| `backend` | `context7`, `tavily`, `chrome-devtools`, and Graphify for server-side projects. |
-| `research` | `context7`, `tavily`, and Graphify for research. |
-| `full` | `context7`, `playwright`, `chrome-devtools`, `tavily`, and Graphify. It is the unclassified-project fallback. |
-| `custom` | Choose optional MCP servers interactively; Graphify is always included. Not available with `--yes`. |
-
-Graphify requires `uv` and Python 3.10+. Setup and `mcp` install `graphifyy[mcp]`, generate a code-only local graph at `graphify-out/graph.json`, and ignore that directory. It uses no API key. Regenerate it with `repo-pattern mcp --profile <profile>`.
+| `minimal` | You want only essential docs/filesystem tooling. |
+| `web` | You build web apps and want browser/docs helpers. |
+| `backend` | You focus on server-side projects. |
+| `research` | You need search and extraction tooling. |
+| `full` | You want every bundled MCP server enabled. |
+| `custom` | You want to choose exact MCP servers interactively; not available with `--yes`. |
 
 When selected, Context7 and Tavily prompts include dashboard links for getting API keys.
 
@@ -123,7 +122,6 @@ target-project/
 │   ├── skills/gstack/            # gstack checkout when selected, gitignored
 │   └── agents/                   # ECC agents when ECC rules are applied, gitignored
 ├── .mcp.json                     # generated, gitignored
-├── graphify-out/                 # local code graph, gitignored
 ├── .repo-pattern/
 │   ├── .gitignore               # *
 │   ├── gstack/                  # gstack runtime state when selected
@@ -154,7 +152,6 @@ Each full `repo-pattern setup` run reconciles repo-pattern-managed state to its 
 |----|----|----|----|
 | `karpathy-guidelines` | Built-in `.claude/CLAUDE.md` guidance | https://github.com/multica-ai/andrej-karpathy-skills | MIT |
 | `gstack` | Project-local checkout via `--setup-pipeline gstack` | https://github.com/garrytan/gstack | MIT |
-| `Graphify` | Local MCP code graph via every MCP profile | https://github.com/Graphify-Labs/graphify | Apache-2.0 |
 | `taste` | Optional Claude Code plugin via `--with-skill taste` | https://github.com/Leonxlnx/taste-skill/ | MIT |
 | `document-specialist` | Optional `.claude/skills/` install via `--with-skill document-specialist` | https://github.com/SpillwaveSolutions/document-specialist-skill/ | NOASSERTION — no upstream license declared during review on 2026-07-06 |
 | `ui-ux-pro-max` | Optional Claude Code plugin via `--with-skill ui-ux-pro-max` | https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/ | MIT |

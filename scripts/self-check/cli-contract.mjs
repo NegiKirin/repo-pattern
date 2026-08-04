@@ -61,13 +61,13 @@ console.log = (message = "") => logs.push(String(message));
 process.stdin.isTTY = false;
 process.stdout.isTTY = false;
 try {
-  printSummary("MCP generated", [["Enabled servers", "context7, playwright, chrome-devtools, tavily, graphify"]]);
+  printSummary("MCP generated", [["Enabled servers", "context7, filesystem, playwright, chrome-devtools, gitnexus, tavily, sequential-thinking"]]);
 } finally {
   console.log = originalLog;
   process.stdin.isTTY = originalStdinIsTty;
   process.stdout.isTTY = originalStdoutIsTty;
 }
-assert(logs.some((line) => line.includes("graphify")));
+assert(logs.some((line) => line.includes("sequential-thinking")));
 assert(!logs.some((line) => line.length > 100));
 assert(renderLogo().includes("repo-pattern"));
 assert(renderLogo({ color: true }).some((line) => line.includes("\x1b[38;5;")));
@@ -130,15 +130,14 @@ result = runCli(["audit"]);
 assert.equal(result.status, 0);
 assert.match(result.stdout, /Target\s+.*repo-pattern/);
 
-result = runCli(["mcp", "--profile", "research", "--yes", "--dry-run"]);
+result = runCli(["mcp", "--profile", "minimal", "--yes", "--dry-run"]);
 assert.equal(result.status, 0);
 assert.match(result.stdout, /MCP generated/);
 
 result = runCli(["mcp", "--profile", "nope", "--yes"]);
 assert.equal(result.status, 1);
 assert.match(result.stderr, /MCP profile not found: nope\. Available profiles: /);
-assert.doesNotMatch(result.stderr, /minimal/);
-assert.match(result.stderr, /research/);
+assert.match(result.stderr, /minimal/);
 assert.match(result.stderr, /web/);
 
 const mcpReuseTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-mcp-reuse-"));
@@ -166,7 +165,7 @@ try {
   }), "utf8");
   const eccFixture = await writeEccGitFixture(setupReuseTarget);
   assert.equal(hasGitUpstream(eccFixture), false);
-  result = runCli(["setup", "--target", setupReuseTarget, "--profile", "research", "--setup-pipeline", "ecc", "--yes"]);
+  result = runCli(["setup", "--target", setupReuseTarget, "--profile", "minimal", "--setup-pipeline", "ecc", "--yes"]);
   assert.equal(result.status, 0, result.stderr);
   assert.doesNotMatch(`${result.stdout}${result.stderr}`, /ECC cache exists but git pull failed/);
   assert.match(await fs.readFile(path.join(setupReuseTarget, ".mcp.json"), "utf8"), /persisted-setup-key/);
@@ -177,7 +176,7 @@ try {
 
 const gstackSetupTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-setup-"));
 try {
-  result = runCli(["setup", "--target", gstackSetupTarget, "--profile", "research", "--setup-pipeline", "gstack", "--yes", "--dry-run"]);
+  result = runCli(["setup", "--target", gstackSetupTarget, "--profile", "minimal", "--setup-pipeline", "gstack", "--yes", "--dry-run"]);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /git clone --single-branch --depth 1|copy .*\.claude\/skills\/gstack/);
   assert.match(result.stdout, /write gstack skill wrapper/);
@@ -190,7 +189,7 @@ try {
 
 const gstackHooksSetupTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-hooks-setup-"));
 try {
-  result = runCli(["setup", "--target", gstackHooksSetupTarget, "--profile", "research", "--setup-pipeline", "gstack", "--with-plan-tune-hooks", "--yes", "--dry-run"]);
+  result = runCli(["setup", "--target", gstackHooksSetupTarget, "--profile", "minimal", "--setup-pipeline", "gstack", "--with-plan-tune-hooks", "--yes", "--dry-run"]);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Plan-tune hooks\s+installed in \.claude\/settings\.json/);
   assert.doesNotMatch(result.stdout, /\.\/setup|~\/\.claude\/settings\.json/);
@@ -221,7 +220,7 @@ try {
     () => generateMcp({
       sourceRoot: repoRoot,
       target: mcpSymlinkTarget,
-      profile: "research",
+      profile: "minimal",
       mcpValues: { CONTEXT7_API_KEY: "mcp-symlink-key" },
       yes: true
     }),

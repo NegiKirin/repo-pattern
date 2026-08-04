@@ -196,8 +196,7 @@ async function rejectClaudeSymlink(target, { dryRun = false } = {}) {
     [".claude/settings.local.json", ".claude/settings.local.json"],
     [".repo-pattern", ".repo-pattern"],
     [".repo-pattern/.repo-pattern.json", ".repo-pattern/.repo-pattern.json"],
-    [".repo-pattern/.repo-pattern.lock.json", ".repo-pattern/.repo-pattern.lock.json"],
-    ["graphify-out", "graphify-out"]
+    [".repo-pattern/.repo-pattern.lock.json", ".repo-pattern/.repo-pattern.lock.json"]
   ];
   for (const [relativePath, label] of managedPaths) {
     try {
@@ -236,8 +235,7 @@ async function snapshotProvisionState(target, { dryRun = false } = {}) {
     { path: path.join(target, ".claude", "agents"), snapshot: path.join(snapshotRoot, "agents") },
     { path: path.join(target, ".claude", "rules", "ecc"), snapshot: path.join(snapshotRoot, "ecc-rules") },
     { path: path.join(target, ".claude", "skills"), snapshot: path.join(snapshotRoot, "skills") },
-    { path: path.join(target, ".repo-pattern", "cache"), snapshot: path.join(snapshotRoot, "cache") },
-    { path: path.join(target, "graphify-out"), snapshot: path.join(snapshotRoot, "graphify-out") }
+    { path: path.join(target, ".repo-pattern", "cache"), snapshot: path.join(snapshotRoot, "cache") }
   ].map((entry) => ({ ...entry, exists: exists(entry.path) }));
   for (const directory of directories) {
     if (directory.exists) await fs.cp(directory.path, directory.snapshot, { recursive: true, force: true });

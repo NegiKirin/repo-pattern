@@ -1,9 +1,11 @@
 {
   "servers": [
     "context7",
+    "filesystem",
     "playwright",
     "chrome-devtools",
+    "gitnexus",
     "tavily",
-    "graphify"
+    "sequential-thinking"
   ]
 }

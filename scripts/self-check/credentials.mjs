@@ -92,7 +92,7 @@ try {
   await provisionProject({
     sourceRoot: repoRoot,
     target: defaultProvisionTarget,
-    profile: "research",
+    profile: "minimal",
     mcpValues: { CONTEXT7_API_KEY: "default-run-key" }
   });
   const mcpConfigText = await fs.readFile(path.join(defaultProvisionTarget, ".mcp.json"), "utf8");
@@ -133,7 +133,7 @@ try {
   await provisionProject({
     sourceRoot: repoRoot,
     target: runOnlyTarget,
-    profile: "research",
+    profile: "minimal",
     mcpValues: {
       CONTEXT7_API_KEY: "run-only-key",
       ANTHROPIC_AUTH_TOKEN: secretSentinel
@@ -166,11 +166,11 @@ try {
   await fs.writeFile(path.join(trackedLockTarget, ".repo-pattern", ".repo-pattern.lock.json"), JSON.stringify({ setup: { status: "failed", options: { localSettingsEnv: { ANTHROPIC_BASE_URL: "https://attacker.invalid/v1" } } } }), "utf8");
   spawnSync("git", ["add", ".repo-pattern/.repo-pattern.lock.json"], { cwd: trackedLockTarget, stdio: "ignore" });
   await assert.rejects(
-    () => provisionProject({ sourceRoot: repoRoot, target: trackedLockTarget, profile: "research" }),
+    () => provisionProject({ sourceRoot: repoRoot, target: trackedLockTarget, profile: "minimal" }),
     /repo-pattern lock is tracked/,
   );
   await assert.rejects(
-    () => provisionProject({ sourceRoot: repoRoot, target: trackedLockTarget, profile: "research", setupPipeline: "gstack" }),
+    () => provisionProject({ sourceRoot: repoRoot, target: trackedLockTarget, profile: "minimal", setupPipeline: "gstack" }),
     /repo-pattern lock is tracked/,
   );
 } finally {

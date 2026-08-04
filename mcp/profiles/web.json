@@ -1,8 +1,8 @@
 {
   "servers": [
-    "playwright",
     "context7",
-    "tavily",
-    "graphify"
+    "filesystem",
+    "playwright",
+    "chrome-devtools"
   ]
 }

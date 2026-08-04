@@ -47,10 +47,10 @@ export async function runInteractiveProvisionChecks(repoRoot) {
       await provisionProject({
         sourceRoot: repoRoot,
         target: successTarget,
-        profile: "research",
+        profile: "minimal",
         setupPipeline: "none",
         dryRun: true,
-        mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
+        mcpValues: { CONTEXT7_API_KEY: "interactive-test-key" },
         interactiveSetup: true
       });
       const rendered = output.join("");
@@ -78,11 +78,11 @@ export async function runInteractiveProvisionChecks(repoRoot) {
       await provisionProject({
         sourceRoot: repoRoot,
         target: pluginTarget,
-        profile: "research",
+        profile: "minimal",
         setupPipeline: "none",
         optionalSkills: ["taste"],
         dryRun: true,
-        mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
+        mcpValues: { CONTEXT7_API_KEY: "interactive-test-key" },
         interactiveSetup: true
       });
       const rendered = output.join("");
@@ -101,11 +101,11 @@ export async function runInteractiveProvisionChecks(repoRoot) {
       await provisionProject({
         sourceRoot: repoRoot,
         target: parityTarget,
-        profile: "research",
+        profile: "minimal",
         setupPipeline: "both",
         optionalSkills: ["document-specialist"],
         dryRun: true,
-        mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
+        mcpValues: { CONTEXT7_API_KEY: "interactive-test-key" },
         interactiveSetup: true
       });
       const rendered = output.join("");
@@ -132,10 +132,10 @@ export async function runInteractiveProvisionChecks(repoRoot) {
         await provisionProject({
           sourceRoot: repoRoot,
           target: asymmetricTarget,
-          profile: "research",
+          profile: "minimal",
           setupPipeline: "none",
           dryRun: true,
-          mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
+          mcpValues: { CONTEXT7_API_KEY: "interactive-test-key" },
           interactiveSetup: true
         });
         const rendered = output.join("");
@@ -154,10 +154,10 @@ export async function runInteractiveProvisionChecks(repoRoot) {
         () => provisionProject({
           sourceRoot: repoRoot,
           target: completionFailureTarget,
-          profile: "research",
+          profile: "minimal",
           setupPipeline: "none",
           dryRun: true,
-          mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
+          mcpValues: { CONTEXT7_API_KEY: "interactive-test-key" },
           interactiveSetup: true,
           onBeforeSuccessSummary: async () => {
             throw new Error("setup status persistence failed");
@@ -184,7 +184,7 @@ export async function runInteractiveProvisionChecks(repoRoot) {
       await provisionProject({
         sourceRoot: repoRoot,
         target: warningTarget,
-        profile: "research",
+        profile: "minimal",
         setupPipeline: "none",
         dryRun: true,
         interactiveSetup: true
@@ -208,9 +208,9 @@ export async function runInteractiveProvisionChecks(repoRoot) {
           () => provisionProject({
             sourceRoot: repoRoot,
             target: gstackFailureTarget,
-            profile: "research",
+            profile: "minimal",
             setupPipeline: "gstack",
-            mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
+            mcpValues: { CONTEXT7_API_KEY: "interactive-test-key" },
             interactiveSetup: true
           }),
           (error) => {
@@ -248,7 +248,7 @@ export async function runInteractiveProvisionChecks(repoRoot) {
         () => provisionProject({
           sourceRoot: repoRoot,
           target: failureTarget,
-          profile: "research",
+          profile: "minimal",
           setupPipeline: "none",
           interactiveSetup: true,
           optionalSkills: ["nope"]

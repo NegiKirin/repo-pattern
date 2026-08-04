@@ -1,7 +1,0 @@
-{
-  "graphify": {
-    "command": "graphify-mcp",
-    "args": ["graphify-out/graph.json"],
-    "description": "Local code knowledge graph queries, paths, impact context, and PR analysis"
-  }
-}

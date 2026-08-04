@@ -13,7 +13,7 @@ import { applyOptionalSkills, OPTIONAL_SKILLS } from "./skills.mjs";
 
 const execFileAsync = promisify(execFile);
 
-const PROFILE_NAMES = ["backend", "web", "research", "full"];
+const PROFILE_NAMES = ["web", "minimal", "backend", "research", "full"];
 
 async function profileOptions(sourceRoot) {
   const options = await Promise.all(PROFILE_NAMES.map(async (name) => {
@@ -144,7 +144,7 @@ function suggestedProfile(detection, fallback) {
   if (fallback && fallback !== "web") return fallback;
   if (["frontend", "fullstack", "node"].includes(detection.repoType)) return "web";
   if (detection.repoType === "backend") return "backend";
-  return "full";
+  return "minimal";
 }
 
 async function checkClaudeCode() {
@@ -169,7 +169,7 @@ async function chooseMcpConfig(sourceRoot, profile) {
   const mcpServers = await selectMany({
     message: "Choose MCP servers",
     options: await listAvailableMcpServers(sourceRoot),
-    initialValues: ["context7", "graphify"]
+    initialValues: ["context7", "filesystem"]
   });
   if (mcpServers.length === 0) throw new Error("Custom MCP profile requires at least one server.");
   return { profile, mcpServers };

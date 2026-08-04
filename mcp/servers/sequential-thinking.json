@@ -1,0 +1,10 @@
+{
+  "sequential-thinking": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-sequential-thinking"
+    ],
+    "description": "Structured reasoning support for multi-stage analysis"
+  }
+}

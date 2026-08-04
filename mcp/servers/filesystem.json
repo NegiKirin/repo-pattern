@@ -1,0 +1,11 @@
+{
+  "filesystem": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-filesystem",
+      "."
+    ],
+    "description": "Filesystem operations for the current workspace"
+  }
+}

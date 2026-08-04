@@ -406,8 +406,8 @@ ECC should provide the workflow surface through plugin-managed runtime.
 
 ```text
 minimal Claude settings
-generated .mcp.json and local Graphify code graph
-MCP profiles with Graphify
+MCP profiles
+generated .mcp.json
 ECC setup flow
 audit/migrate/cleanup/doctor tools
 ```

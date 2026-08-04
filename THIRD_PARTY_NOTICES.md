@@ -19,13 +19,6 @@ License: MIT
 
 repo-pattern does not vendor gstack. It reuses or copies a valid checkout, or shallow-clones one into the target's `.claude/skills/gstack/`; runtime state is stored in `.repo-pattern/gstack/`. It never runs upstream `gstack/setup` or modifies global gstack state.
 
-## Graphify
-
-repo-pattern installs Graphify's MCP tool through `uv` and generates a code-only local graph in the target project. It does not vendor Graphify or send the graph to a remote service.
-
-Source: https://github.com/Graphify-Labs/graphify
-License: Apache-2.0
-
 ## Karpathy-inspired guidelines
 
 repo-pattern includes Claude Code behavioral guidelines from `multica-ai/andrej-karpathy-skills` in `.claude/CLAUDE.md`.
