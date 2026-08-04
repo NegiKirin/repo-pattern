@@ -1,12 +1,5 @@
 # Changelog
 
-## [0.2.11] - 2026-08-03
-
-### Fixed
-
-- Keep CI output fully durable and ANSI-free, including setup summaries.
-- Isolate interactive output tests from the ambient `CI` environment.
-
 ## [0.2.10] - 2026-08-03
 
 ### Fixed

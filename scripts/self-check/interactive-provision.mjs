@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { provisionProject } from "../lib/provision.mjs";
 
-function withInteractiveTerminal(callback, { stdinTTY = true, stdoutTTY = true, env = { CI: "" } } = {}) {
+function withInteractiveTerminal(callback, { stdinTTY = true, stdoutTTY = true, env = {} } = {}) {
   const originalLog = console.log;
   const originalWarn = console.warn;
   const originalStdinTty = process.stdin.isTTY;
