@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.13] - 2026-08-05
+
+**Release checks now simulate interactive terminals without inheriting GitHub Actions CI mode.**
+
+### Fixed
+
+- Keep interactive setup tests deterministic under `CI=true` while retaining durable non-interactive output for CI runs.
+- Treat `CI` as non-interactive even when both standard streams report TTY support.
+
 ## [0.2.12] - 2026-08-05
 
 **Synchronize the package and GitHub release stream after the prior `v0.2.11` release.**

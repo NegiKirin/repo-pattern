@@ -1,7 +1,7 @@
 import { confirm, isCancel, multiselect, note, password, select, spinner, text } from "@clack/prompts";
 
 export function isInteractive() {
-  return Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  return Boolean(process.stdin.isTTY && process.stdout.isTTY && !process.env.CI);
 }
 
 function handleCancel(value) {
