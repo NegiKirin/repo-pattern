@@ -1,8 +1,6 @@
 {
   "servers": [
     "context7",
-    "filesystem",
-    "tavily",
-    "sequential-thinking"
+    "tavily"
   ]
 }

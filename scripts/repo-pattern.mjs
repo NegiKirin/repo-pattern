@@ -34,7 +34,7 @@ function parseArgs(argv) {
   const options = {
     command: command || "help",
     target: ".",
-    profile: "web",
+    profile: null,
     setupPipeline: "ecc",
     planTuneHooks: false,
     dryRun: false,
@@ -117,7 +117,7 @@ Advanced:
 
 Options:
   --target <path>                  Target project path. Default: .
-  --profile <name>                 MCP profile for scriptable commands. Default: web
+  --profile <name>                 MCP profile for scriptable commands. Setup detects web projects; otherwise backend.
   --setup-pipeline <ecc|gstack|both|none>
                                   Setup pipeline. Default: ecc
                                   ecc: project-scoped ECC
@@ -160,7 +160,7 @@ async function main() {
         await cleanupProject({ sourceRoot, ...options });
         break;
       case "mcp":
-        await generateMcp({ sourceRoot, target: options.target, profile: options.profile, mcpValues: await readGeneratedMcpValues(options.target), yes: options.yes, dryRun: options.dryRun });
+        await generateMcp({ sourceRoot, target: options.target, profile: options.profile || "web", mcpValues: await readGeneratedMcpValues(options.target), yes: options.yes, dryRun: options.dryRun });
         break;
       case "ecc":
         await setupEcc({ sourceRoot, target: options.target, dryRun: options.dryRun });

@@ -55,7 +55,7 @@ try {
   await provisionProject({
     sourceRoot: repoRoot,
     target: gstackProvisionTarget,
-    profile: "minimal",
+    profile: "backend",
     setupPipeline: "gstack",
     migrate: true,
     applyRules: true
@@ -89,7 +89,7 @@ try {
   await provisionProject({
     sourceRoot: repoRoot,
     target: gstackProvisionTarget,
-    profile: "minimal",
+    profile: "backend",
     setupPipeline: "both",
     optionalSkills: ["nextjs-pattern"],
     applyRules: false
@@ -99,7 +99,7 @@ try {
   await provisionProject({
     sourceRoot: repoRoot,
     target: gstackProvisionTarget,
-    profile: "minimal",
+    profile: "backend",
     setupPipeline: "both",
     optionalSkills: ["impeccable"],
     applyRules: false
@@ -122,7 +122,7 @@ try {
   await provisionProject({
     sourceRoot: repoRoot,
     target: gstackProvisionTarget,
-    profile: "minimal",
+    profile: "backend",
     setupPipeline: "gstack",
     optionalSkills: [],
     applyRules: false
@@ -146,7 +146,7 @@ try {
   await provisionProject({
     sourceRoot: repoRoot,
     target: gstackProvisionTarget,
-    profile: "minimal",
+    profile: "backend",
     setupPipeline: "gstack",
     optionalSkills: [],
     applyRules: false
