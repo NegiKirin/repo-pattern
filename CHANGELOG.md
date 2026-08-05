@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.12] - 2026-08-05
+
+**Synchronize the package and GitHub release stream after the prior `v0.2.11` release.**
+
+### Fixed
+
+- Align the published package version with the next unreleased patch slot, `0.2.12`.
+
 ## [0.2.10] - 2026-08-05
 
 **MCP setup now starts with the profile that fits the project.**
