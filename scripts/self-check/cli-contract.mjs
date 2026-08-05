@@ -61,13 +61,13 @@ console.log = (message = "") => logs.push(String(message));
 process.stdin.isTTY = false;
 process.stdout.isTTY = false;
 try {
-  printSummary("MCP generated", [["Enabled servers", "context7, filesystem, playwright, chrome-devtools, gitnexus, tavily, sequential-thinking"]]);
+  printSummary("MCP generated", [["Enabled servers", "context7, playwright, chrome-devtools, gitnexus, tavily"]]);
 } finally {
   console.log = originalLog;
   process.stdin.isTTY = originalStdinIsTty;
   process.stdout.isTTY = originalStdoutIsTty;
 }
-assert(logs.some((line) => line.includes("sequential-thinking")));
+assert(logs.some((line) => line.includes("chrome-devtools")));
 assert(!logs.some((line) => line.length > 100));
 assert(renderLogo().includes("repo-pattern"));
 assert(renderLogo({ color: true }).some((line) => line.includes("\x1b[38;5;")));
@@ -131,29 +131,45 @@ assert.equal(result.status, 0);
 assert.match(result.stdout, /Target\s+.*repo-pattern/);
 
 result = runCli(["mcp", "--profile", "minimal", "--yes", "--dry-run"]);
-assert.equal(result.status, 0);
-assert.match(result.stdout, /MCP generated/);
+assert.equal(result.status, 1);
+assert.match(result.stderr, /MCP profile not found: minimal\. Available profiles: backend, full, research, web/);
+
+const invalidProfileTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-invalid-profile-"));
+try {
+  result = runCli(["setup", "--target", invalidProfileTarget, "--profile", "minimal", "--setup-pipeline", "none", "--yes"]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /MCP profile not found: minimal\. Available profiles: backend, full, research, web/);
+} finally {
+  await fs.rm(invalidProfileTarget, { recursive: true, force: true });
+}
 
 result = runCli(["mcp", "--profile", "nope", "--yes"]);
 assert.equal(result.status, 1);
-assert.match(result.stderr, /MCP profile not found: nope\. Available profiles: /);
-assert.match(result.stderr, /minimal/);
-assert.match(result.stderr, /web/);
+assert.match(result.stderr, /MCP profile not found: nope\. Available profiles: backend, full, research, web/);
 
 const mcpReuseTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-mcp-reuse-"));
 try {
   await fs.writeFile(path.join(mcpReuseTarget, ".mcp.json"), JSON.stringify({
     mcpServers: {
+      filesystem: { command: "legacy-filesystem" },
+      "sequential-thinking": { command: "legacy-thinking" },
       context7: { env: { CONTEXT7_API_KEY: "persisted-context7-key" } },
       tavily: { env: { TAVILY_API_KEY: "persisted-tavily-key" } }
     }
   }), "utf8");
+  await fs.mkdir(path.join(mcpReuseTarget, ".claude"), { recursive: true });
+  await fs.writeFile(path.join(mcpReuseTarget, ".claude", "settings.json"), JSON.stringify({
+    enabledMcpjsonServers: ["filesystem", "sequential-thinking", "context7"]
+  }), "utf8");
   result = runCli(["mcp", "--target", mcpReuseTarget, "--profile", "research", "--yes"]);
   assert.equal(result.status, 0, result.stderr);
-  const mcpConfigText = await fs.readFile(path.join(mcpReuseTarget, ".mcp.json"), "utf8");
-  assert.match(mcpConfigText, /persisted-context7-key/);
-  assert.match(mcpConfigText, /persisted-tavily-key/);
-  assert.equal(mcpConfigText.includes(secretSentinel), false);
+  const mcpConfig = JSON.parse(await fs.readFile(path.join(mcpReuseTarget, ".mcp.json"), "utf8"));
+  const settings = JSON.parse(await fs.readFile(path.join(mcpReuseTarget, ".claude", "settings.json"), "utf8"));
+  assert.deepEqual(Object.keys(mcpConfig.mcpServers), ["context7", "tavily"]);
+  assert.deepEqual(settings.enabledMcpjsonServers, ["context7", "tavily"]);
+  assert.equal(mcpConfig.mcpServers.context7.env.CONTEXT7_API_KEY, "persisted-context7-key");
+  assert.equal(mcpConfig.mcpServers.tavily.env.TAVILY_API_KEY, "persisted-tavily-key");
+  assert.equal(JSON.stringify(mcpConfig).includes(secretSentinel), false);
 } finally {
   await fs.rm(mcpReuseTarget, { recursive: true, force: true });
 }
@@ -165,7 +181,7 @@ try {
   }), "utf8");
   const eccFixture = await writeEccGitFixture(setupReuseTarget);
   assert.equal(hasGitUpstream(eccFixture), false);
-  result = runCli(["setup", "--target", setupReuseTarget, "--profile", "minimal", "--setup-pipeline", "ecc", "--yes"]);
+  result = runCli(["setup", "--target", setupReuseTarget, "--profile", "backend", "--setup-pipeline", "ecc", "--yes"]);
   assert.equal(result.status, 0, result.stderr);
   assert.doesNotMatch(`${result.stdout}${result.stderr}`, /ECC cache exists but git pull failed/);
   assert.match(await fs.readFile(path.join(setupReuseTarget, ".mcp.json"), "utf8"), /persisted-setup-key/);
@@ -176,7 +192,7 @@ try {
 
 const gstackSetupTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-setup-"));
 try {
-  result = runCli(["setup", "--target", gstackSetupTarget, "--profile", "minimal", "--setup-pipeline", "gstack", "--yes", "--dry-run"]);
+  result = runCli(["setup", "--target", gstackSetupTarget, "--profile", "backend", "--setup-pipeline", "gstack", "--yes", "--dry-run"]);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /git clone --single-branch --depth 1|copy .*\.claude\/skills\/gstack/);
   assert.match(result.stdout, /write gstack skill wrapper/);
@@ -189,7 +205,7 @@ try {
 
 const gstackHooksSetupTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-hooks-setup-"));
 try {
-  result = runCli(["setup", "--target", gstackHooksSetupTarget, "--profile", "minimal", "--setup-pipeline", "gstack", "--with-plan-tune-hooks", "--yes", "--dry-run"]);
+  result = runCli(["setup", "--target", gstackHooksSetupTarget, "--profile", "backend", "--setup-pipeline", "gstack", "--with-plan-tune-hooks", "--yes", "--dry-run"]);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Plan-tune hooks\s+installed in \.claude\/settings\.json/);
   assert.doesNotMatch(result.stdout, /\.\/setup|~\/\.claude\/settings\.json/);
@@ -220,7 +236,7 @@ try {
     () => generateMcp({
       sourceRoot: repoRoot,
       target: mcpSymlinkTarget,
-      profile: "minimal",
+      profile: "backend",
       mcpValues: { CONTEXT7_API_KEY: "mcp-symlink-key" },
       yes: true
     }),

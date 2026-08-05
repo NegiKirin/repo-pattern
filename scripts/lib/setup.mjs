@@ -13,7 +13,8 @@ import { applyOptionalSkills, OPTIONAL_SKILLS } from "./skills.mjs";
 
 const execFileAsync = promisify(execFile);
 
-const PROFILE_NAMES = ["web", "minimal", "backend", "research", "full"];
+const PROFILE_NAMES = ["web", "backend", "research", "full"];
+export const CUSTOM_MCP_DEFAULTS = ["context7", "tavily"];
 
 async function profileOptions(sourceRoot) {
   const options = await Promise.all(PROFILE_NAMES.map(async (name) => {
@@ -73,13 +74,14 @@ export function setupRetryOptions({ action, setupPipeline, planTuneHooks = false
   };
 }
 
-function setupOptionsFromLock(lock) {
+export function setupOptionsFromLock(lock) {
   const setup = lock?.setup;
   if (!["failed", "running"].includes(setup?.status)) return null;
   const options = setup.options || null;
   if (!options) return null;
   return {
     ...options,
+    profile: options.profile === "minimal" ? "backend" : options.profile,
     permissionConfig: options.permissionConfig?.bypass === "allow" ? { bypass: "allow" } : { bypass: "deny" }
   };
 }
@@ -141,10 +143,9 @@ async function choosePreviousSetupOptions(target) {
 }
 
 function suggestedProfile(detection, fallback) {
-  if (fallback && fallback !== "web") return fallback;
+  if (fallback) return fallback;
   if (["frontend", "fullstack", "node"].includes(detection.repoType)) return "web";
-  if (detection.repoType === "backend") return "backend";
-  return "minimal";
+  return "backend";
 }
 
 async function checkClaudeCode() {
@@ -164,12 +165,12 @@ async function chooseProfile(sourceRoot, profile, detection) {
   });
 }
 
-async function chooseMcpConfig(sourceRoot, profile) {
+export async function chooseMcpConfig(sourceRoot, profile) {
   if (profile !== "custom") return { profile, mcpServers: null };
   const mcpServers = await selectMany({
     message: "Choose MCP servers",
     options: await listAvailableMcpServers(sourceRoot),
-    initialValues: ["context7", "filesystem"]
+    initialValues: CUSTOM_MCP_DEFAULTS
   });
   if (mcpServers.length === 0) throw new Error("Custom MCP profile requires at least one server.");
   return { profile, mcpServers };
@@ -443,7 +444,7 @@ async function handleInitialized({ sourceRoot, target, profile, dryRun }) {
   }
 }
 
-export async function setupProject({ sourceRoot, target, profile = "web", setupPipeline = "ecc", planTuneHooks = false, dryRun = false, force = false, migrate = false, yes = false, applyRules = false, optionalSkills = [] }) {
+export async function setupProject({ sourceRoot, target, profile = "backend", setupPipeline = "ecc", planTuneHooks = false, dryRun = false, force = false, migrate = false, yes = false, applyRules = false, optionalSkills = [] }) {
   if (!SETUP_PIPELINES.includes(setupPipeline)) throw new Error(`Unknown setup pipeline: ${setupPipeline}. Available: ${SETUP_PIPELINES.join(", ")}`);
   if (planTuneHooks && !["gstack", "both"].includes(setupPipeline)) throw new Error("--with-plan-tune-hooks requires --setup-pipeline gstack or both.");
   if (!isInteractive()) {
@@ -451,12 +452,13 @@ export async function setupProject({ sourceRoot, target, profile = "web", setupP
     if (profile === "custom") throw new Error("setup --yes cannot use the custom profile; choose a named profile.");
 
     const detection = await detectProject(target);
+    const selectedProfile = suggestedProfile(detection, profile);
     const ruleConfig = defaultRuleConfig(setupPipeline, applyRules, detection);
 
     await provisionProject({
       sourceRoot,
       target,
-      profile,
+      profile: selectedProfile,
       setupPipeline,
       mcpValues: await readGeneratedMcpValues(target),
       dryRun,

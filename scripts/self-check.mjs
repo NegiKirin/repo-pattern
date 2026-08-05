@@ -7,11 +7,13 @@ import { runGstackChecks } from "./self-check/gstack.mjs";
 import { runGstackProvisionChecks } from "./self-check/gstack-provision.mjs";
 import { runGitProgressChecks } from "./self-check/git-progress.mjs";
 import { runMcpAndSettingsChecks } from "./self-check/mcp-and-settings.mjs";
+import { runMcpProfileChecks } from "./self-check/mcp-profiles.mjs";
 import { runProvisionAndPipelineChecks } from "./self-check/provision-and-pipelines.mjs";
 import { runProgressChecks } from "./self-check/progress.mjs";
 import { runQualityGateChecks } from "./self-check/quality-gates.mjs";
 
 await runMcpAndSettingsChecks();
+await runMcpProfileChecks();
 await runEccRulesAndManifestChecks();
 await runEccSourceAndTransactionChecks();
 await runCliContractChecks();

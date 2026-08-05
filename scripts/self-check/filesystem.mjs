@@ -77,7 +77,7 @@ try {
   await provisionProject({
     sourceRoot: repoRoot,
     target: unrelatedRulesTarget,
-    profile: "minimal",
+    profile: "backend",
     setupPipeline: "none",
     applyRules: false
   });
@@ -91,7 +91,7 @@ try {
   await provisionProject({
     sourceRoot: repoRoot,
     target: unrelatedRulesTarget,
-    profile: "minimal",
+    profile: "backend",
     setupPipeline: "none",
     applyRules: false
   });
@@ -111,7 +111,7 @@ try {
   await provisionProject({
     sourceRoot: repoRoot,
     target: provisionTemplateTarget,
-    profile: "minimal",
+    profile: "backend",
     mcpValues: {
       CONTEXT7_API_KEY: "redacted-key",
       ANTHROPIC_AUTH_TOKEN: secretSentinel,
@@ -154,7 +154,7 @@ try {
   assert.equal("OTHER_API_KEY" in localSettings.env, false);
   const repoConfig = JSON.parse(await fs.readFile(path.join(provisionTemplateTarget, ".repo-pattern", ".repo-pattern.json"), "utf8"));
   assert.equal(repoConfig.mode, "target");
-  assert.equal(repoConfig.mcp.profile, "minimal");
+  assert.equal(repoConfig.mcp.profile, "backend");
   assert.equal(repoConfig.mcp.generated, true);
   assert.equal(await fs.readFile(path.join(provisionTemplateTarget, ".claude", "CLAUDE.md"), "utf8"), await fs.readFile(path.join(repoRoot, ".claude.example", "CLAUDE.md"), "utf8"));
   const provisionGitignore = (await fs.readFile(path.join(provisionTemplateTarget, ".gitignore"), "utf8")).split(/\r?\n/);
@@ -170,7 +170,7 @@ try {
   await provisionProject({
     sourceRoot: repoRoot,
     target: provisionTemplateTarget,
-    profile: "minimal",
+    profile: "backend",
     mcpValues: { CONTEXT7_API_KEY: "replacement-key" },
     localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: "replacement-token" }
   });
@@ -194,7 +194,7 @@ try {
     () => provisionProject({
       sourceRoot: repoRoot,
       target: symlinkTarget,
-      profile: "minimal",
+      profile: "backend",
       localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: secretSentinel }
     }),
     /\.claude.*symlink/
@@ -220,7 +220,7 @@ try {
     () => provisionProject({
       sourceRoot: repoRoot,
       target: settingsSymlinkTarget,
-      profile: "minimal",
+      profile: "backend",
       localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: secretSentinel }
     }),
     /settings\.local\.json.*symlink/

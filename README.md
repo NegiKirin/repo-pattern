@@ -15,7 +15,7 @@
 
 * **Start fast** — generate `.claude/`, `.mcp.json`, and repo-pattern metadata.
 * **Stay clean** — no local skills, commands, hooks, scripts, or duplicated templates by default.
-* **Use MCP profiles** — choose `minimal`, `web`, `backend`, `research`, `full`, or `custom`.
+* **Use MCP profiles** — choose `web`, `backend`, `research`, `full`, or `custom`.
 * **Explicit pipeline** — choose ECC (default) or a project-local gstack checkout.
 * **Migrate safely** — audit, cleanup, doctor, and `setup --migrate` are built in.
 
@@ -86,7 +86,7 @@ Common options:
 
 ```bash
 --target /path/to/project  # default: current directory
---profile web              # default MCP profile
+--profile web              # choose an MCP profile
 --setup-pipeline ecc        # ecc (default), gstack, both, or none
 --with-rules               # install auto-detected .claude/rules/ecc on gstack or none
                             # ecc and both install auto-detected rules by default
@@ -101,12 +101,13 @@ Common options:
 
 | Profile | Use when |
 |----|----|
-| `minimal` | You want only essential docs/filesystem tooling. |
 | `web` | You build web apps and want browser/docs helpers. |
 | `backend` | You focus on server-side projects. |
 | `research` | You need search and extraction tooling. |
-| `full` | You want every bundled MCP server enabled. |
+| `full` | You want every approved MCP server enabled. |
 | `custom` | You want to choose exact MCP servers interactively; not available with `--yes`. |
+
+`setup` selects `web` for detected frontend, full-stack, and Node projects; other projects default to `backend`.
 
 When selected, Context7 and Tavily prompts include dashboard links for getting API keys.
 

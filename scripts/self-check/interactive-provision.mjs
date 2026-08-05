@@ -47,10 +47,10 @@ export async function runInteractiveProvisionChecks(repoRoot) {
       await provisionProject({
         sourceRoot: repoRoot,
         target: successTarget,
-        profile: "minimal",
+        profile: "backend",
         setupPipeline: "none",
         dryRun: true,
-        mcpValues: { CONTEXT7_API_KEY: "interactive-test-key" },
+        mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
         interactiveSetup: true
       });
       const rendered = output.join("");
@@ -78,11 +78,11 @@ export async function runInteractiveProvisionChecks(repoRoot) {
       await provisionProject({
         sourceRoot: repoRoot,
         target: pluginTarget,
-        profile: "minimal",
+        profile: "backend",
         setupPipeline: "none",
         optionalSkills: ["taste"],
         dryRun: true,
-        mcpValues: { CONTEXT7_API_KEY: "interactive-test-key" },
+        mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
         interactiveSetup: true
       });
       const rendered = output.join("");
@@ -101,11 +101,11 @@ export async function runInteractiveProvisionChecks(repoRoot) {
       await provisionProject({
         sourceRoot: repoRoot,
         target: parityTarget,
-        profile: "minimal",
+        profile: "backend",
         setupPipeline: "both",
         optionalSkills: ["document-specialist"],
         dryRun: true,
-        mcpValues: { CONTEXT7_API_KEY: "interactive-test-key" },
+        mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
         interactiveSetup: true
       });
       const rendered = output.join("");
@@ -132,10 +132,10 @@ export async function runInteractiveProvisionChecks(repoRoot) {
         await provisionProject({
           sourceRoot: repoRoot,
           target: asymmetricTarget,
-          profile: "minimal",
+          profile: "backend",
           setupPipeline: "none",
           dryRun: true,
-          mcpValues: { CONTEXT7_API_KEY: "interactive-test-key" },
+          mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
           interactiveSetup: true
         });
         const rendered = output.join("");
@@ -154,10 +154,10 @@ export async function runInteractiveProvisionChecks(repoRoot) {
         () => provisionProject({
           sourceRoot: repoRoot,
           target: completionFailureTarget,
-          profile: "minimal",
+          profile: "backend",
           setupPipeline: "none",
           dryRun: true,
-          mcpValues: { CONTEXT7_API_KEY: "interactive-test-key" },
+          mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
           interactiveSetup: true,
           onBeforeSuccessSummary: async () => {
             throw new Error("setup status persistence failed");
@@ -184,13 +184,13 @@ export async function runInteractiveProvisionChecks(repoRoot) {
       await provisionProject({
         sourceRoot: repoRoot,
         target: warningTarget,
-        profile: "minimal",
+        profile: "backend",
         setupPipeline: "none",
         dryRun: true,
         interactiveSetup: true
       });
       const rendered = output.join("");
-      assert.match(rendered, /Warnings\s+MCP values pending: CONTEXT7_API_KEY/);
+      assert.match(rendered, /Warnings\s+MCP values pending: CONTEXT7_API_KEY, TAVILY_API_KEY/);
       assert.doesNotMatch(rendered, /MCP values missing:|\[dry-run\]/);
     });
   } finally {
@@ -208,9 +208,9 @@ export async function runInteractiveProvisionChecks(repoRoot) {
           () => provisionProject({
             sourceRoot: repoRoot,
             target: gstackFailureTarget,
-            profile: "minimal",
+            profile: "backend",
             setupPipeline: "gstack",
-            mcpValues: { CONTEXT7_API_KEY: "interactive-test-key" },
+            mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
             interactiveSetup: true
           }),
           (error) => {
@@ -248,7 +248,7 @@ export async function runInteractiveProvisionChecks(repoRoot) {
         () => provisionProject({
           sourceRoot: repoRoot,
           target: failureTarget,
-          profile: "minimal",
+          profile: "backend",
           setupPipeline: "none",
           interactiveSetup: true,
           optionalSkills: ["nope"]

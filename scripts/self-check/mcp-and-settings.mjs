@@ -44,9 +44,10 @@ const mcpServers = {
     args: ["-y", "@upstash/context7-mcp"],
     env: { CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}" }
   },
-  filesystem: {
+  tavily: {
     command: "npx",
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+    args: ["-y", "tavily-mcp"],
+    env: { TAVILY_API_KEY: "${TAVILY_API_KEY}" }
   }
 };
 
@@ -73,13 +74,14 @@ assert.deepEqual(applyMcpValues(mcpServers, {
     args: ["-y", "@upstash/context7-mcp"],
     env: { CONTEXT7_API_KEY: "redacted-key" }
   },
-  filesystem: {
+  tavily: {
     command: "npx",
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+    args: ["-y", "tavily-mcp"],
+    env: { TAVILY_API_KEY: "${TAVILY_API_KEY}" }
   }
 });
 
-assert.equal(applyMcpValues(mcpServers).filesystem.args[2], ".");
+assert.equal(applyMcpValues(mcpServers).tavily.env.TAVILY_API_KEY, "${TAVILY_API_KEY}");
 assert.deepEqual(applyMcpValues({
   unexpected: { env: { ANTHROPIC_AUTH_TOKEN: "${ANTHROPIC_AUTH_TOKEN}" } }
 }, {
@@ -365,7 +367,7 @@ try {
   await provisionProject({
     sourceRoot: repoRoot,
     target: mixedSkillTarget,
-    profile: "minimal",
+    profile: "backend",
     setupPipeline: "none",
     applyRules: false
   });

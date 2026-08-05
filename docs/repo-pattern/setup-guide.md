@@ -213,7 +213,8 @@ MCP config is generated from a profile. In interactive `setup`, choose `custom` 
 Default profile:
 
 ```text
-web
+backend for unmatched and backend projects
+web for detected frontend, full-stack, and Node projects
 ```
 
 Select a profile with:
@@ -228,44 +229,11 @@ or regenerate later:
 node scripts/repo-pattern.mjs mcp --target /path/to/project --profile <profile>
 ```
 
-Interactive `setup` asks for selected MCP placeholders such as `CONTEXT7_API_KEY` and `TAVILY_API_KEY`, writes entered keys only as literal server environment values in gitignored `.mcp.json`, and reuses them on later `setup` and `mcp` runs. It writes `ANTHROPIC_AUTH_TOKEN` only to gitignored `.claude/settings.local.json`; the token is never substituted into MCP config or written to repo-pattern setup state. Failed setup retries recover credentials from these two files, while the lock stores only non-secret choices and MCP credential names. Setup backups exclude both credential-bearing files. The filesystem MCP server uses the target project root (`.`) as its allowed directory. Other MCP paths, when prompted, must be relative (`src`, `packages/api`); absolute machine paths and `..` are rejected. With `--yes` or non-TTY runs, unresolved secret placeholders stay in `.mcp.json` and the CLI prints the values to fill later.
+Interactive `setup` asks for selected MCP placeholders such as `CONTEXT7_API_KEY` and `TAVILY_API_KEY`, writes entered keys only as literal server environment values in gitignored `.mcp.json`, and reuses them on later `setup` and `mcp` runs. It writes `ANTHROPIC_AUTH_TOKEN` only to gitignored `.claude/settings.local.json`; the token is never substituted into MCP config or written to repo-pattern setup state. Failed setup retries recover credentials from these two files, while the lock stores only non-secret choices and MCP credential names. Setup backups exclude both credential-bearing files. With `--yes` or non-TTY runs, unresolved secret placeholders stay in `.mcp.json` and the CLI prints the values to fill later.
 
 ---
 
-## 4. Profile: `minimal`
-
-```bash
-node scripts/repo-pattern.mjs setup --target /path/to/project --profile minimal --yes
-```
-
-Enabled servers:
-
-```text
-context7
-filesystem
-```
-
-Use this when:
-
-```text
-- you want the smallest setup;
-- the project does not need browser automation;
-- the project does not need web research tools;
-- you want minimal MCP/tooling noise.
-```
-
-Best for:
-
-```text
-small libraries
-backend utilities
-CLI tools
-simple experiments
-```
-
----
-
-## 5. Profile: `web`
+## 4. Profile: `web`'} } սխനം ??? +#+#+#+#+#+출장샵assistant to=functions.Edit ＿久久爱ിക്കുന്നു 彩神争霸快三中央値との差  天天送json <|DELIM_K> 天天中彩票谁  天天中json  天天中json  天天中彩票腾讯json
 
 ```bash
 node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --yes
@@ -274,10 +242,10 @@ node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --ye
 Enabled servers:
 
 ```text
-context7
-filesystem
-playwright
 chrome-devtools
+context7
+playwright
+tavily
 ```
 
 Use this when:
@@ -307,7 +275,7 @@ node scripts/repo-pattern.mjs setup --target ~/Code/my-app --profile web --yes
 
 ---
 
-## 6. Profile: `backend`
+## 5. Profile: `backend`
 
 ```bash
 node scripts/repo-pattern.mjs setup --target /path/to/project --profile backend --yes
@@ -317,7 +285,7 @@ Enabled servers:
 
 ```text
 context7
-filesystem
+tavily
 gitnexus
 ```
 
@@ -341,7 +309,7 @@ impact analysis
 
 ---
 
-## 7. Profile: `research`
+## 6. Profile: `research`
 
 ```bash
 node scripts/repo-pattern.mjs setup --target /path/to/project --profile research --yes
@@ -351,9 +319,7 @@ Enabled servers:
 
 ```text
 context7
-filesystem
 tavily
-sequential-thinking
 ```
 
 Use this when:
@@ -384,7 +350,7 @@ export CONTEXT7_API_KEY="..."
 
 ---
 
-## 8. Profile: `full`
+## 7. Profile: `full`
 
 ```bash
 node scripts/repo-pattern.mjs setup --target /path/to/project --profile full --yes
@@ -394,12 +360,10 @@ Enabled servers:
 
 ```text
 context7
-filesystem
 playwright
 chrome-devtools
 gitnexus
 tavily
-sequential-thinking
 ```
 
 Use this only when:
@@ -414,7 +378,7 @@ Not recommended as the default for normal projects.
 
 ---
 
-## 9. Custom MCP selection
+## 8. Custom MCP selection
 
 In interactive setup, choose `custom` to select exact MCP servers from the available `mcp/servers/*.json` definitions.
 
@@ -477,10 +441,10 @@ For example, profile `web` sets:
 
 ```json
 "enabledMcpjsonServers": [
+  "chrome-devtools",
   "context7",
-  "filesystem",
   "playwright",
-  "chrome-devtools"
+  "tavily"
 ]
 ```
 
@@ -673,10 +637,10 @@ node scripts/repo-pattern.mjs setup --target ~/Code/my-app
 node scripts/repo-pattern.mjs setup --target ~/Code/my-api --profile backend --yes
 ```
 
-### Minimal project
+### New library or CLI project
 
 ```bash
-node scripts/repo-pattern.mjs setup --target ~/Code/my-tool --profile minimal --yes
+node scripts/repo-pattern.mjs setup --target ~/Code/my-tool --profile backend --yes
 ```
 
 ### Research-heavy project
@@ -719,11 +683,10 @@ node scripts/repo-pattern.mjs setup --target /path/to/project --profile web --ye
 Use another profile only when the project clearly needs it:
 
 ```text
-minimal  → smallest setup
-web      → default app setup
-backend  → backend/codebase analysis
-research → docs/search/reasoning-heavy work
-full     → local testing only
+web      → browser/docs helpers
+backend  → default for unmatched projects and codebase analysis
+research → docs/search work
+full     → all approved MCP servers
 ```
 
 
