@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.2.10] - 2026-08-05
+
+**MCP setup now starts with the profile that fits the project.**
+**Legacy filesystem and sequential-thinking servers are gone.**
+
+New setup runs choose `web` for frontend, full-stack, and Node projects, while backend and unmatched projects use `backend`. The supported profiles now contain only Context7, Tavily, Playwright, Chrome DevTools, and GitNexus in their intended order. Existing generated workspaces are cleaned when MCP is regenerated: obsolete server entries and enabled-server state are replaced, while Context7 and Tavily credentials stay intact. Retrying an older interrupted setup that named `minimal` now continues with `backend`.
+
+### The MCP numbers that matter
+
+These checks come from `npm test`, including `scripts/self-check/mcp-profiles.mjs` and `scripts/self-check/cli-contract.mjs`.
+
+| Metric | Before | After | Δ |
+| --- | ---: | ---: | ---: |
+| Supported MCP profiles | 5 named profiles | 4 named profiles | -1 |
+| Legacy MCP definitions | 2 | 0 | -2 |
+| Default custom MCP servers | Context7, filesystem | Context7, Tavily | updated |
+| Regenerated legacy server entries | retained | removed | fixed |
+
+The setup command now makes a useful default choice without retaining removed configurations. Use `repo-pattern mcp --profile web` when you want an explicit standalone MCP regeneration.
+
+### What this means for repo-pattern users
+
+Run `repo-pattern setup` for the project-appropriate default, or name one of `web`, `backend`, `research`, `full`, or `custom`. Replace scripts that pass `--profile minimal` with `--profile backend` before upgrading.
+
+### Itemized changes
+
+### Changed
+
+- Select `web` for detected frontend, full-stack, and Node projects when `setup` has no profile argument; default other projects and direct `setupProject()` calls to `backend`.
+- Update the approved MCP profile server lists and their generated order.
+- Make custom MCP selection start with Context7 and Tavily.
+- Preserve Context7 and Tavily credentials when regenerating MCP configuration.
+
+### Removed
+
+- Remove the `minimal` MCP profile.
+- Remove the legacy `filesystem` and `sequential-thinking` server definitions.
+
+### Fixed
+
+- Migrate interrupted setup locks that reference the removed `minimal` profile to `backend` without losing custom server selections.
+- Replace stale legacy MCP configuration and enabled-server state during regeneration.
+
 ## [0.2.9] - 2026-08-03
 
 **Interactive setup now shows three concise group spinners, then one clear result.**
