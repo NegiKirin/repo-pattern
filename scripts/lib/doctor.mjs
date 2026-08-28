@@ -56,13 +56,13 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   const managedSkills = audit.repoPattern?.runtime?.localSkills === true && Array.isArray(audit.repoPattern?.optionalSkills) && audit.hasOnlyManagedSkills;
   check(!audit.hasClaudeSkillsDir || allowSourceSkills || audit.hasRepoPatternJson, ".claude/skills is preserved for initialized repo-pattern projects");
   check(!audit.hasClaudeCommandsDir, ".claude/commands does not exist");
-  check(!audit.hasClaudeHooksDir, ".claude/hooks does not exist");
+  check(!audit.hasClaudeHooksDir || audit.hasOnlyGeneratedAttributionHookFile, ".claude/hooks contains only the generated attribution hook");
   check(!audit.hasClaudeScriptsDir, ".claude/scripts does not exist");
   const usesEcc = audit.repoPattern?.workflow === "ecc-native" || audit.repoPattern?.workflow === "ecc-gstack";
   check(!audit.hasClaudeEccRulesDir || audit.hasManagedEccRules, ".claude/rules/ecc is repo-pattern-managed when present");
   check(audit.hasClaudeDir, ".claude exists");
   const usesGstack = audit.repoPattern?.workflow === "gstack" || audit.repoPattern?.workflow === "ecc-gstack";
-  check(!audit.hasSettingsHooks || usesGstack, ".claude/settings.json hooks is {} unless gstack plan-tune is enabled");
+  check(!audit.hasSettingsHooks || usesGstack || audit.hasManagedGeneratedAttributionHook, ".claude/settings.json includes the managed attribution removal hook");
   check(!isTracked(target, ".claude/settings.json"), ".claude/settings.json is not tracked");
   check(!isTracked(target, ".claude/settings.local.json"), ".claude/settings.local.json is not tracked");
   check(!isTracked(target, ".mcp.json"), ".mcp.json is not tracked");
@@ -113,7 +113,7 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
     const gstack = await validateProjectGstack(target);
     const checkout = gstack.checkout;
     const statePath = gstack.statePath;
-    const expectedSettings = applyPlanTuneHooks({ ...settings, hooks: {} }, {
+    const expectedSettings = applyPlanTuneHooks(settings, {
       checkout,
       statePath,
       enabled: Boolean(lock.gstack?.planTuneHooks)

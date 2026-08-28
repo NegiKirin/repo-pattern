@@ -14,7 +14,7 @@
 ## Why use it?
 
 * **Start fast** — generate `.claude/`, `.mcp.json`, and repo-pattern metadata.
-* **Stay clean** — no local skills, commands, hooks, scripts, or duplicated templates by default.
+* **Stay clean** — no local skills, commands, scripts, or duplicated templates by default; one managed Bash hook removes generated-attribution lines.
 * **Use MCP profiles** — choose `web`, `backend`, `research`, `full`, or `custom`.
 * **Explicit pipeline** — choose ECC (default) or a project-local gstack checkout.
 * **Migrate safely** — audit, cleanup, doctor, and `setup --migrate` are built in.

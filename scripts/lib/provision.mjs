@@ -21,6 +21,29 @@ function shellQuote(value) {
 }
 
 const SETUP_PIPELINES = ["ecc", "gstack", "both", "none"];
+const GENERATED_ATTRIBUTION_HOOK_SOURCE = "generated-attribution-removal";
+const GENERATED_ATTRIBUTION_HOOK = {
+  _repo_pattern_source: GENERATED_ATTRIBUTION_HOOK_SOURCE,
+  matcher: "^Bash$",
+  hooks: [{ type: "command", command: "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/remove-generated-attribution.mjs\"", timeout: 5 }]
+};
+
+export function applyGeneratedAttributionHook(settings = {}) {
+  const hooks = Object.fromEntries(Object.entries(settings.hooks || {}).map(([event, entries]) => [
+    event,
+    (entries || []).filter((entry) => entry?._repo_pattern_source !== GENERATED_ATTRIBUTION_HOOK_SOURCE)
+  ]).filter(([, entries]) => entries.length > 0));
+  hooks.PreToolUse = [...(hooks.PreToolUse || []), GENERATED_ATTRIBUTION_HOOK];
+  return { ...settings, hooks };
+}
+
+async function copyGeneratedAttributionHook(sourceRoot, target, { dryRun, silent = false }) {
+  await copyRecursive(
+    path.join(sourceRoot, ".claude.example", "hooks", "remove-generated-attribution.mjs"),
+    path.join(target, ".claude", "hooks", "remove-generated-attribution.mjs"),
+    { dryRun, silent }
+  );
+}
 
 function usesEcc(setupPipeline) {
   return setupPipeline === "ecc" || setupPipeline === "both";
@@ -132,7 +155,8 @@ export function applyPermissionSettings(settings, permissionConfig = { bypass: "
 
 async function writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun, silent = false }) {
   const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.example.json"), {});
-  const settings = applyPermissionSettings(applyAttributionSetting(template, attributionConfig), permissionConfig);
+  const current = await readPrivateJson(path.join(target, ".claude", "settings.json"), {}, { label: ".claude/settings.json", parentLabel: ".claude" });
+  const settings = applyGeneratedAttributionHook(applyPermissionSettings(applyAttributionSetting({ ...template, hooks: current.hooks || template.hooks }, attributionConfig), permissionConfig));
   await writePrivateJson(path.join(target, ".claude", "settings.json"), settings, {
     dryRun,
     label: ".claude/settings.json",
@@ -146,11 +170,12 @@ export async function updateClaudeAttribution({ sourceRoot, target, attributionC
   const file = path.join(target, ".claude", "settings.json");
   const current = await readPrivateJson(file, null, { label: ".claude/settings.json", parentLabel: ".claude" });
   const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.example.json"), {});
-  await writePrivateJson(file, applyAttributionSetting(current || template, attributionConfig), {
+  await writePrivateJson(file, applyGeneratedAttributionHook(applyAttributionSetting(current || template, attributionConfig)), {
     dryRun,
     label: ".claude/settings.json",
     parentLabel: ".claude"
   });
+  await copyGeneratedAttributionHook(sourceRoot, target, { dryRun });
   await appendGitignoreLine(target, ".claude/", { dryRun });
 }
 
@@ -234,6 +259,7 @@ async function snapshotProvisionState(target, { dryRun = false } = {}) {
   const directories = [
     { path: path.join(target, ".claude", "agents"), snapshot: path.join(snapshotRoot, "agents") },
     { path: path.join(target, ".claude", "rules", "ecc"), snapshot: path.join(snapshotRoot, "ecc-rules") },
+    { path: path.join(target, ".claude", "hooks"), snapshot: path.join(snapshotRoot, "hooks") },
     { path: path.join(target, ".claude", "skills"), snapshot: path.join(snapshotRoot, "skills") },
     { path: path.join(target, ".repo-pattern", "cache"), snapshot: path.join(snapshotRoot, "cache") }
   ].map((entry) => ({ ...entry, exists: exists(entry.path) }));
@@ -366,6 +392,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
     advanceWorkspace("Copying workspace template");
 
     await writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun, silent: interactiveSetup });
+    await copyGeneratedAttributionHook(sourceRoot, target, { dryRun, silent: interactiveSetup });
     advanceWorkspace("Writing Claude settings");
     await appendGitignoreLine(target, ".claude/", { dryRun, silent: interactiveSetup });
     await writeLocalSettings({ sourceRoot, target, localSettingsEnv, setupPipeline, optionalSkills, dryRun, silent: interactiveSetup });

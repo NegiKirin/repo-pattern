@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.2.14] - 2026-08-28
+
+**Setup removes generated attribution lines before Bash commands run.**
+**Existing hooks stay in place while repo-pattern maintains its own entry.**
+
+Every project initialized or updated with `repo-pattern` now receives a managed Bash hook that removes whole `🤖 Generated with` lines from commands before Claude Code executes them. It handles both normal newlines and literal `\n` separators, without changing indented or inline text. Re-running setup or changing attribution repairs the hook and preserves gstack and third-party hooks.
+
+### The setup numbers that matter
+
+These checks come from `npm test` and `npm run pack:dry`.
+
+| Metric | Before | After | Δ |
+| --- | ---: | ---: | ---: |
+| Managed attribution hooks after setup | 0 | 1 | +1 |
+| Supported logical-line separators | 0 | 2 | +2 |
+| Unrelated hook events preserved | 0 | 2 tested | +2 |
+
+You can turn commit attribution off, on, or custom and still get the same Bash cleanup. Run `repo-pattern setup` or update commit attribution in an initialized project to install or repair it.
+
+### Itemized changes
+
+### Added
+
+- Install a managed Bash `PreToolUse` hook that removes standalone generated-attribution lines.
+- Repair the owned hook and its settings entry during setup and attribution updates.
+
+### Changed
+
+- Preserve gstack and third-party hooks across setup, attribution updates, audit, and Doctor validation.
+- Include the hook template in the published npm package.
+
 ## [0.2.13] - 2026-08-05
 
 **Release checks now simulate interactive terminals without inheriting GitHub Actions CI mode.**
