@@ -5,6 +5,7 @@ import { runEccSourceAndTransactionChecks } from "./self-check/ecc-source-and-tr
 import { runFilesystemChecks } from "./self-check/filesystem.mjs";
 import { runGstackChecks } from "./self-check/gstack.mjs";
 import { runGstackProvisionChecks } from "./self-check/gstack-provision.mjs";
+import { runGeneratedAttributionHookChecks } from "./self-check/generated-attribution-hook.mjs";
 import { runGitProgressChecks } from "./self-check/git-progress.mjs";
 import { runMcpAndSettingsChecks } from "./self-check/mcp-and-settings.mjs";
 import { runMcpProfileChecks } from "./self-check/mcp-profiles.mjs";
@@ -12,6 +13,7 @@ import { runProvisionAndPipelineChecks } from "./self-check/provision-and-pipeli
 import { runProgressChecks } from "./self-check/progress.mjs";
 import { runQualityGateChecks } from "./self-check/quality-gates.mjs";
 
+await runGeneratedAttributionHookChecks(new URL("..", import.meta.url).pathname);
 await runMcpAndSettingsChecks();
 await runMcpProfileChecks();
 await runEccRulesAndManifestChecks();

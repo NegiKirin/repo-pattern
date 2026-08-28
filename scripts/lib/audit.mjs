@@ -6,6 +6,26 @@ import { validateProjectGstack } from "./gstack.mjs";
 import { expectedOptionalSkillDirs } from "./skills.mjs";
 
 const HARDCODED_PATH_RE = /"\/home\/|"\/Users\/|"[A-Za-z]:\\\\/;
+const GENERATED_ATTRIBUTION_HOOK_SOURCE = "generated-attribution-removal";
+
+function hasManagedGeneratedAttributionHook(settings) {
+  return Object.values(settings.hooks || {}).flat().some((entry) => entry?._repo_pattern_source === GENERATED_ATTRIBUTION_HOOK_SOURCE);
+}
+
+function hasOnlyGeneratedAttributionHooks(settings) {
+  return Object.values(settings.hooks || {}).flat().every((entry) => entry?._repo_pattern_source === GENERATED_ATTRIBUTION_HOOK_SOURCE);
+}
+
+async function hasOnlyGeneratedAttributionHookFile(target) {
+  const hooksDir = path.join(target, ".claude", "hooks");
+  if (!exists(hooksDir)) return true;
+  try {
+    const entries = await fs.readdir(hooksDir, { withFileTypes: true });
+    return entries.length === 1 && entries[0].isFile() && entries[0].name === "remove-generated-attribution.mjs";
+  } catch {
+    return false;
+  }
+}
 
 async function fileContains(file, regex) {
   if (!exists(file)) return false;
@@ -72,12 +92,15 @@ export async function auditProject(target) {
     hasHardcodedMcpPath,
     hasSettingsLocalTracked: isTracked(target, ".claude/settings.local.json"),
     hasSettingsHooks: hasNonEmptyObject(settings.hooks),
+    hasManagedGeneratedAttributionHook: hasManagedGeneratedAttributionHook(settings),
+    hasOnlyGeneratedAttributionHooks: hasOnlyGeneratedAttributionHooks(settings),
     hasClaudeSkillsDir: exists(path.join(target, ".claude", "skills")),
     actualSkillDirs,
     expectedSkillDirs,
     hasOnlyManagedSkills,
     hasClaudeCommandsDir: exists(path.join(target, ".claude", "commands")),
     hasClaudeHooksDir: exists(path.join(target, ".claude", "hooks")),
+    hasOnlyGeneratedAttributionHookFile: await hasOnlyGeneratedAttributionHookFile(target),
     hasClaudeScriptsDir: exists(path.join(target, ".claude", "scripts")),
     hasClaudeRulesDir: exists(path.join(target, ".claude", "rules")),
     hasClaudeAgentsDir,
@@ -96,10 +119,10 @@ export async function auditProject(target) {
   const allowSourceSkills = repoPattern?.mode === "template";
   const usesEcc = workflow === "ecc-native" || workflow === "ecc-gstack";
   const legacy = (
-    (result.hasSettingsHooks && !usesGstack) ||
+    (result.hasSettingsHooks && !usesGstack && !result.hasOnlyGeneratedAttributionHooks && !result.hasRepoPatternJson) ||
     (result.hasClaudeSkillsDir && !repoPattern && !allowSourceSkills) ||
     result.hasClaudeCommandsDir ||
-    result.hasClaudeHooksDir ||
+    (result.hasClaudeHooksDir && !result.hasOnlyGeneratedAttributionHookFile) ||
     result.hasClaudeScriptsDir ||
     (result.hasClaudeRulesDir && (repoPattern
       ? (result.hasClaudeEccRulesDir && !result.hasManagedEccRules)

@@ -125,18 +125,19 @@ For non-interactive scripts, use `setup --yes`.
 4. Write `.claude/CLAUDE.md` if missing.
 5. Write `.claude/settings.json` from `.claude.example/settings.example.json`.
 6. In interactive setup, ask whether commit attribution is off, on, or custom.
-7. During interactive `setup`, write `ANTHROPIC_AUTH_TOKEN` and the prompted provider/model values to gitignored `.claude/settings.local.json`; provider/model defaults are placeholders accepted by pressing Enter, while valid existing values are retained on rerun; remove `CONTEXT7_API_KEY` and `TAVILY_API_KEY` from that file.
-8. Read MCP profiles and server definitions from `repo-pattern`.
-9. In interactive mode, reuse `CONTEXT7_API_KEY`/`TAVILY_API_KEY` from gitignored `.mcp.json` or ask for missing MCP API keys and relative paths when placeholders require them.
-10. Generate `.mcp.json` from the selected profile, storing entered Context7/Tavily keys as literal server environment values.
-11. Write `.repo-pattern/.repo-pattern.json` from `.repo-pattern.example.json`.
-12. Create `.repo-pattern/.gitignore` with `*`.
-13. Add generated setup files and basic OS/IDE noise to `.gitignore`.
-14. Write `.repo-pattern/.repo-pattern.lock.json` without credential values.
-15. Run the selected setup pipeline: ECC setup after generation, or project-local gstack bootstrap after base/ECC provisioning succeeds.
-16. When rules are enabled, apply ECC rules independently of plugin installation, validate the cached ECC Git `HEAD`, and atomically promote upstream `agents/**` into `.claude/agents/`.
-17. Write ECC agent provenance and the sorted SHA-256 file inventory only to `.repo-pattern/.repo-pattern.lock.json`; rollback agents and nested metadata if promotion or metadata writes fail.
-18. Run doctor unless gstack bootstrap failed; doctor validates ECC agent source, revision, manifest paths, missing/extra files, hashes, and local gstack surfaces.
+7. Install `.claude/hooks/remove-generated-attribution.mjs` and its managed Bash `PreToolUse` entry. It removes physical and literal `\\n` lines beginning exactly with `🤖 Generated with`, while retaining indented and inline text; attribution updates repair both managed artifacts without changing third-party or gstack hooks.
+8. During interactive `setup`, write `ANTHROPIC_AUTH_TOKEN` and the prompted provider/model values to gitignored `.claude/settings.local.json`; provider/model defaults are placeholders accepted by pressing Enter, while valid existing values are retained on rerun; remove `CONTEXT7_API_KEY` and `TAVILY_API_KEY` from that file.
+9. Read MCP profiles and server definitions from `repo-pattern`.
+10. In interactive mode, reuse `CONTEXT7_API_KEY`/`TAVILY_API_KEY` from gitignored `.mcp.json` or ask for missing MCP API keys and relative paths when placeholders require them.
+11. Generate `.mcp.json` from the selected profile, storing entered Context7/Tavily keys as literal server environment values.
+12. Write `.repo-pattern/.repo-pattern.json` from `.repo-pattern.example.json`.
+13. Create `.repo-pattern/.gitignore` with `*`.
+14. Add generated setup files and basic OS/IDE noise to `.gitignore`.
+15. Write `.repo-pattern/.repo-pattern.lock.json` without credential values.
+16. Run the selected setup pipeline: ECC setup after generation, or project-local gstack bootstrap after base/ECC provisioning succeeds.
+17. When rules are enabled, apply ECC rules independently of plugin installation, validate the cached ECC Git `HEAD`, and atomically promote upstream `agents/**` into `.claude/agents/`.
+18. Write ECC agent provenance and the sorted SHA-256 file inventory only to `.repo-pattern/.repo-pattern.lock.json`; rollback agents and nested metadata if promotion or metadata writes fail.
+19. Run doctor unless gstack bootstrap failed; doctor validates ECC agent source, revision, manifest paths, missing/extra files, hashes, and local gstack surfaces.
 ```
 
 After setup, the target project should contain:
