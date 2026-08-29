@@ -6,7 +6,7 @@ import { detectProject } from "./project-detect.mjs";
 import { provisionProject, setupPipelineScope, updateClaudeAttribution, updateClaudePermissions } from "./provision.mjs";
 import { doctorProject } from "./doctor.mjs";
 import { collectMcpValues, generateMcp, listAvailableMcpServers, persistedMcpValues, readGeneratedMcpValues, readMcpConfig } from "./mcp.mjs";
-import { askConfirm, askPassword, askText, isInteractive, printBox, printLogo, printSummary, selectMany, selectOne, style } from "./prompt.mjs";
+import { askConfirm, askEffortLevel, askPassword, askText, DEFAULT_EFFORT_LEVEL, isInteractive, printBox, printLogo, printSummary, selectMany, selectOne, style } from "./prompt.mjs";
 import { ECC_RULE_PACKS, normalizeEccRules, selectEccRules } from "./ecc-rules.mjs";
 import { ensureRepoPatternGitignore, isTracked, readJson, readPrivateJson, readRepoLock, repoLockPath, writeJson } from "./fs-utils.mjs";
 import { applyOptionalSkills, OPTIONAL_SKILLS } from "./skills.mjs";
@@ -54,7 +54,7 @@ function safeRetryLocalSettingsEnv(localSettingsEnv = {}) {
   return Object.fromEntries(Object.entries(localSettingsEnv).filter(([name]) => !RETRY_SECRET_LOCAL_SETTINGS.has(name)));
 }
 
-export function setupRetryOptions({ action, setupPipeline, planTuneHooks = false, mcpConfig, mcpValues = {}, ruleConfig, optionalSkills, localSettingsEnv, attributionConfig, permissionConfig = { bypass: "deny" }, dryRun }) {
+export function setupRetryOptions({ action, setupPipeline, planTuneHooks = false, mcpConfig, mcpValues = {}, ruleConfig, optionalSkills, localSettingsEnv, effortLevel = DEFAULT_EFFORT_LEVEL, attributionConfig, permissionConfig = { bypass: "deny" }, dryRun }) {
   return {
     action,
     setupPipeline,
@@ -67,6 +67,7 @@ export function setupRetryOptions({ action, setupPipeline, planTuneHooks = false
     ruleMode: ruleConfig.ruleMode,
     rules: ruleConfig.rules,
     optionalSkills,
+    effortLevel,
     localSettingsEnv: safeRetryLocalSettingsEnv(localSettingsEnv),
     attributionConfig,
     permissionConfig,
@@ -82,6 +83,7 @@ export function setupOptionsFromLock(lock) {
   return {
     ...options,
     profile: options.profile === "minimal" ? "backend" : options.profile,
+    effortLevel: options.effortLevel || DEFAULT_EFFORT_LEVEL,
     permissionConfig: options.permissionConfig?.bypass === "allow" ? { bypass: "allow" } : { bypass: "deny" }
   };
 }
@@ -115,6 +117,7 @@ function retryRows(setup) {
     ["MCP values", options.mcpValueNames?.length ? options.mcpValueNames.join(", ") : "none"],
     ["Rules", options.applyRules ? options.rules.join(", ") : "none"],
     ["Optional skills", options.optionalSkills?.length ? options.optionalSkills.join(", ") : "none"],
+    ["Effort", options.effortLevel || DEFAULT_EFFORT_LEVEL],
     ["Bypass permissions", options.permissionConfig?.bypass === "allow" ? "allowed by default" : "disabled"],
     ["Commit attribution", attributionSummary(options.attributionConfig || { mode: "off" })],
     ["Dry-run", options.dryRun ? "yes" : "no"]
@@ -359,7 +362,7 @@ function attributionSummary(attributionConfig) {
   return "off (commit: \"\")";
 }
 
-async function confirmSummary({ action, setupPipeline, planTuneHooks, target, mcpConfig, mcpValues, ruleConfig, optionalSkills, localSettingsEnv, attributionConfig, permissionConfig, dryRun }) {
+async function confirmSummary({ action, setupPipeline, planTuneHooks, target, mcpConfig, mcpValues, ruleConfig, optionalSkills, localSettingsEnv, effortLevel, attributionConfig, permissionConfig, dryRun }) {
   const hasLocalSkill = optionalSkills.some((name) => !OPTIONAL_SKILLS.find((skill) => skill.value === name)?.plugin);
   const writesGstack = usesGstack(setupPipeline);
   printSummary("Setup summary", [
@@ -379,6 +382,7 @@ async function confirmSummary({ action, setupPipeline, planTuneHooks, target, mc
     ["Opus", localSettingsEnv.ANTHROPIC_DEFAULT_OPUS_MODEL],
     ["Sonnet", localSettingsEnv.ANTHROPIC_DEFAULT_SONNET_MODEL],
     ["Haiku", localSettingsEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL],
+    ["Effort", effortLevel],
     ["Auth token", style("dim", "[hidden]")],
     ["Bypass permissions", permissionConfig.bypass === "allow" ? "allowed by default" : "disabled"],
     ["Commit attribution", attributionSummary(attributionConfig)],
@@ -468,7 +472,8 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
       ruleMode: ruleConfig.ruleMode,
       rules: ruleConfig.rules,
       applyRules: ruleConfig.applyRules,
-      optionalSkills
+      optionalSkills,
+      effortLevel: DEFAULT_EFFORT_LEVEL
     });
     return;
   }
@@ -517,14 +522,15 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
   const localSettingsEnv = previousOptions && !needsLocalSettingsPrompt(retryLocalSettingsEnv)
     ? retryLocalSettingsEnv
     : await chooseLocalSettingsEnv(retryLocalSettingsEnv, promptInitialValues);
+  const effortLevel = previousOptions?.effortLevel || await askEffortLevel();
   const permissionConfig = previousOptions?.permissionConfig || await choosePermissionConfig();
   const attributionConfig = previousOptions?.attributionConfig || await chooseAttributionConfig();
 
-  if (!await confirmSummary({ action, setupPipeline: selectedSetupPipeline, planTuneHooks: selectedPlanTuneHooks, target, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, attributionConfig, permissionConfig, dryRun })) {
+  if (!await confirmSummary({ action, setupPipeline: selectedSetupPipeline, planTuneHooks: selectedPlanTuneHooks, target, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, effortLevel, attributionConfig, permissionConfig, dryRun })) {
     throw new Error("Setup cancelled.");
   }
 
-  const retryOptions = setupRetryOptions({ action, setupPipeline: selectedSetupPipeline, planTuneHooks: selectedPlanTuneHooks, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, attributionConfig, permissionConfig, dryRun });
+  const retryOptions = setupRetryOptions({ action, setupPipeline: selectedSetupPipeline, planTuneHooks: selectedPlanTuneHooks, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, effortLevel, attributionConfig, permissionConfig, dryRun });
   await writeSetupStatus(target, { status: "running", startedAt: new Date().toISOString(), failedStep: null, error: null, options: retryOptions }, { dryRun, silent: true });
   try {
     await provisionProject({
@@ -543,6 +549,7 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
       applyRules: ruleConfig.applyRules,
       optionalSkills: selectedOptionalSkills,
       localSettingsEnv,
+      effortLevel,
       attributionConfig,
       permissionConfig,
       interactiveSetup: true,

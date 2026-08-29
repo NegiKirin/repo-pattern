@@ -289,6 +289,8 @@ try {
   const lock = JSON.parse(await fs.readFile(path.join(bothProvisionTarget, ".repo-pattern", ".repo-pattern.lock.json"), "utf8"));
   const localSettings = JSON.parse(await fs.readFile(path.join(bothProvisionTarget, ".claude", "settings.local.json"), "utf8"));
   assert.equal(repoConfig.workflow, "ecc-gstack");
+  assert.equal(localSettings.effortLevel, "medium");
+  assert.equal("effortLevel" in localSettings.env, false);
   assert.equal(lock.setupPipeline, "both");
   assert.equal(lock.ecc.status, "installed");
   assert.equal(lock.gstack.status, "installed");
@@ -310,12 +312,15 @@ const noPipelineProvisionTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-
 console.log = () => {};
 try {
   await writeEccGitFixture(noPipelineProvisionTarget);
+  await fs.mkdir(path.join(noPipelineProvisionTarget, ".claude"), { recursive: true });
+  await fs.writeFile(path.join(noPipelineProvisionTarget, ".claude", "settings.local.json"), JSON.stringify({ custom: true, env: { EXISTING: "kept" } }));
   await provisionProject({
     sourceRoot: repoRoot,
     target: noPipelineProvisionTarget,
     profile: "backend",
     setupPipeline: "none",
     localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: secretSentinel },
+    effortLevel: "ultracode",
     applyRules: true
   });
   const repoConfig = JSON.parse(await fs.readFile(path.join(noPipelineProvisionTarget, ".repo-pattern", ".repo-pattern.json"), "utf8"));
@@ -326,6 +331,10 @@ try {
   assert.deepEqual(lock.ecc.appliedRules, ["common"]);
   assert.equal("gstack" in lock, false);
   assert.equal(localSettings.enabledPlugins["ecc@ecc"], undefined);
+  assert.equal(localSettings.effortLevel, "ultracode");
+  assert.equal(localSettings.custom, true);
+  assert.equal(localSettings.env.EXISTING, "kept");
+  assert.equal("effortLevel" in localSettings.env, false);
   assert.equal((await auditProject(noPipelineProvisionTarget)).state, "NO_PIPELINE_MINIMAL");
   await doctorProject(noPipelineProvisionTarget);
 } finally {
@@ -343,6 +352,17 @@ try {
   assert.match(result.stdout, /Pipeline scope\s+project-scoped ECC \+ project-local gstack at \.claude\/skills\/gstack/);
 } finally {
   await fs.rm(setupBothDryRunTarget, { recursive: true, force: true });
+}
+
+const setupYesTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-setup-yes-"));
+try {
+  result = runCli(["setup", "--target", setupYesTarget, "--setup-pipeline", "none", "--yes"]);
+  assert.equal(result.status, 0, result.stderr);
+  const settings = JSON.parse(await fs.readFile(path.join(setupYesTarget, ".claude", "settings.local.json"), "utf8"));
+  assert.equal(settings.effortLevel, "medium");
+  assert.equal("effortLevel" in settings.env, false);
+} finally {
+  await fs.rm(setupYesTarget, { recursive: true, force: true });
 }
 
 for (const setupPipeline of ["none", "gstack"]) {

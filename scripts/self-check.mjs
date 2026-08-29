@@ -1,6 +1,7 @@
 import { runCliContractChecks } from "./self-check/cli-contract.mjs";
 import { runCredentialChecks } from "./self-check/credentials.mjs";
 import { runEccRulesAndManifestChecks } from "./self-check/ecc-rules-and-manifest.mjs";
+import { runEffortPickerChecks } from "./self-check/effort-picker.mjs";
 import { runEccSourceAndTransactionChecks } from "./self-check/ecc-source-and-transaction.mjs";
 import { runFilesystemChecks } from "./self-check/filesystem.mjs";
 import { runGstackChecks } from "./self-check/gstack.mjs";
@@ -17,6 +18,7 @@ await runGeneratedAttributionHookChecks(new URL("..", import.meta.url).pathname)
 await runMcpAndSettingsChecks();
 await runMcpProfileChecks();
 await runEccRulesAndManifestChecks();
+await runEffortPickerChecks();
 await runEccSourceAndTransactionChecks();
 await runCliContractChecks();
 await runGstackChecks();

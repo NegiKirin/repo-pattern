@@ -107,6 +107,7 @@ export async function runMcpProfileChecks() {
   }), {
     profile: "backend",
     mcpServers: ["custom-server"],
-    permissionConfig: { bypass: "allow" }
+    permissionConfig: { bypass: "allow" },
+    effortLevel: "medium"
   });
 }
