@@ -1,33 +1,30 @@
 # repo-pattern
 
 <p align="center">
+<img alt="repo-pattern logo" src="assets/repo-pattern.svg" width="380">
+<br>
 <img alt="Repo Pattern" src="https://img.shields.io/badge/repo--pattern-ECC--first-blue">
 <img alt="Claude Code" src="https://img.shields.io/badge/Claude%20Code-ready-black">
 <img alt="MCP Profiles" src="https://img.shields.io/badge/MCP-profiles-green">
 <img alt="License" src="https://img.shields.io/badge/license-MIT-lightgrey">
 </p>
 
-**A clean Claude Code setup and migrator in one command.**
+**Set up a minimal, project-local Claude Code workspace.**
 
-`repo-pattern` initializes or migrates a project into an ECC or gstack Claude Code workspace with safe defaults, MCP profiles, and zero vendored runtime clutter.
+`repo-pattern` initializes or migrates a project with a selected MCP profile,
+an optional ECC or gstack workflow, and gitignored machine-local configuration.
+It preserves an existing root `CLAUDE.md` and keeps managed setup state isolated
+from application source files.
 
 ## Why use it?
 
-* **Start fast** — generate `.claude/`, `.mcp.json`, and repo-pattern metadata.
-* **Stay clean** — no local skills, commands, scripts, or duplicated templates by default; one managed Bash hook removes generated-attribution lines.
-* **Use MCP profiles** — choose `web`, `backend`, `research`, `full`, or `custom`.
-* **Explicit pipeline** — choose ECC (default) or a project-local gstack checkout.
-* **Migrate safely** — audit, cleanup, doctor, and `setup --migrate` are built in.
+* **Start fast** — create `.claude/`, `.mcp.json`, and repo-pattern state.
+* **Choose your workflow** — use ECC, gstack, both, or only base metadata.
+* **Use focused MCP profiles** — `web`, `backend`, `research`, `full`, or interactive `custom`.
+* **Keep local setup local** — generated configuration and credentials are gitignored.
+* **Migrate deliberately** — inspect with `audit`, take over with `setup --migrate`, and verify with `doctor`.
 
 ## Install
-
-Use directly with `npx` without installing:
-
-```bash
-npx repo-pattern setup --profile web --yes
-```
-
-Or install the CLI globally, then run `repo-pattern`:
 
 ```bash
 npm install -g @negikirin/repo-pattern
@@ -35,19 +32,19 @@ npm install -g @negikirin/repo-pattern
 
 ## Quick start
 
-Interactive setup:
+After installing, run interactive setup:
 
 ```bash
-npx repo-pattern setup
+repo-pattern setup
 ```
 
-Scriptable setup:
+For scriptable setup:
 
 ```bash
-npx repo-pattern setup --profile web --setup-pipeline ecc --yes
-npx repo-pattern setup --profile web --setup-pipeline gstack --yes
-npx repo-pattern setup --profile web --setup-pipeline gstack --with-rules --yes
-npx repo-pattern setup --profile web --setup-pipeline none --with-rules --yes
+repo-pattern setup --profile web --setup-pipeline ecc --yes
+repo-pattern setup --profile web --setup-pipeline gstack --yes
+repo-pattern setup --profile web --setup-pipeline gstack --with-rules --yes
+repo-pattern setup --profile web --setup-pipeline none --with-rules --yes
 ```
 
 Pipeline scope is explicit:
@@ -64,9 +61,9 @@ ECC rules are independent of the ECC plugin. Whenever rules are applied, repo-pa
 Migrate an existing project:
 
 ```bash
-npx repo-pattern audit
-npx repo-pattern setup --profile web --migrate --yes
-npx repo-pattern doctor
+repo-pattern audit
+repo-pattern setup --profile web --migrate --yes
+repo-pattern doctor
 ```
 
 ## Commands
@@ -88,11 +85,13 @@ Common options:
 --target /path/to/project  # default: current directory
 --profile web              # choose an MCP profile
 --setup-pipeline ecc        # ecc (default), gstack, both, or none
+--with-plan-tune-hooks     # add gstack hooks; requires gstack or both
 --with-rules               # install auto-detected .claude/rules/ecc on gstack or none
                             # ecc and both install auto-detected rules by default
 --with-skill ui-ux-pro-max # optional UI/UX skill; requires Python 3.x
 --with-skills nextjs-pattern,fastapi-pattern # optional framework pattern skills
 --migrate                  # take over legacy/local Claude runtime surfaces
+--force                    # reapply setup over repo-pattern-managed state
 --dry-run                  # preview mutating commands
 --yes                      # non-interactive setup
 ```
@@ -120,8 +119,14 @@ target-project/
 │   ├── CLAUDE.md
 │   ├── settings.json             # copied from example, gitignored
 │   ├── settings.local.json       # when local settings are provided, gitignored
-│   ├── skills/gstack/            # gstack checkout when selected, gitignored
-│   └── agents/                   # ECC agents when ECC rules are applied, gitignored
+│   ├── hooks/
+│   │   └── remove-generated-attribution.mjs
+│   │                               # when the managed attribution hook is enabled
+│   ├── rules/ecc/                # when ECC rules are applied, gitignored
+│   ├── agents/                   # when ECC rules are applied, gitignored
+│   └── skills/
+│       ├── gstack/               # gstack/both pipeline, gitignored
+│       └── review/               # generated gstack wrappers/support, gitignored
 ├── .mcp.json                     # generated, gitignored
 ├── .repo-pattern/
 │   ├── .gitignore               # *
@@ -142,8 +147,8 @@ Each full `repo-pattern setup` run reconciles repo-pattern-managed state to its 
 * `.repo-pattern/.repo-pattern.json` is generated from `.repo-pattern.example.json` and kept inside `.repo-pattern/`.
 * `.claude/` is generated from `.claude.example/` and gitignored.
 * Basic OS/IDE noise (`.DS_Store`, `Thumbs.db`, `.vscode/`, `.idea/`) is gitignored during setup.
-* `.claude/settings.json` keeps `hooks: {}` and disables commit attribution by default; interactive setup can turn it on or use a custom trailer.
-* ECC rule application atomically stages and replaces upstream ECC agents, with rollback through nested repo-pattern metadata writes. The lock records their source revision and SHA-256 inventory; ECC skills, commands, hooks, scripts, and `.agents` are never copied. Clearing ECC rules clears only agent metadata and retains `.claude/agents/`.
+* `.claude/settings.json` disables commit attribution by default; interactive setup can turn it on or use a custom trailer. When managed attribution cleanup is enabled, it registers the generated-attribution hook without replacing unrelated hooks.
+* ECC rule application atomically replaces repo-pattern-managed `.claude/rules/ecc/` and `.claude/agents/` from upstream ECC sources, with rollback through nested repo-pattern metadata writes. The lock records the source revision and SHA-256 inventory; ECC skills, commands, hooks, scripts, and `.agents` are never copied. Clearing ECC rules clears only agent metadata and retains `.claude/agents/`.
 * Karpathy-inspired Claude Code guidelines are included in `.claude/CLAUDE.md` from `multica-ai/andrej-karpathy-skills` (MIT).
 * Optional external skills are user opt-in only: `--with-skill taste`, `--with-skill document-specialist`, `--with-skill ui-ux-pro-max`, `--with-skill impeccable`, `--with-skill huashu-design`, `--with-skill nextjs-pattern`, `--with-skill fastapi-pattern`, `--with-skill herdr`, or interactive setup.
 
