@@ -287,17 +287,20 @@ async function removeProvisionSnapshot(snapshot) {
   if (snapshot) await fs.rm(snapshot.snapshotRoot, { recursive: true, force: true });
 }
 
-async function writeLocalSettings({ sourceRoot, target, localSettingsEnv = {}, setupPipeline, optionalSkills, dryRun, silent = false }) {
+async function writeLocalSettings({ sourceRoot, target, localSettingsEnv = {}, effortLevel = "medium", setupPipeline, optionalSkills, dryRun, silent = false }) {
   if (isTracked(target, ".claude/settings.local.json")) throw new Error(".claude/settings.local.json is tracked. Untrack it before writing local provider settings.");
   const claudeDir = path.join(target, ".claude");
   await rejectClaudeSymlink(target, { dryRun });
   const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.local.example.json"), {});
   const file = path.join(claudeDir, "settings.local.json");
-  await writePrivateJson(file, (current) => reconcileLocalPluginSettings(applyLocalSettings({
-    ...template,
-    ...current,
-    env: { ...(template.env || {}), ...(current.env || {}) }
-  }, localSettingsEnv), { setupPipeline, optionalSkills }), {
+  await writePrivateJson(file, (current) => ({
+    ...reconcileLocalPluginSettings(applyLocalSettings({
+      ...template,
+      ...current,
+      env: { ...(template.env || {}), ...(current.env || {}) }
+    }, localSettingsEnv), { setupPipeline, optionalSkills }),
+    effortLevel
+  }), {
     dryRun,
     label: ".claude/settings.local.json",
     silent
@@ -305,7 +308,7 @@ async function writeLocalSettings({ sourceRoot, target, localSettingsEnv = {}, s
   await appendGitignoreLine(target, ".claude/", { dryRun, silent });
 }
 
-export async function provisionProject({ sourceRoot, target, profile = "web", setupPipeline = "ecc", planTuneHooks = false, mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, attributionConfig = { mode: "off" }, permissionConfig = { bypass: "deny" }, ruleMode = "auto", rules = null, applyRules = null, optionalSkills = [], interactiveSetup = false, onBeforeSuccessSummary = null }) {
+export async function provisionProject({ sourceRoot, target, profile = "web", setupPipeline = "ecc", planTuneHooks = false, mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, effortLevel = "medium", attributionConfig = { mode: "off" }, permissionConfig = { bypass: "deny" }, ruleMode = "auto", rules = null, applyRules = null, optionalSkills = [], interactiveSetup = false, onBeforeSuccessSummary = null }) {
   if (!SETUP_PIPELINES.includes(setupPipeline)) throw new Error(`Unknown setup pipeline: ${setupPipeline}. Available: ${SETUP_PIPELINES.join(", ")}`);
   const shouldApplyRules = applyRules ?? usesEcc(setupPipeline);
   if (planTuneHooks && !usesGstack(setupPipeline)) throw new Error("--with-plan-tune-hooks requires --setup-pipeline gstack or both.");
@@ -395,7 +398,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
     await copyGeneratedAttributionHook(sourceRoot, target, { dryRun, silent: interactiveSetup });
     advanceWorkspace("Writing Claude settings");
     await appendGitignoreLine(target, ".claude/", { dryRun, silent: interactiveSetup });
-    await writeLocalSettings({ sourceRoot, target, localSettingsEnv, setupPipeline, optionalSkills, dryRun, silent: interactiveSetup });
+    await writeLocalSettings({ sourceRoot, target, localSettingsEnv, effortLevel, setupPipeline, optionalSkills, dryRun, silent: interactiveSetup });
     advanceWorkspace("Writing local settings");
     await ensureRepoPatternGitignore(target, { dryRun, silent: interactiveSetup });
     advanceWorkspace("Writing workspace state");

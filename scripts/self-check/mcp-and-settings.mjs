@@ -3,9 +3,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { auditProject, printAudit } from "../lib/audit.mjs";
-import { cleanupProject } from "../lib/cleanup.mjs";
-import { doctorProject } from "../lib/doctor.mjs";
 import { ECC_PLUGIN, applyEccPluginSettings, setupEcc } from "../lib/ecc.mjs";
 import { applyMcpValues, generateMcp, mcpSecretPrompt, persistedMcpValues, readGeneratedMcpValues, validateRelativeMcpPath } from "../lib/mcp.mjs";
 import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, provisionProject, reconcileLocalPluginSettings, setupPipelineScope, updateClaudeAttribution, updateClaudePermissions } from "../lib/provision.mjs";
@@ -22,7 +19,6 @@ const sharedSettingsTemplate = JSON.parse(await fs.readFile(path.join(repoRoot, 
 const localSettingsTemplate = JSON.parse(await fs.readFile(path.join(repoRoot, ".claude.example", "settings.local.example.json"), "utf8"));
 
 export async function runMcpAndSettingsChecks() {
-
 assert.deepEqual(sharedSettingsTemplate.attribution, { commit: "", pr: "" });
 assert.equal("enabledPlugins" in sharedSettingsTemplate, false);
 assert.equal("extraKnownMarketplaces" in sharedSettingsTemplate, false);
@@ -30,6 +26,8 @@ assert.equal("attribution" in localSettingsTemplate, false);
 assert.deepEqual(localSettingsTemplate.enabledPlugins, {});
 assert.deepEqual(localSettingsTemplate.extraKnownMarketplaces, {});
 assert.equal(localSettingsTemplate.workflowSizeGuideline, "small");
+assert.equal(localSettingsTemplate.effortLevel, "medium");
+assert.equal("effortLevel" in localSettingsTemplate.env, false);
 assert.deepEqual({
   CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: localSettingsTemplate.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY
 }, {
@@ -147,6 +145,7 @@ assert.deepEqual(setupRetryOptions({
   },
   ruleConfig: { applyRules: false, ruleMode: "auto", rules: [] },
   optionalSkills: ["nextjs-pattern"],
+  effortLevel: "ultracode",
   localSettingsEnv: {
     ANTHROPIC_BASE_URL: "https://example.com/v1",
     ANTHROPIC_AUTH_TOKEN: secretSentinel,
@@ -168,6 +167,7 @@ assert.deepEqual(setupRetryOptions({
   ruleMode: "auto",
   rules: [],
   optionalSkills: ["nextjs-pattern"],
+  effortLevel: "ultracode",
   localSettingsEnv: {
     ANTHROPIC_BASE_URL: "https://example.com/v1",
     CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: "5"

@@ -1,4 +1,9 @@
 import { confirm, isCancel, multiselect, note, password, select, spinner, text } from "@clack/prompts";
+import readline from "node:readline";
+
+export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max", "ultracode"];
+export const DEFAULT_EFFORT_LEVEL = "medium";
+const NARROW_EFFORT_PICKER_WIDTH = 80;
 
 export function isInteractive() {
   return Boolean(process.stdin.isTTY && process.stdout.isTTY && !process.env.CI);
@@ -131,6 +136,67 @@ function supportsAnsiColor() {
 export function style(kind, value) {
   const color = ANSI_STYLES[kind];
   return color && supportsAnsiColor() ? `${color}${value}${ANSI_RESET}` : String(value);
+}
+
+export function nextEffortIndex(index, keyName) {
+  if (keyName === "left") return Math.max(0, index - 1);
+  if (keyName === "right") return Math.min(EFFORT_LEVELS.length - 1, index + 1);
+  return index;
+}
+
+export function renderEffortPicker(value, { columns = process.stdout.columns, color = supportsAnsiColor() } = {}) {
+  const active = color ? `${ANSI_STYLES.info}${value}${ANSI_RESET}` : value;
+  const recommended = color ? `${ANSI_STYLES.success}recommended${ANSI_RESET}` : "recommended";
+  if (!columns || columns < NARROW_EFFORT_PICKER_WIDTH) return `Effort: [${active}] ${recommended} · ←/→ · Enter`;
+  return `Effort: ${EFFORT_LEVELS.map((level) => level === value ? `[${color ? `${ANSI_STYLES.info}${level}${ANSI_RESET}` : level}]` : level).join(" ─ ")}  ${recommended} · ←/→ · Enter`;
+}
+
+export function askEffortLevel({ input = process.stdin, output = process.stdout } = {}) {
+  if (!input.isTTY || !output.isTTY) return Promise.resolve(DEFAULT_EFFORT_LEVEL);
+
+  return new Promise((resolve, reject) => {
+    let index = EFFORT_LEVELS.indexOf(DEFAULT_EFFORT_LEVEL);
+    let rawMode = false;
+    const color = supportsAnsiColor();
+    const render = () => output.write(color ? `\r\x1b[2K${renderEffortPicker(EFFORT_LEVELS[index], { columns: output.columns, color })}` : `${renderEffortPicker(EFFORT_LEVELS[index], { columns: output.columns, color })}\n`);
+    const cleanup = () => {
+      input.off("keypress", onKeypress);
+      if (rawMode) input.setRawMode(false);
+      input.pause();
+    };
+    const finish = (value) => {
+      cleanup();
+      if (color) output.write("\n");
+      resolve(value);
+    };
+    const fail = (error) => {
+      cleanup();
+      reject(error);
+    };
+    const onKeypress = (_character, key = {}) => {
+      try {
+        if (key.name === "return" || key.name === "enter") return finish(EFFORT_LEVELS[index]);
+        const nextIndex = nextEffortIndex(index, key.name);
+        if (nextIndex !== index) {
+          index = nextIndex;
+          render();
+        }
+      } catch (error) {
+        fail(error);
+      }
+    };
+
+    try {
+      readline.emitKeypressEvents(input);
+      input.on("keypress", onKeypress);
+      input.setRawMode(true);
+      rawMode = true;
+      input.resume();
+      render();
+    } catch (error) {
+      fail(error);
+    }
+  });
 }
 
 function gradient(line) {
