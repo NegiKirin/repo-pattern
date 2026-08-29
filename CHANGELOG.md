@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.2.15] - 2026-08-29
+
+**Setup now lets you choose Claude Code's effort level before provisioning.**
+**The chosen level survives retries and never leaks into provider environment settings.**
+
+`repo-pattern setup` now presents a terminal-native picker for `low`, `medium`, `high`, `xhigh`, `max`, and `ultracode`. It starts at `medium`, works with arrow keys and Enter, and uses a compact one-line display in narrow terminals. Scripted, redirected, and `--yes` runs stay non-interactive and use `medium` without printing a picker.
+
+### The setup numbers that matter
+
+These checks come from `npm test` and `npm run test:coverage`.
+
+| Metric | Before | After | Δ |
+| --- | ---: | ---: | ---: |
+| Available effort choices | 0 | 6 | +6 |
+| Default effort for new and scripted setup | implicit high | medium | changed |
+| Settings locations for effort | 0 | 1 top-level field | +1 |
+| Self-check aggregate line coverage | 100% | 100% | 0 |
+
+The selection is stored only as `settings.local.json.effortLevel`, so provider variables, plugins, and workflow configuration keep their existing meaning.
+
+### What this means for repo-pattern users
+
+Run `repo-pattern setup`, choose the effort level that fits the work, and continue as usual. A retry keeps the prior choice. Existing scripts require no changes and receive the `medium` default.
+
+### Itemized changes
+
+### Added
+
+- Add a cross-platform raw-terminal effort picker to interactive setup.
+- Persist the selected effort level through setup retries and local settings generation.
+
+### Changed
+
+- Default new local settings and non-interactive setup to `medium`.
+- Preserve unrelated local settings and `env` values while writing top-level effort.
+
 ## [0.2.14] - 2026-08-28
 
 **Setup removes generated attribution lines before Bash commands run.**
