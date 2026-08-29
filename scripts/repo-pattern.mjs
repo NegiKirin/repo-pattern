@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import packageJson from "../package.json" with { type: "json" };
 import { auditProject, printAudit } from "./lib/audit.mjs";
 import { cleanupProject } from "./lib/cleanup.mjs";
 import { generateMcp, readGeneratedMcpValues } from "./lib/mcp.mjs";
-import { setupEcc } from "./lib/ecc.mjs";
 import { doctorProject } from "./lib/doctor.mjs";
 import { applyEccRules } from "./lib/rules.mjs";
 import { setupProject } from "./lib/setup.mjs";
@@ -29,6 +29,9 @@ function parseArgs(argv) {
   let [command, ...rest] = argv;
   if (command === "-h" || command === "--help") {
     command = "help";
+    rest = [];
+  } else if (command === "-V" || command === "--version") {
+    command = "version";
     rest = [];
   }
   const options = {
@@ -95,6 +98,7 @@ function help() {
 
 Usage:
   repo-pattern help
+  repo-pattern version  # also: -V, --version
   repo-pattern setup
   repo-pattern setup --profile web --setup-pipeline ecc --yes
   repo-pattern setup --profile web --setup-pipeline gstack --yes
@@ -109,7 +113,6 @@ Usage:
 
 Advanced:
   repo-pattern mcp --profile web
-  repo-pattern ecc
   repo-pattern rules
   repo-pattern audit
   repo-pattern doctor
@@ -148,6 +151,9 @@ async function main() {
       case "help":
         help();
         break;
+      case "version":
+        console.log(`repo-pattern ${packageJson.version}`);
+        break;
       case "audit": {
         const audit = await auditProject(options.target);
         printAudit(audit);
@@ -161,9 +167,6 @@ async function main() {
         break;
       case "mcp":
         await generateMcp({ sourceRoot, target: options.target, profile: options.profile || "web", mcpValues: await readGeneratedMcpValues(options.target), yes: options.yes, dryRun: options.dryRun });
-        break;
-      case "ecc":
-        await setupEcc({ sourceRoot, target: options.target, dryRun: options.dryRun });
         break;
       case "rules":
         await applyEccRules({ target: options.target, dryRun: options.dryRun });

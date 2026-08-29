@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import packageJson from "../../package.json" with { type: "json" };
 import { auditProject, printAudit } from "../lib/audit.mjs";
 import { cleanupProject } from "../lib/cleanup.mjs";
 import { doctorProject } from "../lib/doctor.mjs";
@@ -86,9 +87,22 @@ function runCli(args, cwd = repoRoot) {
   return spawnSync(process.execPath, [cliPath, ...args], { cwd, encoding: "utf8" });
 }
 
-let result = runCli(["help"]);
+let result;
+for (const args of [["version"], ["-V"], ["--version"]]) {
+  result = runCli(args);
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout.trim(), `repo-pattern ${packageJson.version}`);
+}
+
+result = runCli(["help"]);
 assert.equal(result.status, 0);
 assert.match(result.stdout, /repo-pattern help/);
+assert.match(result.stdout, /repo-pattern version/);
+assert.doesNotMatch(result.stdout, /repo-pattern ecc/);
+
+result = runCli(["ecc"]);
+assert.equal(result.status, 2);
+assert.match(result.stderr, /Unknown command: ecc/);
 
 result = runCli(["doctor", "--bogus"]);
 assert.equal(result.status, 2);

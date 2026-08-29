@@ -71,13 +71,13 @@ repo-pattern doctor
 | Command | Purpose |
 |----|----|
 | `repo-pattern help` | Show CLI help. |
+| `repo-pattern version` | Show the installed CLI version (`-V` or `--version`). |
 | `repo-pattern setup` | Initialize or migrate a Claude Code setup. |
 | `repo-pattern audit` | Inspect current Claude Code/ECC state. |
 | `repo-pattern doctor` | Validate the generated setup. |
 | `repo-pattern mcp --profile web` | Regenerate `.mcp.json` from an MCP profile. |
 | `repo-pattern rules` | Apply or refresh project-local ECC rules. |
 | `repo-pattern cleanup` | Archive old local Claude runtime surfaces. |
-| `repo-pattern ecc` | Run or attempt ECC setup manually. |
 
 Common options:
 
