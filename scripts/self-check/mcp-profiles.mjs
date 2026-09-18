@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { generateMcp, readMcpConfig } from "../lib/mcp.mjs";
+import { generateMcp, listAvailableMcpServers, readMcpConfig } from "../lib/mcp.mjs";
 import { CUSTOM_MCP_DEFAULTS, setupOptionsFromLock, setupProject } from "../lib/setup.mjs";
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
@@ -12,12 +12,14 @@ const repoRoot = path.dirname(path.dirname(cliDir));
 const cliPath = path.join(cliDir, "..", "repo-pattern.mjs");
 const expectedProfiles = {
   backend: ["context7", "tavily", "gitnexus"],
-  web: ["chrome-devtools", "context7", "playwright", "tavily"],
+  web: ["chrome-devtools", "context7", "shadcn", "playwright", "tavily"],
   research: ["context7", "tavily"],
-  full: ["context7", "playwright", "chrome-devtools", "gitnexus", "tavily"]
+  full: ["context7", "shadcn", "playwright", "chrome-devtools", "gitnexus", "tavily"]
 };
 
 export async function runMcpProfileChecks() {
+  assert.ok((await listAvailableMcpServers(repoRoot)).includes("shadcn"));
+
   for (const [profile, expectedServers] of Object.entries(expectedProfiles)) {
     const { profileServers } = await readMcpConfig({ sourceRoot: repoRoot, profile });
     assert.deepEqual(profileServers, expectedServers);
@@ -36,6 +38,13 @@ export async function runMcpProfileChecks() {
       const settings = JSON.parse(await fs.readFile(path.join(target, ".claude", "settings.json"), "utf8"));
       assert.deepEqual(Object.keys(generated.mcpServers), expectedServers);
       assert.deepEqual(settings.enabledMcpjsonServers, expectedServers);
+      if (expectedServers.includes("shadcn")) {
+        assert.deepEqual(generated.mcpServers.shadcn, {
+          command: "npx",
+          args: ["shadcn@latest", "mcp"],
+          description: "shadcn/ui component registry, documentation, and UI generation"
+        });
+      }
     } finally {
       await fs.rm(target, { recursive: true, force: true });
     }

@@ -245,6 +245,7 @@ Enabled servers:
 ```text
 chrome-devtools
 context7
+shadcn
 playwright
 tavily
 ```
@@ -361,6 +362,7 @@ Enabled servers:
 
 ```text
 context7
+shadcn
 playwright
 chrome-devtools
 gitnexus
@@ -444,6 +446,7 @@ For example, profile `web` sets:
 "enabledMcpjsonServers": [
   "chrome-devtools",
   "context7",
+  "shadcn",
   "playwright",
   "tavily"
 ]
