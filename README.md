@@ -97,13 +97,24 @@ Common options:
 
 ## MCP profiles
 
-| Profile | Use when |
+| Profile | Included MCP servers |
 |----|----|
-| `web` | You build web apps and want browser/docs helpers. |
-| `backend` | You focus on server-side projects. |
-| `research` | You need search and extraction tooling. |
-| `full` | You want every approved MCP server enabled. |
-| `custom` | You want to choose exact MCP servers interactively; not available with `--yes`. |
+| `web` | Chrome DevTools, Context7, shadcn, Playwright, Tavily |
+| `backend` | Context7, Tavily, GitNexus |
+| `research` | Context7, Tavily |
+| `full` | Context7, shadcn, Playwright, Chrome DevTools, GitNexus, Tavily |
+| `custom` | Choose any available MCP servers interactively; not available with `--yes`. |
+
+### Available MCP servers
+
+| MCP server | Description |
+|----|----|
+| Chrome DevTools | Debug frontend runtime behavior; inspect the console, network, and performance. |
+| Context7 | Look up current documentation for libraries, frameworks, SDKs, and APIs. Requires `CONTEXT7_API_KEY`. |
+| GitNexus | Explore the code knowledge graph, assess change impact, and trace repository flows. |
+| Playwright | Automate Chrome for browser interaction and end-to-end testing. |
+| shadcn | Browse shadcn/ui components and documentation, and generate UI. |
+| Tavily | Search the web and extract content. Requires `TAVILY_API_KEY`. |
 
 `setup` selects `web` for detected frontend, full-stack, and Node projects; other projects default to `backend`.
 
