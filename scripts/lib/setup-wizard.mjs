@@ -12,6 +12,7 @@ const PIPELINE_OPTIONS = [
 ];
 const MODEL_SETTING_NAMES = new Set([
   "ANTHROPIC_BASE_URL",
+  "ANTHROPIC_AUTH_TOKEN",
   "ANTHROPIC_DEFAULT_OPUS_MODEL",
   "ANTHROPIC_DEFAULT_SONNET_MODEL",
   "ANTHROPIC_DEFAULT_HAIKU_MODEL"
@@ -84,13 +85,13 @@ export function wizardPages(state, data) {
     : [];
   const configurationPages = [
     { id: "pipeline", title: "Choose setup workflow", kind: "many", options: PIPELINE_OPTIONS },
-    ...(!usesEcc(state.setupPipeline) ? [{ id: "installRules", title: "Install project-local ECC rules?", kind: "one", options: [{ value: false, label: "No" }, { value: true, label: "Yes" }] }] : []),
+    ...(!usesEcc(state.setupPipeline) ? [{ id: "installRules", title: "Install project-local ECC rules & agents?", kind: "one", options: [{ value: false, label: "No" }, { value: true, label: "Yes" }] }] : []),
     ...rulePages,
     { id: "profile", title: "Choose MCP profile", kind: "one", options: options(data.profiles) },
     ...(state.profile === "custom" ? [{ id: "mcpServers", title: "Choose MCP servers", kind: "many", options: options(data.mcpServers) }] : []),
     ...(mcpInputs(state, data).length ? [{ id: "mcpInputs", title: "MCP secret", kind: "mcpInputs", fields: mcpInputs(state, data) }] : []),
     { id: "optionalSkills", title: "Optional external skills", kind: "many", options: options(data.optionalSkills) },
-    ...(data.localSettings.some((field) => MODEL_SETTING_NAMES.has(field.name)) ? [{ id: "modelSettings", title: "Anthropic settings", kind: "modelSettings", fields: data.localSettings.filter((field) => MODEL_SETTING_NAMES.has(field.name)) }] : []),
+    ...(data.localSettings.some((field) => MODEL_SETTING_NAMES.has(field.name)) ? [{ id: "modelSettings", title: "Configure third-party provider & models", kind: "modelSettings", fields: data.localSettings.filter((field) => MODEL_SETTING_NAMES.has(field.name)) }] : []),
     ...data.localSettings.filter((field) => !MODEL_SETTING_NAMES.has(field.name)).map((field) => ({ id: `local:${field.name}`, name: field.name, title: field.name, kind: "text", mask: field.mask, initial: field.initial, placeholder: field.placeholder, validate: field.validate })),
     { id: "effort", title: "Choose effort level", kind: "one", options: EFFORT_LEVELS.map((value) => ({ value, label: value })) },
     { id: "permission", title: "Allow bypass permissions mode?", kind: "one", options: [{ value: "deny", label: "No" }, { value: "allow", label: "Yes" }] },
@@ -282,7 +283,10 @@ export function SetupWizard({ initialState, data, done, initialPageId = null }) 
           const isActive = index === mcpFieldIndex;
           const [server, name] = field.label.split(/:\s*/, 2);
           const color = isActive ? "cyan" : undefined;
-          const shownValue = display(value, { ...field, mask: field.kind === "secret", placeholder: field.placeholder || field.defaultValue });
+          const configured = Boolean(state.mcpValues[field.name]) && !(isActive && buffer);
+          const shownValue = configured
+            ? "configured"
+            : display(value, { ...field, mask: field.kind === "secret", placeholder: field.placeholder || field.defaultValue });
           const isPlaceholder = !value && Boolean(field.placeholder || field.defaultValue);
           return [
             React.createElement(Text, { key: `${field.name}:server` }, `  ${server}:`),
@@ -299,7 +303,7 @@ export function SetupWizard({ initialState, data, done, initialPageId = null }) 
             const isActive = index === modelFieldIndex;
             const color = isActive ? "cyan" : undefined;
             const shownValue = display(value, field);
-            const isPlaceholder = !state.localSettingsEnv[field.name] && !field.initial && Boolean(field.placeholder);
+            const isPlaceholder = value === field.placeholder;
             return [
               React.createElement(Text, { key: `${field.name}:label`, color, dimColor: !isActive }, `${isActive ? "›" : " "} ${field.name}:`),
               React.createElement(Text, { key: `${field.name}:value` }, "  ", React.createElement(Text, { color: isPlaceholder ? "gray" : value ? "green" : undefined }, shownValue)),
@@ -308,7 +312,16 @@ export function SetupWizard({ initialState, data, done, initialPageId = null }) 
           }))
       : page.id === "effort"
         ? React.createElement(Box, null, ...renderEffortOptions(choices.map((choice) => choice.value), effortValue).map((choice) => React.createElement(Text, { key: choice.value, color: choice.color, dimColor: !choice.color }, `${choice.label}  `)))
-        : choices.map((choice, index) => React.createElement(Text, { key: String(choice.value), color: index === cursor ? "cyan" : undefined }, `${index === cursor ? "›" : " "} ${page.kind === "many" ? (selectedValues.includes(choice.value) ? "◉" : "○") : " "} ${choice.label}${choice.hint ? ` — ${choice.hint}` : ""}`)),
+        : React.createElement(Box, { flexDirection: "column" },
+          ...choices.map((choice, index) => React.createElement(
+            Box,
+            { key: String(choice.value) },
+            React.createElement(Text, { color: index === cursor ? "cyan" : undefined }, `${index === cursor ? "›" : " "} ${page.kind === "many" ? (selectedValues.includes(choice.value) ? "◉" : "○") : " "} ${choice.label}${choice.hint ? ` — ${choice.hint}` : ""}`),
+            page.id === "profile" && index === cursor && choice.description
+              ? React.createElement(Text, { dimColor: true }, `  · ${choice.description}`)
+              : null
+          ))
+        ),
     error ? React.createElement(Box, { marginTop: 1 }, React.createElement(Text, { color: "red" }, error)) : null,
     React.createElement(Text, null, " "),
     React.createElement(Text, { dimColor: true }, page.id === "effort"

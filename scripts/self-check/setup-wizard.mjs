@@ -5,9 +5,12 @@ import { SetupWizard, effortColor, nextEffortCursor, nextMenuCursor, previousPag
 
 const data = {
   claudeCodeVersion: "1.0.0",
-  profiles: ["web", "custom"],
+  profiles: [
+    { value: "web", label: "web", description: "context7, tavily" },
+    { value: "custom", label: "custom", description: "choose exact MCP servers" }
+  ],
   profileServers: { web: ["context7"], custom: [] },
-  mcpServers: ["context7"],
+  mcpServers: [{ value: "context7", label: "context7", hint: "Live documentation lookup" }],
   ruleModes: ["auto", "manual", "none"],
   mcpInputs: (profile, servers) => (profile === "custom" ? servers : ["context7"]).flatMap((server) => server === "context7" ? [
     { name: "CONTEXT7_API_KEY", kind: "secret", label: "context7: CONTEXT7_API_KEY", defaultValue: "", placeholder: "ctx7sk-.....................", validate: (value) => value ? true : "Required" },
@@ -82,11 +85,12 @@ export async function runSetupWizardChecks() {
   assert.ok(modelPage);
   assert.deepEqual(modelPage.fields.map((field) => field.name), [
     "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_AUTH_TOKEN",
     "ANTHROPIC_DEFAULT_OPUS_MODEL",
     "ANTHROPIC_DEFAULT_SONNET_MODEL",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL"
   ]);
-  assert.equal(pages.some((page) => page.id === "local:ANTHROPIC_AUTH_TOKEN"), true);
+  assert.equal(pages.some((page) => page.id === "local:ANTHROPIC_AUTH_TOKEN"), false);
   assert.equal(pages.some((page) => page.id === "local:ANTHROPIC_DEFAULT_OPUS_MODEL"), false);
 
   const namedProfile = pruneWizardState({ ...initial, profile: "web" }, data);
@@ -105,6 +109,28 @@ export async function runSetupWizardChecks() {
   const noCustomAttribution = pruneWizardState({ ...initial, attributionConfig: { mode: "on", commit: "old" } }, data);
   assert.equal(wizardPages(noCustomAttribution, data).some((page) => page.id === "attributionCommit"), false);
   assert.equal("commit" in noCustomAttribution.attributionConfig, false);
+
+  const profileWizard = render(React.createElement(SetupWizard, {
+    initialState: { ...initial, setupPipeline: "none", applyRules: false, profile: "web", mcpServers: null, optionalSkills: [] },
+    data,
+    initialPageId: "profile",
+    done: () => {}
+  }));
+  assert.match(profileWizard.lastFrame(), /· context7, tavily/);
+  profileWizard.stdin.write("[B");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(profileWizard.lastFrame(), /· choose exact MCP servers/);
+  assert.doesNotMatch(profileWizard.lastFrame(), /· context7, tavily/);
+  profileWizard.unmount();
+
+  const serverWizard = render(React.createElement(SetupWizard, {
+    initialState: { ...initial, setupPipeline: "none", applyRules: false, profile: "custom", optionalSkills: [] },
+    data,
+    initialPageId: "mcpServers",
+    done: () => {}
+  }));
+  assert.match(serverWizard.lastFrame(), /context7 — Live documentation lookup/);
+  serverWizard.unmount();
 
   const effortWizard = render(React.createElement(SetupWizard, {
     initialState: {
@@ -133,18 +159,19 @@ export async function runSetupWizardChecks() {
     initialPageId: "modelSettings",
     done: () => {}
   }));
-  assert.match(modelWizard.lastFrame(), /Anthropic settings/);
+  assert.match(modelWizard.lastFrame(), /Configure third-party provider & models/);
   assert.match(modelWizard.lastFrame(), /› ANTHROPIC_BASE_URL:/);
+  assert.match(modelWizard.lastFrame(), /ANTHROPIC_AUTH_TOKEN:/);
   assert.match(modelWizard.lastFrame(), /ANTHROPIC_DEFAULT_OPUS_MODEL:/);
   modelWizard.stdin.write("[B");
   await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.match(modelWizard.lastFrame(), /› ANTHROPIC_DEFAULT_OPUS_MODEL:/);
+  assert.match(modelWizard.lastFrame(), /› ANTHROPIC_AUTH_TOKEN:/);
   modelWizard.stdin.write("[A");
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.match(modelWizard.lastFrame(), /› ANTHROPIC_BASE_URL:/);
   modelWizard.stdin.write("\r");
   await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.match(modelWizard.lastFrame(), /› ANTHROPIC_DEFAULT_OPUS_MODEL:/);
+  assert.match(modelWizard.lastFrame(), /› ANTHROPIC_AUTH_TOKEN:/);
   modelWizard.unmount();
 
   const mcpWizard = render(React.createElement(SetupWizard, {
@@ -179,4 +206,14 @@ export async function runSetupWizardChecks() {
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.match(mcpWizard.lastFrame(), /Optional external skills/);
   mcpWizard.unmount();
+
+  const configuredMcpWizard = render(React.createElement(SetupWizard, {
+    initialState: { ...initial, setupPipeline: "none", applyRules: false, profile: "web", mcpServers: null, optionalSkills: [] },
+    data,
+    initialPageId: "mcpInputs",
+    done: () => {}
+  }));
+  assert.match(configuredMcpWizard.lastFrame(), /CONTEXT7_API_KEY: configured/);
+  assert.doesNotMatch(configuredMcpWizard.lastFrame(), /secret-value|•{12}/);
+  configuredMcpWizard.unmount();
 }

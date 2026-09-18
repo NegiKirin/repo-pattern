@@ -377,7 +377,7 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
   }, {
     claudeCodeVersion,
     profiles: profileChoices,
-    mcpServers: availableMcpServers,
+    mcpServers: availableMcpServers.map((name) => ({ value: name, label: name, hint: mcpDefinitions[name]?.[name]?.description })),
     mcpInputs: (selectedProfile, selectedServers) => mcpInputFields(selectedProfile === "custom"
       ? Object.assign({}, ...selectedServers.map((name) => mcpDefinitions[name] || {}))
       : mcpDefinitions[selectedProfile] || {}),
