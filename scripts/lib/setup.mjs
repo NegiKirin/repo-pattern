@@ -194,12 +194,6 @@ function selectedPipeline(values = []) {
   return "none";
 }
 
-function pipelineValues(setupPipeline = "ecc") {
-  if (setupPipeline === "both") return ["ecc", "gstack"];
-  if (setupPipeline === "none") return [];
-  return [setupPipeline];
-}
-
 function usesEcc(setupPipeline) {
   return setupPipeline === "ecc" || setupPipeline === "both";
 }
@@ -217,14 +211,14 @@ function expectedSetupState(setupPipeline) {
   }[setupPipeline];
 }
 
-async function chooseSetupPipeline(initialValue = "ecc") {
+async function chooseSetupPipeline() {
   return selectedPipeline(await selectMany({
     message: "Choose setup pipeline",
     options: [
       { value: "ecc", label: "ECC", description: "project-scoped plugin with optional project rules" },
       { value: "gstack", label: "gstack", description: "project-local at .claude/skills/gstack; requires Git and Bun" }
     ],
-    initialValues: pipelineValues(initialValue)
+    initialValues: []
   }));
 }
 
@@ -483,7 +477,7 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
 
   const previousOptions = await choosePreviousSetupOptions(target);
   const detection = await detectProject(target);
-  const selectedSetupPipeline = previousOptions?.setupPipeline || await chooseSetupPipeline(setupPipeline);
+  const selectedSetupPipeline = previousOptions?.setupPipeline || await chooseSetupPipeline();
   if (!SETUP_PIPELINES.includes(selectedSetupPipeline)) throw new Error(`Unknown setup pipeline: ${selectedSetupPipeline}. Available: ${SETUP_PIPELINES.join(", ")}`);
   const selectedPlanTuneHooks = previousOptions?.planTuneHooks ?? await choosePlanTuneHooks(selectedSetupPipeline, planTuneHooks);
   const chosenProfile = previousOptions?.profile || await chooseProfile(sourceRoot, profile, detection);
