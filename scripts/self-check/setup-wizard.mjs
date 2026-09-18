@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import React from "react";
 import { render } from "ink-testing-library";
-import { SetupWizard, effortColor, nextEffortCursor, previousPageIndex, pruneWizardState, renderEffortOptions, wizardPages } from "../lib/setup-wizard.mjs";
+import { SetupWizard, effortColor, nextEffortCursor, nextMenuCursor, previousPageIndex, pruneWizardState, renderEffortOptions, wizardPages } from "../lib/setup-wizard.mjs";
 
 const data = {
   claudeCodeVersion: "1.0.0",
@@ -33,6 +33,9 @@ export async function runSetupWizardChecks() {
   };
 
   assert.deepEqual(wizardPages({ ...initial, setupPipeline: "none" }, data).find((page) => page.id === "pipeline").options.map((option) => option.value), ["ecc", "gstack"]);
+  assert.equal(nextMenuCursor(0, "up", 0), 0);
+  assert.equal(nextMenuCursor(0, "up", 3), 2);
+  assert.equal(nextMenuCursor(2, "down", 3), 0);
   assert.equal(nextEffortCursor(0, "left", 6), 0);
   assert.equal(nextEffortCursor(2, "left", 6), 1);
   assert.equal(nextEffortCursor(4, "right", 6), 5);

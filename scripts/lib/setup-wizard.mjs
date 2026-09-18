@@ -126,6 +126,13 @@ function pageCursor(page, state) {
   return Math.max(0, (page.options || []).findIndex((choice) => choice.value === valueForPage(state, page)));
 }
 
+export function nextMenuCursor(index, keyName, length) {
+  if (length === 0) return 0;
+  if (keyName === "up") return index === 0 ? length - 1 : index - 1;
+  if (keyName === "down") return index === length - 1 ? 0 : index + 1;
+  return index;
+}
+
 export function nextEffortCursor(index, keyName, length) {
   if (keyName === "left") return Math.max(0, index - 1);
   if (keyName === "right") return Math.min(length - 1, index + 1);
@@ -188,15 +195,18 @@ export function SetupWizard({ initialState, data, done, initialPageId = null }) 
       if (input && !key.ctrl && !key.meta) setBuffer((previous) => previous + input);
       return;
     }
-    if (key.upArrow) return setCursor((previous) => Math.max(0, previous - 1));
-    if (key.downArrow) return setCursor((previous) => Math.min(choices.length - 1, previous + 1));
+    if (key.upArrow) return setCursor((previous) => nextMenuCursor(previous, "up", choices.length));
+    if (key.downArrow) return setCursor((previous) => nextMenuCursor(previous, "down", choices.length));
     if (page.kind === "many" && input === " ") {
+      if (choices.length === 0) return;
       const selected = new Set(selectedValues);
       const value = choices[cursor].value;
       selected.has(value) ? selected.delete(value) : selected.add(value);
       return setState(updatePage(state, page, [...selected], data));
     }
     if (!key.return) return;
+    if (page.id === "mcpServers" && choices.length === 0) return setError("Custom MCP profile requires at least one server.");
+    if (page.kind === "one" && choices.length === 0) return setError("No options available.");
     const value = page.kind === "many" ? selectedValues : page.id === "effort" ? effortValue : choices[cursor].value;
     if (page.id === "migrationChoice" && value === "no") return done(new Error("Setup cancelled."));
     if (page.id === "confirm") return value === "yes" ? done(state) : done(new Error("Setup cancelled."));
@@ -217,12 +227,14 @@ export function SetupWizard({ initialState, data, done, initialPageId = null }) 
     ),
     React.createElement(Text, { bold: true, color: "cyan" }, `Step ${pageIndex + 1} of ${pages.length}`),
     React.createElement(Text, null, page.title),
+    React.createElement(Text, null, " "),
     page.kind === "text"
       ? React.createElement(Text, { color: "green" }, `› ${display(current, page)}`)
       : page.id === "effort"
         ? React.createElement(Box, null, ...renderEffortOptions(choices.map((choice) => choice.value), effortValue).map((choice) => React.createElement(Text, { key: choice.value, color: choice.color, dimColor: !choice.color }, `${choice.label}  `)))
         : choices.map((choice, index) => React.createElement(Text, { key: String(choice.value), color: index === cursor ? "cyan" : undefined }, `${index === cursor ? "›" : " "} ${page.kind === "many" ? (selectedValues.includes(choice.value) ? "◉" : "○") : " "} ${choice.label}${choice.hint ? ` — ${choice.hint}` : ""}`)),
-    error ? React.createElement(Text, { color: "red" }, error) : null,
+    error ? React.createElement(Box, { marginTop: 1 }, React.createElement(Text, { color: "red" }, error)) : null,
+    React.createElement(Text, null, " "),
     React.createElement(Text, { dimColor: true }, page.id === "effort"
       ? "←/→ move · Enter next · Esc back · Ctrl+C cancel"
       : `${pageIndex ? "← Back · " : ""}${page.kind === "text" ? "Enter next" : `↑/↓ move${page.kind === "many" ? " · Space toggle" : ""} · Enter next`} · Esc cancel`)
