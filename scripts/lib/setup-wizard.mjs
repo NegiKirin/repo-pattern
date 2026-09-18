@@ -218,17 +218,17 @@ export function SetupWizard({ initialState, data, done, initialPageId = null }) 
       const grouped = page.kind === "mcpInputs" || page.kind === "modelSettings";
       const field = page.kind === "mcpInputs" ? activeMcpField : page.kind === "modelSettings" ? activeModelField : page;
       const existing = page.kind === "mcpInputs" ? state.mcpValues[field.name] : page.kind === "modelSettings" ? state.localSettingsEnv[field.name] : valueForPage(state, page);
-      if (page.kind === "mcpInputs" && key.upArrow) {
-        setMcpFieldIndex((previous) => Math.max(0, previous - 1)); setBuffer(""); setError(""); return;
-      }
-      if (page.kind === "mcpInputs" && key.downArrow) {
-        setMcpFieldIndex((previous) => Math.min(mcpFields.length - 1, previous + 1)); setBuffer(""); setError(""); return;
-      }
-      if (page.kind === "modelSettings" && key.upArrow) {
-        setModelFieldIndex((previous) => Math.max(0, previous - 1)); setBuffer(""); setError(""); return;
-      }
-      if (page.kind === "modelSettings" && key.downArrow) {
-        setModelFieldIndex((previous) => Math.min(modelFields.length - 1, previous + 1)); setBuffer(""); setError(""); return;
+      if (grouped && (key.upArrow || key.downArrow)) {
+        const fields = page.kind === "mcpInputs" ? mcpFields : modelFields;
+        const index = page.kind === "mcpInputs" ? mcpFieldIndex : modelFieldIndex;
+        const nextIndex = Math.max(0, Math.min(fields.length - 1, index + (key.upArrow ? -1 : 1)));
+        if (nextIndex === index) return;
+        if (buffer) {
+          const next = updatePage(state, page.kind === "mcpInputs" ? { id: `mcp:${field.name}`, name: field.name } : { id: `local:${field.name}`, name: field.name }, buffer, data);
+          setState(next);
+        }
+        page.kind === "mcpInputs" ? setMcpFieldIndex(nextIndex) : setModelFieldIndex(nextIndex);
+        setBuffer(""); setError(""); return;
       }
       if (key.backspace || key.delete) return setBuffer((previous) => (previous || existing).slice(0, -1));
       if (key.return) {
@@ -285,7 +285,7 @@ export function SetupWizard({ initialState, data, done, initialPageId = null }) 
           const color = isActive ? "cyan" : undefined;
           const configured = Boolean(state.mcpValues[field.name]) && !(isActive && buffer);
           const shownValue = configured
-            ? "configured"
+            ? "•".repeat([...state.mcpValues[field.name]].length)
             : display(value, { ...field, mask: field.kind === "secret", placeholder: field.placeholder || field.defaultValue });
           const isPlaceholder = !value && Boolean(field.placeholder || field.defaultValue);
           return [

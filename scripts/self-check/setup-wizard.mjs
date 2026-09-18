@@ -207,13 +207,54 @@ export async function runSetupWizardChecks() {
   assert.match(mcpWizard.lastFrame(), /Optional external skills/);
   mcpWizard.unmount();
 
+  const mcpDraftWizard = render(React.createElement(SetupWizard, {
+    initialState: { ...initial, mcpValues: {}, setupPipeline: "none", applyRules: false, profile: "web", mcpServers: null, optionalSkills: [] },
+    data,
+    initialPageId: "mcpInputs",
+    done: () => {}
+  }));
+  mcpDraftWizard.stdin.write("draft-secret");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  mcpDraftWizard.stdin.write("[B");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(mcpDraftWizard.lastFrame(), /› TAVILY_API_KEY:/);
+  assert.doesNotMatch(mcpDraftWizard.lastFrame(), /draft-secret/);
+  mcpDraftWizard.stdin.write("[A");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(mcpDraftWizard.lastFrame(), /› CONTEXT7_API_KEY: •{12}/);
+  mcpDraftWizard.unmount();
+
+  const modelDraftWizard = render(React.createElement(SetupWizard, {
+    initialState: {
+      ...initial,
+      setupPipeline: "none",
+      applyRules: false,
+      profile: "web",
+      mcpServers: null,
+      optionalSkills: [],
+      localSettingsEnv: {}
+    },
+    data,
+    initialPageId: "modelSettings",
+    done: () => {}
+  }));
+  modelDraftWizard.stdin.write("https://draft.example/v1");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  modelDraftWizard.stdin.write("[B");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(modelDraftWizard.lastFrame(), /› ANTHROPIC_AUTH_TOKEN:/);
+  modelDraftWizard.stdin.write("[A");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(modelDraftWizard.lastFrame(), /https:\/\/draft\.example\/v1/);
+  modelDraftWizard.unmount();
+
   const configuredMcpWizard = render(React.createElement(SetupWizard, {
     initialState: { ...initial, setupPipeline: "none", applyRules: false, profile: "web", mcpServers: null, optionalSkills: [] },
     data,
     initialPageId: "mcpInputs",
     done: () => {}
   }));
-  assert.match(configuredMcpWizard.lastFrame(), /CONTEXT7_API_KEY: configured/);
-  assert.doesNotMatch(configuredMcpWizard.lastFrame(), /secret-value|•{12}/);
+  assert.match(configuredMcpWizard.lastFrame(), /CONTEXT7_API_KEY: •{12}/);
+  assert.doesNotMatch(configuredMcpWizard.lastFrame(), /secret-value|configured/);
   configuredMcpWizard.unmount();
 }
