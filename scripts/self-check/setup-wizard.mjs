@@ -207,6 +207,19 @@ export async function runSetupWizardChecks() {
   assert.match(mcpWizard.lastFrame(), /Optional external skills/);
   mcpWizard.unmount();
 
+  const invalidMcpWizard = render(React.createElement(SetupWizard, {
+    initialState: { ...initial, mcpValues: {}, setupPipeline: "none", applyRules: false, profile: "web", mcpServers: null, optionalSkills: [] },
+    data,
+    initialPageId: "mcpInputs",
+    done: () => {}
+  }));
+  invalidMcpWizard.stdin.write("\r");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(invalidMcpWizard.lastFrame(), /Required/);
+  assert.match(invalidMcpWizard.lastFrame(), /› CONTEXT7_API_KEY:/);
+  assert.doesNotMatch(invalidMcpWizard.lastFrame(), /•+/);
+  invalidMcpWizard.unmount();
+
   const mcpDraftWizard = render(React.createElement(SetupWizard, {
     initialState: { ...initial, mcpValues: {}, setupPipeline: "none", applyRules: false, profile: "web", mcpServers: null, optionalSkills: [] },
     data,
@@ -243,6 +256,14 @@ export async function runSetupWizardChecks() {
   modelDraftWizard.stdin.write("[B");
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.match(modelDraftWizard.lastFrame(), /› ANTHROPIC_AUTH_TOKEN:/);
+  modelDraftWizard.stdin.write("token-draft");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  modelDraftWizard.stdin.write("[B");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.doesNotMatch(modelDraftWizard.lastFrame(), /token-draft/);
+  modelDraftWizard.stdin.write("[A");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(modelDraftWizard.lastFrame(), /› ANTHROPIC_AUTH_TOKEN:\n  •{11}/);
   modelDraftWizard.stdin.write("[A");
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.match(modelDraftWizard.lastFrame(), /https:\/\/draft\.example\/v1/);

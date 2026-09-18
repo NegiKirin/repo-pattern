@@ -198,7 +198,7 @@ export function SetupWizard({ initialState, data, done, initialPageId = null }) 
     : page.kind === "mcpInputs"
       ? (buffer || state.mcpValues[activeMcpField?.name] || activeMcpField?.defaultValue || "")
       : page.kind === "modelSettings"
-        ? (buffer || state.localSettingsEnv[activeModelField?.name] || activeModelField?.initial || activeModelField?.placeholder || "")
+        ? (buffer || state.localSettingsEnv[activeModelField?.name] || activeModelField?.initial || "")
         : valueForPage(state, page);
   const selectedValues = Array.isArray(current) ? current : [];
   const effortValue = choices[cursor]?.value || current;
@@ -232,7 +232,7 @@ export function SetupWizard({ initialState, data, done, initialPageId = null }) 
       }
       if (key.backspace || key.delete) return setBuffer((previous) => (previous || existing).slice(0, -1));
       if (key.return) {
-        const value = buffer || existing || field.initial || field.defaultValue || field.placeholder || "";
+        const value = buffer || existing || field.initial || field.defaultValue || "";
         const result = field.validate?.(value);
         if (result !== true && result !== undefined) return setError(result === false ? "Invalid" : result);
         const next = updatePage(state, page.kind === "mcpInputs" ? { id: `mcp:${field.name}`, name: field.name } : page.kind === "modelSettings" ? { id: `local:${field.name}`, name: field.name } : page, value, data);
@@ -299,7 +299,7 @@ export function SetupWizard({ initialState, data, done, initialPageId = null }) 
         }))
         : page.kind === "modelSettings"
           ? React.createElement(Box, { flexDirection: "column" }, ...modelFields.flatMap((field, index) => {
-            const value = index === modelFieldIndex ? current : state.localSettingsEnv[field.name] || field.initial || field.placeholder || "";
+            const value = index === modelFieldIndex ? current : state.localSettingsEnv[field.name] || field.initial || "";
             const isActive = index === modelFieldIndex;
             const color = isActive ? "cyan" : undefined;
             const shownValue = display(value, field);

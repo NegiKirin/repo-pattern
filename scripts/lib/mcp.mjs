@@ -80,7 +80,8 @@ export function mcpInputFields(mcpServers) {
         ...placeholder,
         kind: SECRET_RE.test(placeholder.name) ? "secret" : "text",
         label: `${serverName}: ${envName}`,
-        placeholder: SECRET_PLACEHOLDERS[placeholder.name]
+        placeholder: SECRET_PLACEHOLDERS[placeholder.name],
+        validate: (value) => String(value || "").trim() ? true : "Required"
       });
     }
 
