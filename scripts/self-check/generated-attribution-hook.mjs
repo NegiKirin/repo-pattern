@@ -17,33 +17,56 @@ export async function runGeneratedAttributionHookChecks(repoRoot) {
     PreToolUse: [
       { _gstack_source: "repo-pattern-plan-tune", hooks: [{ command: "gstack" }] },
       { hooks: [{ command: "third-party" }] },
-      { _repo_pattern_source: "generated-attribution-removal", matcher: "^Bash$", hooks: [{ type: "command", command: "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/remove-generated-attribution.mjs\"", timeout: 5 }] }
+      { _repo_pattern_source: "generated-attribution-removal", _repo_pattern_attribution_mode: "off", matcher: "^Bash$", hooks: [{ type: "command", command: "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/remove-generated-attribution.mjs\"", timeout: 5 }] }
     ],
     PostToolUse: [{ hooks: [{ command: "post" }] }]
   });
 
+  const hookTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-attribution-hook-mode-"));
+  const hookSettings = path.join(hookTarget, ".claude", "settings.json");
+  await fs.mkdir(path.dirname(hookSettings), { recursive: true });
+
+  function writeHookMode(mode) {
+    return fs.writeFile(hookSettings, JSON.stringify({ hooks: { PreToolUse: [{
+      _repo_pattern_source: "generated-attribution-removal",
+      _repo_pattern_attribution_mode: mode
+    }] } }), "utf8");
+  }
+
   function runHook(input) {
     const hookPath = path.join(repoRoot, ".claude.example", "hooks", "remove-generated-attribution.mjs");
-    return spawnSync("node", [hookPath], { input, encoding: "utf8" });
+    return spawnSync("node", [hookPath], { input, encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: hookTarget } });
   }
-  for (const [command, expected] of [
-    ["title\n🤖 Generated with Claude Code\nbody", "title\nbody"],
-    ["title\\n🤖 Generated with anything\\nbody", "title\\nbody"],
-    ["🤖 Generated with Claude Code\n", ""],
-    ["first\n🤖 Generated with one\nsecond\n🤖 Generated with two\nthird", "first\nsecond\nthird"],
-    ["title 🤖 Generated with Claude Code", "title 🤖 Generated with Claude Code"],
-    ["  🤖 Generated with Claude Code", "  🤖 Generated with Claude Code"],
-    ["title\nbody", "title\nbody"]
-  ]) {
-    const result = runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command } }));
-    assert.equal(result.status, 0);
-    assert.equal(result.stdout, command === expected ? "" : `${JSON.stringify({ permissionDecision: "allow", updatedInput: { command: expected } })}\n`);
+
+  try {
+    await writeHookMode("off");
+    for (const [command, expected] of [
+      ["title\n🤖 Generated with Claude Code\nbody", "title\nbody"],
+      ["title\r\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\r\nbody", "title\r\nbody"],
+      ["title\\n🤖 Generated with Claude Code\\nbody", "title\\nbody"],
+      ["🤖 Generated with Claude Code\n", ""],
+      ["title 🤖 Generated with Claude Code", "title 🤖 Generated with Claude Code"],
+      ["  🤖 Generated with Claude Code", "  🤖 Generated with Claude Code"],
+      ["Co-Authored-By: Custom <custom@example.com>", "Co-Authored-By: Custom <custom@example.com>"],
+      ["title\nbody", "title\nbody"]
+    ]) {
+      const result = runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command } }));
+      assert.equal(result.status, 0);
+      assert.equal(result.stdout, command === expected ? "" : `${JSON.stringify({ permissionDecision: "allow", updatedInput: { command: expected } })}\n`);
+    }
+    await writeHookMode("on");
+    const generated = "title\n🤖 Generated with Claude Code\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>";
+    assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: generated } })).stdout, "");
+    await writeHookMode("custom");
+    assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: generated } })).stdout, "");
+    assert.equal(runHook("not-json").status, 2);
+    assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: {} })).status, 2);
+    assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: 1 } })).status, 2);
+    assert.equal(runHook(JSON.stringify({ tool_name: "Read", tool_input: {} })).status, 2);
+    assert.equal(runHook(JSON.stringify({ tool_name: "Read", tool_input: { command: "unchanged" } })).stdout, "{}\n");
+  } finally {
+    await fs.rm(hookTarget, { recursive: true, force: true });
   }
-  assert.equal(runHook("not-json").status, 2);
-  assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: {} })).status, 2);
-  assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: 1 } })).status, 2);
-  assert.equal(runHook(JSON.stringify({ tool_name: "Read", tool_input: {} })).status, 2);
-  assert.equal(runHook(JSON.stringify({ tool_name: "Read", tool_input: { command: "unchanged" } })).stdout, "{}\n");
 
   const target = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-attribution-hook-"));
   try {
@@ -57,6 +80,7 @@ export async function runGeneratedAttributionHookChecks(repoRoot) {
     await provisionProject({ sourceRoot: repoRoot, target, profile: "backend", setupPipeline: "none", applyRules: false });
     let settings = JSON.parse(await fs.readFile(path.join(target, ".claude", "settings.json"), "utf8"));
     assert.equal(settings.hooks.PreToolUse.filter((entry) => entry._repo_pattern_source === "generated-attribution-removal").length, 1);
+    assert.equal(settings.hooks.PreToolUse.find((entry) => entry._repo_pattern_source === "generated-attribution-removal")._repo_pattern_attribution_mode, "off");
     assert.equal(settings.hooks.PreToolUse.length, 3);
     assert.equal(settings.hooks.PostToolUse[0].hooks[0].command, "post");
     await provisionProject({ sourceRoot: repoRoot, target, profile: "backend", setupPipeline: "none", applyRules: false });
@@ -70,10 +94,12 @@ export async function runGeneratedAttributionHookChecks(repoRoot) {
     assert.equal(settings.hooks.PreToolUse.filter((entry) => entry._repo_pattern_source === "generated-attribution-removal").length, 1);
     assert.equal(settings.hooks.PreToolUse.length, 3);
     assert.equal(settings.attribution.commit, "Custom");
+    assert.equal(settings.hooks.PreToolUse.find((entry) => entry._repo_pattern_source === "generated-attribution-removal")._repo_pattern_attribution_mode, "custom");
     assert.match(await fs.readFile(path.join(target, ".claude", "hooks", "remove-generated-attribution.mjs"), "utf8"), /Generated with/);
     await updateClaudeAttribution({ sourceRoot: repoRoot, target, attributionConfig: { mode: "off" } });
     settings = JSON.parse(await fs.readFile(path.join(target, ".claude", "settings.json"), "utf8"));
     assert.equal(settings.hooks.PreToolUse.filter((entry) => entry._repo_pattern_source === "generated-attribution-removal").length, 1);
+    assert.equal(settings.hooks.PreToolUse.find((entry) => entry._repo_pattern_source === "generated-attribution-removal")._repo_pattern_attribution_mode, "off");
     assert.equal(settings.attribution.commit, "");
   } finally {
     await fs.rm(target, { recursive: true, force: true });

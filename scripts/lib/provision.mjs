@@ -22,18 +22,21 @@ function shellQuote(value) {
 
 const SETUP_PIPELINES = ["ecc", "gstack", "both", "none"];
 const GENERATED_ATTRIBUTION_HOOK_SOURCE = "generated-attribution-removal";
-const GENERATED_ATTRIBUTION_HOOK = {
-  _repo_pattern_source: GENERATED_ATTRIBUTION_HOOK_SOURCE,
-  matcher: "^Bash$",
-  hooks: [{ type: "command", command: "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/remove-generated-attribution.mjs\"", timeout: 5 }]
-};
+function generatedAttributionHook(attributionConfig = { mode: "off" }) {
+  return {
+    _repo_pattern_source: GENERATED_ATTRIBUTION_HOOK_SOURCE,
+    _repo_pattern_attribution_mode: attributionConfig.mode,
+    matcher: "^Bash$",
+    hooks: [{ type: "command", command: "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/remove-generated-attribution.mjs\"", timeout: 5 }]
+  };
+}
 
-export function applyGeneratedAttributionHook(settings = {}) {
+export function applyGeneratedAttributionHook(settings = {}, attributionConfig = { mode: "off" }) {
   const hooks = Object.fromEntries(Object.entries(settings.hooks || {}).map(([event, entries]) => [
     event,
     (entries || []).filter((entry) => entry?._repo_pattern_source !== GENERATED_ATTRIBUTION_HOOK_SOURCE)
   ]).filter(([, entries]) => entries.length > 0));
-  hooks.PreToolUse = [...(hooks.PreToolUse || []), GENERATED_ATTRIBUTION_HOOK];
+  hooks.PreToolUse = [...(hooks.PreToolUse || []), generatedAttributionHook(attributionConfig)];
   return { ...settings, hooks };
 }
 
@@ -156,7 +159,7 @@ export function applyPermissionSettings(settings, permissionConfig = { bypass: "
 async function writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun, silent = false }) {
   const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.example.json"), {});
   const current = await readPrivateJson(path.join(target, ".claude", "settings.json"), {}, { label: ".claude/settings.json", parentLabel: ".claude" });
-  const settings = applyGeneratedAttributionHook(applyPermissionSettings(applyAttributionSetting({ ...template, hooks: current.hooks || template.hooks }, attributionConfig), permissionConfig));
+  const settings = applyGeneratedAttributionHook(applyPermissionSettings(applyAttributionSetting({ ...template, hooks: current.hooks || template.hooks }, attributionConfig), permissionConfig), attributionConfig);
   await writePrivateJson(path.join(target, ".claude", "settings.json"), settings, {
     dryRun,
     label: ".claude/settings.json",
@@ -170,7 +173,7 @@ export async function updateClaudeAttribution({ sourceRoot, target, attributionC
   const file = path.join(target, ".claude", "settings.json");
   const current = await readPrivateJson(file, null, { label: ".claude/settings.json", parentLabel: ".claude" });
   const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.example.json"), {});
-  await writePrivateJson(file, applyGeneratedAttributionHook(applyAttributionSetting(current || template, attributionConfig)), {
+  await writePrivateJson(file, applyGeneratedAttributionHook(applyAttributionSetting(current || template, attributionConfig), attributionConfig), {
     dryRun,
     label: ".claude/settings.json",
     parentLabel: ".claude"
