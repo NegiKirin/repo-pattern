@@ -357,7 +357,7 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
     ...availableMcpServers.map(async (name) => [name, (await readMcpConfig({ sourceRoot, profile: "custom", mcpServers: [name] })).mcpServers])
   ]));
   const autoRules = selectEccRules(detection);
-  const wizardState = await runSetupWizard({
+  const { state: wizardState, controller: wizardController } = await runSetupWizard({
     migrationChoice: action === "migrate" && !shouldMigrate ? "pending" : "yes",
     retryChoice: previousOptions ? "pending" : "none",
     setupPipeline: interactiveSetupPipeline(previousOptions),
@@ -431,10 +431,13 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
       attributionConfig,
       permissionConfig,
       interactiveSetup: true,
+      renderProgress: wizardController.renderProgress,
       onBeforeSuccessSummary: () => writeSetupStatus(target, { status: "succeeded", succeededAt: new Date().toISOString(), failedStep: null, error: null, options: retryOptions }, { dryRun, silent: true })
     });
   } catch (error) {
     await writeSetupStatus(target, { status: "failed", failedAt: new Date().toISOString(), failedStep: "provision", error: error.message, options: retryOptions }, { dryRun, silent: true });
     throw error;
+  } finally {
+    wizardController.close();
   }
 }

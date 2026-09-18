@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Text, render } from "ink";
+import Spinner from "ink-spinner";
 
 const MILESTONES = [0, 25, 50, 75, 100];
 const GROUPS = [
@@ -140,16 +141,24 @@ export function createProgressReporter({ write = null, plan = [], setupId = "set
   return { beginOperation, failOperation, skipOperation, operations, flush() {} };
 }
 
-function ProgressView({ groups }) {
-  return React.createElement(Box, { flexDirection: "column", borderStyle: "round", borderColor: "cyan", paddingX: 1 },
-    React.createElement(Text, { bold: true, color: "cyan" }, "repo-pattern"),
-    ...groups.map((group) => React.createElement(Text, { key: group.id, color: group.failed ? "red" : group.stopped ? "green" : "yellow" },
-      `${group.stopped ? (group.failed ? "✖" : "✔") : "◆"} ${group.label}${group.detail ? ` ${group.detail}` : ""}`
-    ))
-  );
+export function ProgressView({ groups, summary = null, boxed = true }) {
+  const content = [
+    ...(boxed ? [React.createElement(Text, { key: "title", bold: true, color: "cyan" }, "repo-pattern")] : []),
+    ...groups.map((group) => group.stopped
+      ? React.createElement(Text, { key: group.id, color: group.failed ? "red" : "green" }, `${group.failed ? "✖" : "✔"} ${group.label}${group.detail ? ` ${group.detail}` : ""}`)
+      : React.createElement(Box, { key: group.id },
+        React.createElement(Text, { color: "yellow" }, React.createElement(Spinner, { type: "dots" })),
+        React.createElement(Text, { color: "yellow" }, ` ${group.label}${group.detail ? ` ${group.detail}` : ""}`)
+      )),
+    ...(summary ? [React.createElement(Text, { key: "complete", bold: true, color: "cyan" }, "Setup complete")] : []),
+    ...(summary || []).map(([label, value]) => React.createElement(Text, { key: label }, `${label.padEnd(6)}  ${value}`))
+  ];
+  return boxed
+    ? React.createElement(Box, { flexDirection: "column", borderStyle: "round", borderColor: "cyan", paddingX: 1 }, ...content)
+    : React.createElement(Box, { flexDirection: "column" }, ...content);
 }
 
-function createInteractiveSetupProgress(plan, { hasExtendedSkills = false } = {}) {
+function createInteractiveSetupProgress(plan, { hasExtendedSkills = false, renderProgress = null } = {}) {
   const operations = new Map(plan.map((entry) => [entry.id, { ...entry, started: false, completed: false, failed: false, skipped: false }]));
   const groups = new Map(GROUPS.map(({ id, label }) => [id, {
     id,
@@ -162,10 +171,11 @@ function createInteractiveSetupProgress(plan, { hasExtendedSkills = false } = {}
     detail: "",
     managed: false
   }]));
-  const instance = render(React.createElement(ProgressView, { groups: [...groups.values()] }));
+  const instance = renderProgress ? null : render(React.createElement(ProgressView, { groups: [...groups.values()] }));
 
-  function refresh() {
-    instance.rerender(React.createElement(ProgressView, { groups: [...groups.values()] }));
+  function refresh(summary = null) {
+    const view = React.createElement(ProgressView, { groups: [...groups.values()], summary, boxed: !renderProgress });
+    if (renderProgress) renderProgress(view); else instance.rerender(view);
   }
 
   function startGroup(id) {
@@ -228,7 +238,7 @@ function createInteractiveSetupProgress(plan, { hasExtendedSkills = false } = {}
   }
 
   function unmount() {
-    instance.unmount();
+    instance?.unmount();
   }
 
   return {
@@ -257,9 +267,10 @@ function createInteractiveSetupProgress(plan, { hasExtendedSkills = false } = {}
     },
     completeGroup(id) { stopGroup(id, "completed"); },
     failGroup,
-    complete({ detail = "completed" } = {}) {
+    complete({ detail = "completed", summary = null } = {}) {
       for (const group of groups.values()) if (!group.stopped && group.id !== "setup") stopGroup(group.id, "completed");
       stopGroup("setup", detail);
+      if (summary) refresh(summary);
       unmount();
     },
     fail() {

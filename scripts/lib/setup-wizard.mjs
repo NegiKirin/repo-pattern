@@ -10,6 +10,12 @@ const PIPELINE_OPTIONS = [
   { value: "ecc", label: "ECC", hint: "project-scoped plugin with optional project rules" },
   { value: "gstack", label: "gstack", hint: "project-local at .claude/skills/gstack; requires Git and Bun" }
 ];
+const MODEL_SETTING_NAMES = new Set([
+  "ANTHROPIC_BASE_URL",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL"
+]);
 
 function usesEcc(pipeline) {
   return pipeline === "ecc" || pipeline === "both";
@@ -82,9 +88,10 @@ export function wizardPages(state, data) {
     ...rulePages,
     { id: "profile", title: "Choose MCP profile", kind: "one", options: options(data.profiles) },
     ...(state.profile === "custom" ? [{ id: "mcpServers", title: "Choose MCP servers", kind: "many", options: options(data.mcpServers) }] : []),
-    ...mcpInputs(state, data).map((input) => ({ id: `mcp:${input.name}`, name: input.name, title: `${input.kind === "secret" ? "MCP secret" : "MCP value"} — ${input.label}`, kind: "text", mask: input.kind === "secret", placeholder: input.defaultValue, validate: input.validate })),
+    ...(mcpInputs(state, data).length ? [{ id: "mcpInputs", title: "MCP secret", kind: "mcpInputs", fields: mcpInputs(state, data) }] : []),
     { id: "optionalSkills", title: "Optional external skills", kind: "many", options: options(data.optionalSkills) },
-    ...data.localSettings.map((field) => ({ id: `local:${field.name}`, name: field.name, title: field.name, kind: "text", mask: field.mask, initial: field.initial, placeholder: field.placeholder, validate: field.validate })),
+    ...(data.localSettings.some((field) => MODEL_SETTING_NAMES.has(field.name)) ? [{ id: "modelSettings", title: "Anthropic settings", kind: "modelSettings", fields: data.localSettings.filter((field) => MODEL_SETTING_NAMES.has(field.name)) }] : []),
+    ...data.localSettings.filter((field) => !MODEL_SETTING_NAMES.has(field.name)).map((field) => ({ id: `local:${field.name}`, name: field.name, title: field.name, kind: "text", mask: field.mask, initial: field.initial, placeholder: field.placeholder, validate: field.validate })),
     { id: "effort", title: "Choose effort level", kind: "one", options: EFFORT_LEVELS.map((value) => ({ value, label: value })) },
     { id: "permission", title: "Allow bypass permissions mode?", kind: "one", options: [{ value: "deny", label: "No" }, { value: "allow", label: "Yes" }] },
     { id: "attribution", title: "Commit attribution?", kind: "one", options: [{ value: "off", label: "off" }, { value: "on", label: "on" }, { value: "custom", label: "custom" }] },
@@ -156,17 +163,42 @@ function display(value, page) {
   return page.mask ? "•".repeat([...value].length) : value;
 }
 
+export function WizardShell({ claudeCodeVersion, children }) {
+  return React.createElement(Box, { flexDirection: "column", borderStyle: "round", borderColor: "cyan", paddingX: 1 },
+    React.createElement(Box, { alignItems: "flex-start", gap: 2 },
+      React.createElement(BigText, { text: "RP", font: "block", colors: ["cyan"] }),
+      React.createElement(Box, { flexDirection: "column" },
+        React.createElement(Text, { bold: true, color: "cyan" }, `repo-pattern v${version}`),
+        claudeCodeVersion ? React.createElement(Text, { dimColor: true }, `Claude Code · ${claudeCodeVersion}`) : null
+      )
+    ),
+    children
+  );
+}
+
 export function SetupWizard({ initialState, data, done, initialPageId = null }) {
   const [state, setState] = useState(initialState);
   const [pageId, setPageId] = useState(initialPageId);
   const [cursor, setCursor] = useState(() => initialPageId === "effort" ? Math.max(0, EFFORT_LEVELS.indexOf(initialState.effortLevel)) : 0);
+  const [mcpFieldIndex, setMcpFieldIndex] = useState(0);
+  const [modelFieldIndex, setModelFieldIndex] = useState(0);
   const [buffer, setBuffer] = useState("");
   const [error, setError] = useState("");
   const pages = wizardPages(state, data);
   const pageIndex = Math.max(0, pages.findIndex((page) => page.id === pageId));
   const page = pages[pageIndex];
   const choices = page.options || [];
-  const current = page.kind === "text" ? (buffer || valueForPage(state, page)) : valueForPage(state, page);
+  const mcpFields = page.kind === "mcpInputs" ? page.fields || [] : [];
+  const modelFields = page.kind === "modelSettings" ? page.fields || [] : [];
+  const activeMcpField = mcpFields[mcpFieldIndex];
+  const activeModelField = modelFields[modelFieldIndex];
+  const current = page.kind === "text"
+    ? (buffer || valueForPage(state, page))
+    : page.kind === "mcpInputs"
+      ? (buffer || state.mcpValues[activeMcpField?.name] || activeMcpField?.defaultValue || "")
+      : page.kind === "modelSettings"
+        ? (buffer || state.localSettingsEnv[activeModelField?.name] || activeModelField?.initial || activeModelField?.placeholder || "")
+        : valueForPage(state, page);
   const selectedValues = Array.isArray(current) ? current : [];
   const effortValue = choices[cursor]?.value || current;
   const goBack = () => {
@@ -181,13 +213,34 @@ export function SetupWizard({ initialState, data, done, initialPageId = null }) 
     if (page.id === "effort" && key.leftArrow) return setCursor((previous) => nextEffortCursor(previous, "left", choices.length));
     if (page.id === "effort" && key.rightArrow) return setCursor((previous) => nextEffortCursor(previous, "right", choices.length));
     if (key.leftArrow) return goBack();
-    if (page.kind === "text") {
-      if (key.backspace || key.delete) return setBuffer((previous) => (previous || valueForPage(state, page)).slice(0, -1));
+    if (page.kind === "text" || page.kind === "mcpInputs" || page.kind === "modelSettings") {
+      const grouped = page.kind === "mcpInputs" || page.kind === "modelSettings";
+      const field = page.kind === "mcpInputs" ? activeMcpField : page.kind === "modelSettings" ? activeModelField : page;
+      const existing = page.kind === "mcpInputs" ? state.mcpValues[field.name] : page.kind === "modelSettings" ? state.localSettingsEnv[field.name] : valueForPage(state, page);
+      if (page.kind === "mcpInputs" && key.upArrow) {
+        setMcpFieldIndex((previous) => Math.max(0, previous - 1)); setBuffer(""); setError(""); return;
+      }
+      if (page.kind === "mcpInputs" && key.downArrow) {
+        setMcpFieldIndex((previous) => Math.min(mcpFields.length - 1, previous + 1)); setBuffer(""); setError(""); return;
+      }
+      if (page.kind === "modelSettings" && key.upArrow) {
+        setModelFieldIndex((previous) => Math.max(0, previous - 1)); setBuffer(""); setError(""); return;
+      }
+      if (page.kind === "modelSettings" && key.downArrow) {
+        setModelFieldIndex((previous) => Math.min(modelFields.length - 1, previous + 1)); setBuffer(""); setError(""); return;
+      }
+      if (key.backspace || key.delete) return setBuffer((previous) => (previous || existing).slice(0, -1));
       if (key.return) {
-        const value = buffer || valueForPage(state, page) || page.initial || page.placeholder || "";
-        const result = page.validate?.(value);
+        const value = buffer || existing || field.initial || field.defaultValue || field.placeholder || "";
+        const result = field.validate?.(value);
         if (result !== true && result !== undefined) return setError(result === false ? "Invalid" : result);
-        const next = updatePage(state, page, value, data);
+        const next = updatePage(state, page.kind === "mcpInputs" ? { id: `mcp:${field.name}`, name: field.name } : page.kind === "modelSettings" ? { id: `local:${field.name}`, name: field.name } : page, value, data);
+        if (page.kind === "mcpInputs" && mcpFieldIndex < mcpFields.length - 1) {
+          setState(next); setMcpFieldIndex(mcpFieldIndex + 1); setBuffer(""); setError(""); return;
+        }
+        if (page.kind === "modelSettings" && modelFieldIndex < modelFields.length - 1) {
+          setState(next); setModelFieldIndex(modelFieldIndex + 1); setBuffer(""); setError(""); return;
+        }
         const nextPages = wizardPages(next, data);
         const nextPage = nextPages[Math.min(pageIndex + 1, nextPages.length - 1)];
         setState(next); setPageId(nextPage.id); setCursor(pageCursor(nextPage, next)); setBuffer(""); setError(""); return;
@@ -217,19 +270,35 @@ export function SetupWizard({ initialState, data, done, initialPageId = null }) 
     setState(next); setPageId(nextPage.id); setCursor(pageCursor(nextPage, next)); setError("");
   });
 
-  return React.createElement(Box, { flexDirection: "column", borderStyle: "round", borderColor: "cyan", paddingX: 1 },
-    React.createElement(Box, { alignItems: "flex-start", gap: 2 },
-      React.createElement(BigText, { text: "RP", font: "block", colors: ["cyan"] }),
-      React.createElement(Box, { flexDirection: "column" },
-        React.createElement(Text, { bold: true, color: "cyan" }, `repo-pattern v${version}`),
-        data.claudeCodeVersion ? React.createElement(Text, { dimColor: true }, `Claude Code · ${data.claudeCodeVersion}`) : null
-      )
-    ),
+  return React.createElement(WizardShell, { claudeCodeVersion: data.claudeCodeVersion },
     React.createElement(Text, { bold: true, color: "cyan" }, `Step ${pageIndex + 1} of ${pages.length}`),
     React.createElement(Text, null, page.title),
     React.createElement(Text, null, " "),
     page.kind === "text"
-      ? React.createElement(Text, { color: "green" }, `› ${display(current, page)}`)
+      ? React.createElement(Text, { color: current ? "green" : page.placeholder ? "gray" : undefined }, `› ${display(current, page)}`)
+      : page.kind === "mcpInputs"
+        ? React.createElement(Box, { flexDirection: "column" }, ...mcpFields.flatMap((field, index) => {
+          const value = index === mcpFieldIndex ? current : state.mcpValues[field.name] || field.defaultValue || "";
+          const isActive = index === mcpFieldIndex;
+          const [server, name] = field.label.split(/:\s*/, 2);
+          const color = isActive ? (value ? "green" : field.defaultValue ? "gray" : "cyan") : undefined;
+          return [
+            React.createElement(Text, { key: `${field.name}:server` }, `  ${server}:`),
+            React.createElement(Text, { key: `${field.name}:name`, color, dimColor: !isActive }, `${isActive ? "›" : " "} ${name}: ${display(value, { ...field, mask: field.kind === "secret", placeholder: field.placeholder || field.defaultValue })}`),
+            index < mcpFields.length - 1 ? React.createElement(Text, { key: `${field.name}:gap` }, " ") : null
+          ];
+        }))
+        : page.kind === "modelSettings"
+          ? React.createElement(Box, { flexDirection: "column" }, ...modelFields.flatMap((field, index) => {
+            const value = index === modelFieldIndex ? current : state.localSettingsEnv[field.name] || field.initial || field.placeholder || "";
+            const isActive = index === modelFieldIndex;
+            const color = isActive ? (value ? "green" : field.placeholder ? "gray" : "cyan") : undefined;
+            return [
+              React.createElement(Text, { key: `${field.name}:label`, color, dimColor: !isActive }, `${isActive ? "›" : " "} ${field.name}:`),
+              React.createElement(Text, { key: `${field.name}:value` }, `  ${display(value, field)}`),
+              index < modelFields.length - 1 ? React.createElement(Text, { key: `${field.name}:gap` }, " ") : null
+            ];
+          }))
       : page.id === "effort"
         ? React.createElement(Box, null, ...renderEffortOptions(choices.map((choice) => choice.value), effortValue).map((choice) => React.createElement(Text, { key: choice.value, color: choice.color, dimColor: !choice.color }, `${choice.label}  `)))
         : choices.map((choice, index) => React.createElement(Text, { key: String(choice.value), color: index === cursor ? "cyan" : undefined }, `${index === cursor ? "›" : " "} ${page.kind === "many" ? (selectedValues.includes(choice.value) ? "◉" : "○") : " "} ${choice.label}${choice.hint ? ` — ${choice.hint}` : ""}`)),
@@ -237,16 +306,27 @@ export function SetupWizard({ initialState, data, done, initialPageId = null }) 
     React.createElement(Text, null, " "),
     React.createElement(Text, { dimColor: true }, page.id === "effort"
       ? "←/→ move · Enter next · Esc back · Ctrl+C cancel"
-      : `${pageIndex ? "← Back · " : ""}${page.kind === "text" ? "Enter next" : `↑/↓ move${page.kind === "many" ? " · Space toggle" : ""} · Enter next`} · Esc cancel`)
+      : `${pageIndex ? "← Back · " : ""}${page.kind === "mcpInputs" || page.kind === "modelSettings" ? "↑/↓ move field · Enter next value" : page.kind === "text" ? "Enter next" : `↑/↓ move${page.kind === "many" ? " · Space toggle" : ""} · Enter next`} · Esc cancel`)
   );
 }
 
 export function runSetupWizard(initialState, data, { input = process.stdin, output = process.stdout } = {}) {
   return new Promise((resolve, reject) => {
     let instance;
+    let settled = false;
+    const close = () => instance?.unmount();
     const done = (result) => {
-      instance?.unmount();
-      if (result instanceof Error) reject(result); else resolve(result);
+      if (settled) return;
+      settled = true;
+      if (result instanceof Error) {
+        close();
+        reject(result);
+      } else resolve({ state: result, controller: {
+        renderProgress(children) {
+          instance?.rerender(React.createElement(WizardShell, { claudeCodeVersion: data.claudeCodeVersion }, children));
+        },
+        close
+      } });
     };
     try {
       instance = render(React.createElement(SetupWizard, { initialState, data, done }), { stdin: input, stdout: output, exitOnCtrlC: false });

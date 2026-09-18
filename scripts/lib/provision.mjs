@@ -308,7 +308,7 @@ async function writeLocalSettings({ sourceRoot, target, localSettingsEnv = {}, e
   await appendGitignoreLine(target, ".claude/", { dryRun, silent });
 }
 
-export async function provisionProject({ sourceRoot, target, profile = "web", setupPipeline = "ecc", planTuneHooks = false, mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, effortLevel = "medium", attributionConfig = { mode: "off" }, permissionConfig = { bypass: "deny" }, ruleMode = "auto", rules = null, applyRules = null, optionalSkills = [], interactiveSetup = false, onBeforeSuccessSummary = null }) {
+export async function provisionProject({ sourceRoot, target, profile = "web", setupPipeline = "ecc", planTuneHooks = false, mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, effortLevel = "medium", attributionConfig = { mode: "off" }, permissionConfig = { bypass: "deny" }, ruleMode = "auto", rules = null, applyRules = null, optionalSkills = [], interactiveSetup = false, renderProgress = null, onBeforeSuccessSummary = null }) {
   if (!SETUP_PIPELINES.includes(setupPipeline)) throw new Error(`Unknown setup pipeline: ${setupPipeline}. Available: ${SETUP_PIPELINES.join(", ")}`);
   const shouldApplyRules = applyRules ?? usesEcc(setupPipeline);
   if (planTuneHooks && !usesGstack(setupPipeline)) throw new Error("--with-plan-tune-hooks requires --setup-pipeline gstack or both.");
@@ -350,7 +350,8 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
   const progress = createSetupProgress(progressPlan, {
     interactive: Boolean(interactiveSetup && process.stdin.isTTY && process.stdout.isTTY && !process.env.CI),
     ansi: Boolean(interactiveSetup && process.stdin.isTTY && process.stdout.isTTY && !process.env.CI && !process.env.NO_COLOR && process.env.TERM !== "dumb"),
-    hasExtendedSkills: localOptionalSkills.length > 0 || hasPluginOnlySkills
+    hasExtendedSkills: localOptionalSkills.length > 0 || hasPluginOnlySkills,
+    renderProgress
   });
   const provisionSnapshot = await snapshotProvisionState(target, { dryRun });
   let backupRoot = null;
@@ -515,12 +516,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
     : warnings.length
       ? "resolve warnings, then run claude"
       : `cd ${shellQuote(target)} && claude`;
-  const compactSummary = [
-    ["Status", dryRun ? "preview only" : style("success", "ready")],
-    ["Target", target],
-    ...(warnings.length > 0 ? [["Warnings", warnings.join("; ")]] : []),
-    ["Next", next]
-  ];
+  const compactSummary = warnings.length > 0 ? [["Warnings", warnings.join("; ")]] : [];
   const detailedSummary = [
     ["Status", dryRun ? `preview only; ${pending.length ? `${pending.join(", ")} pending` : style("success", "ready")}` : pending.length ? `${pending.join(", ")} pending` : style("success", "ready")],
     ["Target", target],
@@ -546,6 +542,9 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
     }
     throw error;
   }
-  progress?.complete({ detail: dryRun ? "preview" : "completed" });
-  printSummary("Setup complete", interactiveSetup ? compactSummary : detailedSummary, { progress });
+  if (interactiveSetup) progress?.complete({ detail: dryRun ? "preview" : "completed", summary: compactSummary.length ? compactSummary : null });
+  else {
+    progress?.complete({ detail: dryRun ? "preview" : "completed" });
+    printSummary("Setup complete", detailedSummary, { progress });
+  }
 }

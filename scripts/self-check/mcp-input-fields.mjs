@@ -6,7 +6,7 @@ export async function runMcpInputFieldsChecks() {
     context7: { env: { CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}" }, args: ["${PROJECT_DIR:-.}"] },
     duplicate: { env: { CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}" } }
   }), [
-    { name: "CONTEXT7_API_KEY", defaultValue: "", kind: "secret", label: "context7: CONTEXT7_API_KEY" },
+    { name: "CONTEXT7_API_KEY", defaultValue: "", kind: "secret", label: "context7: CONTEXT7_API_KEY", placeholder: "ctx7sk-....................." },
     { name: "PROJECT_DIR", defaultValue: ".", kind: "path", label: "context7: PROJECT_DIR" }
   ]);
 }
