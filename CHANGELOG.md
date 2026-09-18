@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.20] - 2026-09-19
+
+### Fixed
+
+- Accept the valid final Ink `Setup complete` frame in interactive provisioning checks, avoiding CI-only timing failures.
+
 ## [0.2.19] - 2026-09-19
 
 ### Fixed
