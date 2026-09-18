@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.2.18] - 2026-09-19
+
+**Set up a project in one persistent Ink terminal wizard, from workflow choices through live provisioning.**
+**Enter MCP and third-party provider credentials safely, keep in-progress edits while navigating, and reuse saved MCP secrets without exposing them.**
+
+### Added
+
+- Add grouped MCP-secret and provider/model input screens with visible field navigation, profile details, and MCP server descriptions.
+- Show live `ink-spinner` setup progress inside the wizard after confirmation.
+
+### Changed
+
+- Keep setup choices in a single bordered Ink + React interface with a branded header, installed repo-pattern version, Claude Code version, and back navigation.
+- Preserve typed grouped-field drafts when moving with arrow keys; saved secrets remain masked with length-matched bullets.
+
+### Fixed
+
+- Reject blank MCP secrets instead of writing display placeholders as credentials.
+- Keep interactive completion focused on the wizard instead of printing separate status, target, and next-step rows.
+
 ## [0.2.17] - 2026-09-18
 
 **Interactive setup now uses a persistent Ink + React wizard.**

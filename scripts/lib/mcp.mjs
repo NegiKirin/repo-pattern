@@ -10,6 +10,10 @@ const SECRET_HELP_URLS = {
   CONTEXT7_API_KEY: "https://context7.com/dashboard",
   TAVILY_API_KEY: "https://app.tavily.com/home"
 };
+const SECRET_PLACEHOLDERS = {
+  CONTEXT7_API_KEY: "ctx7sk-.....................",
+  TAVILY_API_KEY: "tvly-..................."
+};
 const PERSISTED_MCP_VALUES = new Set(Object.keys(SECRET_HELP_URLS));
 
 export function persistedMcpValues(values = {}) {
@@ -75,7 +79,9 @@ export function mcpInputFields(mcpServers) {
       add({
         ...placeholder,
         kind: SECRET_RE.test(placeholder.name) ? "secret" : "text",
-        label: `${serverName}: ${envName}`
+        label: `${serverName}: ${envName}`,
+        placeholder: SECRET_PLACEHOLDERS[placeholder.name],
+        validate: (value) => String(value || "").trim() ? true : "Required"
       });
     }
 

@@ -22,18 +22,21 @@ function shellQuote(value) {
 
 const SETUP_PIPELINES = ["ecc", "gstack", "both", "none"];
 const GENERATED_ATTRIBUTION_HOOK_SOURCE = "generated-attribution-removal";
-const GENERATED_ATTRIBUTION_HOOK = {
-  _repo_pattern_source: GENERATED_ATTRIBUTION_HOOK_SOURCE,
-  matcher: "^Bash$",
-  hooks: [{ type: "command", command: "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/remove-generated-attribution.mjs\"", timeout: 5 }]
-};
+function generatedAttributionHook(attributionConfig = { mode: "off" }) {
+  return {
+    _repo_pattern_source: GENERATED_ATTRIBUTION_HOOK_SOURCE,
+    _repo_pattern_attribution_mode: attributionConfig.mode,
+    matcher: "^Bash$",
+    hooks: [{ type: "command", command: "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/remove-generated-attribution.mjs\"", timeout: 5 }]
+  };
+}
 
-export function applyGeneratedAttributionHook(settings = {}) {
+export function applyGeneratedAttributionHook(settings = {}, attributionConfig = { mode: "off" }) {
   const hooks = Object.fromEntries(Object.entries(settings.hooks || {}).map(([event, entries]) => [
     event,
     (entries || []).filter((entry) => entry?._repo_pattern_source !== GENERATED_ATTRIBUTION_HOOK_SOURCE)
   ]).filter(([, entries]) => entries.length > 0));
-  hooks.PreToolUse = [...(hooks.PreToolUse || []), GENERATED_ATTRIBUTION_HOOK];
+  hooks.PreToolUse = [...(hooks.PreToolUse || []), generatedAttributionHook(attributionConfig)];
   return { ...settings, hooks };
 }
 
@@ -156,7 +159,7 @@ export function applyPermissionSettings(settings, permissionConfig = { bypass: "
 async function writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun, silent = false }) {
   const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.example.json"), {});
   const current = await readPrivateJson(path.join(target, ".claude", "settings.json"), {}, { label: ".claude/settings.json", parentLabel: ".claude" });
-  const settings = applyGeneratedAttributionHook(applyPermissionSettings(applyAttributionSetting({ ...template, hooks: current.hooks || template.hooks }, attributionConfig), permissionConfig));
+  const settings = applyGeneratedAttributionHook(applyPermissionSettings(applyAttributionSetting({ ...template, hooks: current.hooks || template.hooks }, attributionConfig), permissionConfig), attributionConfig);
   await writePrivateJson(path.join(target, ".claude", "settings.json"), settings, {
     dryRun,
     label: ".claude/settings.json",
@@ -170,7 +173,7 @@ export async function updateClaudeAttribution({ sourceRoot, target, attributionC
   const file = path.join(target, ".claude", "settings.json");
   const current = await readPrivateJson(file, null, { label: ".claude/settings.json", parentLabel: ".claude" });
   const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.example.json"), {});
-  await writePrivateJson(file, applyGeneratedAttributionHook(applyAttributionSetting(current || template, attributionConfig)), {
+  await writePrivateJson(file, applyGeneratedAttributionHook(applyAttributionSetting(current || template, attributionConfig), attributionConfig), {
     dryRun,
     label: ".claude/settings.json",
     parentLabel: ".claude"
@@ -308,7 +311,7 @@ async function writeLocalSettings({ sourceRoot, target, localSettingsEnv = {}, e
   await appendGitignoreLine(target, ".claude/", { dryRun, silent });
 }
 
-export async function provisionProject({ sourceRoot, target, profile = "web", setupPipeline = "ecc", planTuneHooks = false, mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, effortLevel = "medium", attributionConfig = { mode: "off" }, permissionConfig = { bypass: "deny" }, ruleMode = "auto", rules = null, applyRules = null, optionalSkills = [], interactiveSetup = false, onBeforeSuccessSummary = null }) {
+export async function provisionProject({ sourceRoot, target, profile = "web", setupPipeline = "ecc", planTuneHooks = false, mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, effortLevel = "medium", attributionConfig = { mode: "off" }, permissionConfig = { bypass: "deny" }, ruleMode = "auto", rules = null, applyRules = null, optionalSkills = [], interactiveSetup = false, renderProgress = null, onBeforeSuccessSummary = null }) {
   if (!SETUP_PIPELINES.includes(setupPipeline)) throw new Error(`Unknown setup pipeline: ${setupPipeline}. Available: ${SETUP_PIPELINES.join(", ")}`);
   const shouldApplyRules = applyRules ?? usesEcc(setupPipeline);
   if (planTuneHooks && !usesGstack(setupPipeline)) throw new Error("--with-plan-tune-hooks requires --setup-pipeline gstack or both.");
@@ -350,7 +353,8 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
   const progress = createSetupProgress(progressPlan, {
     interactive: Boolean(interactiveSetup && process.stdin.isTTY && process.stdout.isTTY && !process.env.CI),
     ansi: Boolean(interactiveSetup && process.stdin.isTTY && process.stdout.isTTY && !process.env.CI && !process.env.NO_COLOR && process.env.TERM !== "dumb"),
-    hasExtendedSkills: localOptionalSkills.length > 0 || hasPluginOnlySkills
+    hasExtendedSkills: localOptionalSkills.length > 0 || hasPluginOnlySkills,
+    renderProgress
   });
   const provisionSnapshot = await snapshotProvisionState(target, { dryRun });
   let backupRoot = null;
@@ -515,12 +519,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
     : warnings.length
       ? "resolve warnings, then run claude"
       : `cd ${shellQuote(target)} && claude`;
-  const compactSummary = [
-    ["Status", dryRun ? "preview only" : style("success", "ready")],
-    ["Target", target],
-    ...(warnings.length > 0 ? [["Warnings", warnings.join("; ")]] : []),
-    ["Next", next]
-  ];
+  const compactSummary = warnings.length > 0 ? [["Warnings", warnings.join("; ")]] : [];
   const detailedSummary = [
     ["Status", dryRun ? `preview only; ${pending.length ? `${pending.join(", ")} pending` : style("success", "ready")}` : pending.length ? `${pending.join(", ")} pending` : style("success", "ready")],
     ["Target", target],
@@ -546,6 +545,9 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
     }
     throw error;
   }
-  progress?.complete({ detail: dryRun ? "preview" : "completed" });
-  printSummary("Setup complete", interactiveSetup ? compactSummary : detailedSummary, { progress });
+  if (interactiveSetup) progress?.complete({ detail: dryRun ? "preview" : "completed", summary: compactSummary.length ? compactSummary : null });
+  else {
+    progress?.complete({ detail: dryRun ? "preview" : "completed" });
+    printSummary("Setup complete", detailedSummary, { progress });
+  }
 }

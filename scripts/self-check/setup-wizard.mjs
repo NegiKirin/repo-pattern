@@ -5,14 +5,26 @@ import { SetupWizard, effortColor, nextEffortCursor, nextMenuCursor, previousPag
 
 const data = {
   claudeCodeVersion: "1.0.0",
-  profiles: ["web", "custom"],
+  profiles: [
+    { value: "web", label: "web", description: "context7, tavily" },
+    { value: "custom", label: "custom", description: "choose exact MCP servers" }
+  ],
   profileServers: { web: ["context7"], custom: [] },
-  mcpServers: ["context7"],
+  mcpServers: [{ value: "context7", label: "context7", hint: "Live documentation lookup" }],
   ruleModes: ["auto", "manual", "none"],
-  mcpInputs: (profile, servers) => (profile === "custom" ? servers : ["context7"]).flatMap((server) => server === "context7" ? [{ name: "CONTEXT7_API_KEY", kind: "secret", label: "context7: CONTEXT7_API_KEY", defaultValue: "" }] : []),
+  mcpInputs: (profile, servers) => (profile === "custom" ? servers : ["context7"]).flatMap((server) => server === "context7" ? [
+    { name: "CONTEXT7_API_KEY", kind: "secret", label: "context7: CONTEXT7_API_KEY", defaultValue: "", placeholder: "ctx7sk-.....................", validate: (value) => value ? true : "Required" },
+    { name: "TAVILY_API_KEY", kind: "secret", label: "tavily: TAVILY_API_KEY", defaultValue: "", placeholder: "tvly-...................", validate: (value) => value ? true : "Required" }
+  ] : []),
   rules: ["common", "typescript"],
   optionalSkills: [{ value: "herdr", label: "herdr" }],
-  localSettings: []
+  localSettings: [
+    { name: "ANTHROPIC_BASE_URL", initial: "", placeholder: "https://example.com/v1", validate: (value) => /^https?:\/\//.test(value) ? true : "Use a valid URL." },
+    { name: "ANTHROPIC_AUTH_TOKEN", initial: "", placeholder: "sk-..............", mask: true, validate: (value) => value ? true : "Required" },
+    { name: "ANTHROPIC_DEFAULT_OPUS_MODEL", initial: "", placeholder: "claude-opus-4-8", validate: (value) => value ? true : "Required" },
+    { name: "ANTHROPIC_DEFAULT_SONNET_MODEL", initial: "", placeholder: "claude-sonnet-4-6", validate: (value) => value ? true : "Required" },
+    { name: "ANTHROPIC_DEFAULT_HAIKU_MODEL", initial: "", placeholder: "claude-haiku-4-5", validate: (value) => value ? true : "Required" }
+  ]
 };
 
 export async function runSetupWizardChecks() {
@@ -26,7 +38,13 @@ export async function runSetupWizardChecks() {
     rules: ["typescript"],
     optionalSkills: ["herdr"],
     mcpValues: { CONTEXT7_API_KEY: "secret-value" },
-    localSettingsEnv: {},
+    localSettingsEnv: {
+      ANTHROPIC_BASE_URL: "https://provider.example/v1",
+      ANTHROPIC_AUTH_TOKEN: "secret-token",
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "custom-opus",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "custom-sonnet",
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: "custom-haiku"
+    },
     effortLevel: "medium",
     permissionConfig: { bypass: "deny" },
     attributionConfig: { mode: "off" }
@@ -59,7 +77,21 @@ export async function runSetupWizardChecks() {
   assert.ok(pages.some((page) => page.id === "rules"));
   assert.equal(pages.findIndex((page) => page.id === "ruleMode") < pages.findIndex((page) => page.id === "profile"), true);
   assert.equal(previousPageIndex(pages, pages.findIndex((page) => page.id === "mcpServers")), pages.findIndex((page) => page.id === "profile"));
-  assert.equal(pages.findIndex((page) => page.id === "mcp:CONTEXT7_API_KEY") < pages.findIndex((page) => page.id === "optionalSkills"), true);
+  const mcpPage = pages.find((page) => page.id === "mcpInputs");
+  assert.ok(mcpPage);
+  assert.deepEqual(mcpPage.fields.map((field) => field.name), ["CONTEXT7_API_KEY", "TAVILY_API_KEY"]);
+  assert.equal(pages.findIndex((page) => page.id === "mcpInputs") < pages.findIndex((page) => page.id === "optionalSkills"), true);
+  const modelPage = pages.find((page) => page.id === "modelSettings");
+  assert.ok(modelPage);
+  assert.deepEqual(modelPage.fields.map((field) => field.name), [
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL"
+  ]);
+  assert.equal(pages.some((page) => page.id === "local:ANTHROPIC_AUTH_TOKEN"), false);
+  assert.equal(pages.some((page) => page.id === "local:ANTHROPIC_DEFAULT_OPUS_MODEL"), false);
 
   const namedProfile = pruneWizardState({ ...initial, profile: "web" }, data);
   assert.deepEqual(namedProfile.mcpServers, null);
@@ -77,6 +109,28 @@ export async function runSetupWizardChecks() {
   const noCustomAttribution = pruneWizardState({ ...initial, attributionConfig: { mode: "on", commit: "old" } }, data);
   assert.equal(wizardPages(noCustomAttribution, data).some((page) => page.id === "attributionCommit"), false);
   assert.equal("commit" in noCustomAttribution.attributionConfig, false);
+
+  const profileWizard = render(React.createElement(SetupWizard, {
+    initialState: { ...initial, setupPipeline: "none", applyRules: false, profile: "web", mcpServers: null, optionalSkills: [] },
+    data,
+    initialPageId: "profile",
+    done: () => {}
+  }));
+  assert.match(profileWizard.lastFrame(), /· context7, tavily/);
+  profileWizard.stdin.write("[B");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(profileWizard.lastFrame(), /· choose exact MCP servers/);
+  assert.doesNotMatch(profileWizard.lastFrame(), /· context7, tavily/);
+  profileWizard.unmount();
+
+  const serverWizard = render(React.createElement(SetupWizard, {
+    initialState: { ...initial, setupPipeline: "none", applyRules: false, profile: "custom", optionalSkills: [] },
+    data,
+    initialPageId: "mcpServers",
+    done: () => {}
+  }));
+  assert.match(serverWizard.lastFrame(), /context7 — Live documentation lookup/);
+  serverWizard.unmount();
 
   const effortWizard = render(React.createElement(SetupWizard, {
     initialState: {
@@ -98,4 +152,130 @@ export async function runSetupWizardChecks() {
   assert.match(effortWizard.lastFrame(), /\[high\]/);
   assert.match(effortWizard.lastFrame(), /Claude Code · 1\.0\.0/);
   effortWizard.unmount();
+
+  const modelWizard = render(React.createElement(SetupWizard, {
+    initialState: { ...initial, setupPipeline: "none", applyRules: false, profile: "web", mcpServers: null, optionalSkills: [] },
+    data,
+    initialPageId: "modelSettings",
+    done: () => {}
+  }));
+  assert.match(modelWizard.lastFrame(), /Configure third-party provider & models/);
+  assert.match(modelWizard.lastFrame(), /› ANTHROPIC_BASE_URL:/);
+  assert.match(modelWizard.lastFrame(), /ANTHROPIC_AUTH_TOKEN:/);
+  assert.match(modelWizard.lastFrame(), /ANTHROPIC_DEFAULT_OPUS_MODEL:/);
+  modelWizard.stdin.write("[B");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(modelWizard.lastFrame(), /› ANTHROPIC_AUTH_TOKEN:/);
+  modelWizard.stdin.write("[A");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(modelWizard.lastFrame(), /› ANTHROPIC_BASE_URL:/);
+  modelWizard.stdin.write("\r");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(modelWizard.lastFrame(), /› ANTHROPIC_AUTH_TOKEN:/);
+  modelWizard.unmount();
+
+  const mcpWizard = render(React.createElement(SetupWizard, {
+    initialState: { ...initial, mcpValues: {}, setupPipeline: "none", applyRules: false, profile: "web", mcpServers: null, optionalSkills: [] },
+    data,
+    initialPageId: "mcpInputs",
+    done: () => {}
+  }));
+  assert.match(mcpWizard.lastFrame(), /MCP secret/);
+  assert.match(mcpWizard.lastFrame(), /  context7:/);
+  assert.match(mcpWizard.lastFrame(), /› CONTEXT7_API_KEY:/);
+  assert.match(mcpWizard.lastFrame(), /› CONTEXT7_API_KEY: ctx7sk-\.\.\.+/);
+  assert.match(mcpWizard.lastFrame(), /tavily:/);
+  assert.match(mcpWizard.lastFrame(), /TAVILY_API_KEY:/);
+  assert.match(mcpWizard.lastFrame(), /tvly-\.\.\.+/);
+  assert.doesNotMatch(mcpWizard.lastFrame(), /secret-value/);
+  mcpWizard.stdin.write("[B");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(mcpWizard.lastFrame(), /› TAVILY_API_KEY:/);
+  mcpWizard.stdin.write("[A");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(mcpWizard.lastFrame(), /› CONTEXT7_API_KEY:/);
+  mcpWizard.stdin.write("first-secret");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  mcpWizard.stdin.write("\r");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(mcpWizard.lastFrame(), /› TAVILY_API_KEY:/);
+  assert.doesNotMatch(mcpWizard.lastFrame(), /first-secret/);
+  mcpWizard.stdin.write("second-secret");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  mcpWizard.stdin.write("\r");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(mcpWizard.lastFrame(), /Optional external skills/);
+  mcpWizard.unmount();
+
+  const invalidMcpWizard = render(React.createElement(SetupWizard, {
+    initialState: { ...initial, mcpValues: {}, setupPipeline: "none", applyRules: false, profile: "web", mcpServers: null, optionalSkills: [] },
+    data,
+    initialPageId: "mcpInputs",
+    done: () => {}
+  }));
+  invalidMcpWizard.stdin.write("\r");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(invalidMcpWizard.lastFrame(), /Required/);
+  assert.match(invalidMcpWizard.lastFrame(), /› CONTEXT7_API_KEY:/);
+  assert.doesNotMatch(invalidMcpWizard.lastFrame(), /•+/);
+  invalidMcpWizard.unmount();
+
+  const mcpDraftWizard = render(React.createElement(SetupWizard, {
+    initialState: { ...initial, mcpValues: {}, setupPipeline: "none", applyRules: false, profile: "web", mcpServers: null, optionalSkills: [] },
+    data,
+    initialPageId: "mcpInputs",
+    done: () => {}
+  }));
+  mcpDraftWizard.stdin.write("draft-secret");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  mcpDraftWizard.stdin.write("[B");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(mcpDraftWizard.lastFrame(), /› TAVILY_API_KEY:/);
+  assert.doesNotMatch(mcpDraftWizard.lastFrame(), /draft-secret/);
+  mcpDraftWizard.stdin.write("[A");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(mcpDraftWizard.lastFrame(), /› CONTEXT7_API_KEY: •{12}/);
+  mcpDraftWizard.unmount();
+
+  const modelDraftWizard = render(React.createElement(SetupWizard, {
+    initialState: {
+      ...initial,
+      setupPipeline: "none",
+      applyRules: false,
+      profile: "web",
+      mcpServers: null,
+      optionalSkills: [],
+      localSettingsEnv: {}
+    },
+    data,
+    initialPageId: "modelSettings",
+    done: () => {}
+  }));
+  modelDraftWizard.stdin.write("https://draft.example/v1");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  modelDraftWizard.stdin.write("[B");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(modelDraftWizard.lastFrame(), /› ANTHROPIC_AUTH_TOKEN:/);
+  modelDraftWizard.stdin.write("token-draft");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  modelDraftWizard.stdin.write("[B");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.doesNotMatch(modelDraftWizard.lastFrame(), /token-draft/);
+  modelDraftWizard.stdin.write("[A");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(modelDraftWizard.lastFrame(), /› ANTHROPIC_AUTH_TOKEN:[^\n]*\n.*•{11}/);
+  modelDraftWizard.stdin.write("[A");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(modelDraftWizard.lastFrame(), /https:\/\/draft\.example\/v1/);
+  modelDraftWizard.unmount();
+
+  const configuredMcpWizard = render(React.createElement(SetupWizard, {
+    initialState: { ...initial, setupPipeline: "none", applyRules: false, profile: "web", mcpServers: null, optionalSkills: [] },
+    data,
+    initialPageId: "mcpInputs",
+    done: () => {}
+  }));
+  assert.match(configuredMcpWizard.lastFrame(), /CONTEXT7_API_KEY: •{12}/);
+  assert.doesNotMatch(configuredMcpWizard.lastFrame(), /secret-value|configured/);
+  configuredMcpWizard.unmount();
 }

@@ -81,8 +81,9 @@ function TextPrompt({ message, initial = "", placeholder = "", validate = null, 
   const display = value
     ? (mask ? "•".repeat([...value].length) : value)
     : (mask && initial ? "•".repeat([...initial].length) : initial || placeholder);
+  const isPlaceholder = !value && !initial && Boolean(placeholder);
   return React.createElement(Frame, { message },
-    React.createElement(Text, { color: "green" }, `› ${display || " "}`),
+    React.createElement(Text, { color: isPlaceholder ? "gray" : "green" }, `› ${display || " "}`),
     error ? React.createElement(Text, { color: "red" }, error) : null
   );
 }

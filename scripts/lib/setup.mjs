@@ -46,6 +46,7 @@ const LOCAL_SETTINGS_FIELDS = [
   ["ANTHROPIC_DEFAULT_HAIKU_MODEL", "claude-haiku-4-5", askText, validateRequired]
 ];
 const RETRY_SECRET_LOCAL_SETTINGS = new Set(["ANTHROPIC_AUTH_TOKEN", "CONTEXT7_API_KEY", "TAVILY_API_KEY"]);
+const LOCAL_SETTINGS_PLACEHOLDERS = { ANTHROPIC_AUTH_TOKEN: "sk-.............." };
 
 function setupLockPath(target) {
   return repoLockPath(target);
@@ -357,7 +358,7 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
     ...availableMcpServers.map(async (name) => [name, (await readMcpConfig({ sourceRoot, profile: "custom", mcpServers: [name] })).mcpServers])
   ]));
   const autoRules = selectEccRules(detection);
-  const wizardState = await runSetupWizard({
+  const { state: wizardState, controller: wizardController } = await runSetupWizard({
     migrationChoice: action === "migrate" && !shouldMigrate ? "pending" : "yes",
     retryChoice: previousOptions ? "pending" : "none",
     setupPipeline: interactiveSetupPipeline(previousOptions),
@@ -376,7 +377,7 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
   }, {
     claudeCodeVersion,
     profiles: profileChoices,
-    mcpServers: availableMcpServers,
+    mcpServers: availableMcpServers.map((name) => ({ value: name, label: name, hint: mcpDefinitions[name]?.[name]?.description })),
     mcpInputs: (selectedProfile, selectedServers) => mcpInputFields(selectedProfile === "custom"
       ? Object.assign({}, ...selectedServers.map((name) => mcpDefinitions[name] || {}))
       : mcpDefinitions[selectedProfile] || {}),
@@ -390,7 +391,7 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
     localSettings: LOCAL_SETTINGS_FIELDS.map(([name, fallback, ask, validate]) => ({
       name,
       initial: retryLocalSettingsEnv[name] || "",
-      placeholder: localSettingsPromptOptions(promptInitialValues)[name].placeholder || fallback,
+      placeholder: LOCAL_SETTINGS_PLACEHOLDERS[name] || localSettingsPromptOptions(promptInitialValues)[name].placeholder || fallback,
       validate,
       mask: ask === askPassword
     }))
@@ -431,10 +432,13 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
       attributionConfig,
       permissionConfig,
       interactiveSetup: true,
+      renderProgress: wizardController.renderProgress,
       onBeforeSuccessSummary: () => writeSetupStatus(target, { status: "succeeded", succeededAt: new Date().toISOString(), failedStep: null, error: null, options: retryOptions }, { dryRun, silent: true })
     });
   } catch (error) {
     await writeSetupStatus(target, { status: "failed", failedAt: new Date().toISOString(), failedStep: "provision", error: error.message, options: retryOptions }, { dryRun, silent: true });
     throw error;
+  } finally {
+    wizardController.close();
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@negikirin/repo-pattern",
-  "version": "0.2.17",
+  "version": "0.2.18",
   "description": "Minimal ECC-first Claude Code project setup and migrator",
   "type": "module",
   "bin": {
@@ -70,6 +70,7 @@
   "dependencies": {
     "ink": "^6.2.0",
     "ink-big-text": "^2.0.0",
+    "ink-spinner": "^5.0.0",
     "react": "^19.2.0"
   },
   "devDependencies": {

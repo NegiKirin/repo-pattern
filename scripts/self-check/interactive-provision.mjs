@@ -58,11 +58,12 @@ export async function runInteractiveProvisionChecks(repoRoot) {
       for (const label of labels) assert.match(rendered, new RegExp(label));
       assert(rendered.indexOf(labels[0]) < rendered.indexOf(labels[1]));
       assert(rendered.indexOf(labels[1]) < rendered.indexOf(labels[2]));
+      assert.match(rendered, /⠋ ECC & gstack/);
       assert.match(rendered, /ECC & gstack Skipped/);
       assert.match(rendered, /Extended skills Skipped/);
       assert.match(rendered, /Setup preview/);
-      assert.match(rendered, /Setup complete/);
-      assert.match(rendered, /Status\s+preview only/);
+      assert.doesNotMatch(rendered, /Setup complete|Status\s+preview only|Target\s+|Next\s+/);
+      assert.doesNotMatch(rendered, /== Setup complete ==/);
       assert.doesNotMatch(rendered, /Warnings\s+/);
       assert.doesNotMatch(rendered, /Generating workspace|Generating MCP workspace|\[████|%|Provisioning target|== Audit ==|MCP generated|Detected stack|Selected ECC rules|Applied optional skills|Backup created|\[dry-run\]/);
       assert.equal(warnings.length, 0);
@@ -113,7 +114,7 @@ export async function runInteractiveProvisionChecks(repoRoot) {
       assert.match(rendered, /ECC & gstack completed/);
       assert.match(rendered, /Extended skills completed/);
       assert.match(rendered, /Setup preview/);
-      assert.match(rendered, /Status\s+preview only/);
+      assert.doesNotMatch(rendered, /Setup complete|Status\s+preview only|Target\s+|Next\s+/);
       assert.doesNotMatch(rendered, /Backing up workspace|Generating workspace|Generating MCP workspace|Syncing ECC cache|Staging ECC rules and agents|Backing up ECC rules|Backing up local skills|Syncing document-specialist|Copying document-specialist|Downloading gstack|Bootstrapping gstack|Writing gstack hooks|\[████|%|\[dry-run\]|Setup pipeline|Doctor|Applied optional skills/);
     });
     assert.equal((await fs.readdir(parityTarget)).length, 0);
