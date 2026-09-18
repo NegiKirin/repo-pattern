@@ -8,7 +8,7 @@ import { applyMcpValues, generateMcp, mcpSecretPrompt, persistedMcpValues, readG
 import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, provisionProject, reconcileLocalPluginSettings, setupPipelineScope, updateClaudeAttribution, updateClaudePermissions } from "../lib/provision.mjs";
 import { writePrivateJson } from "../lib/fs-utils.mjs";
 import { printSummary, renderLogo, resolveTextValue, style } from "../lib/prompt.mjs";
-import { localSettingsPromptOptions, needsLocalSettingsPrompt, setupProject, setupRetryOptions } from "../lib/setup.mjs";
+import { interactiveSetupPipeline, localSettingsPromptOptions, needsLocalSettingsPrompt, setupProject, setupRetryOptions } from "../lib/setup.mjs";
 import { applyEccRules, buildAgentManifest, clearEccRules, formatEccCloneError, hasGitUpstream, validateAgentManifest } from "../lib/rules.mjs";
 import { applyOptionalSkills, applyPluginSkillSettings, expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills, OPTIONAL_SKILLS } from "../lib/skills.mjs";
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
@@ -34,6 +34,8 @@ assert.deepEqual({
   CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: "2"
 });
 assert.equal("workflowSizeGuideline" in localSettingsTemplate.env, false);
+assert.equal(interactiveSetupPipeline(null), "none");
+assert.equal(interactiveSetupPipeline({ setupPipeline: "gstack" }), "gstack");
 
 const mcpServers = {
   context7: {

@@ -1,12 +1,13 @@
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
-import { auditProject, printAudit } from "./audit.mjs";
+import { auditProject } from "./audit.mjs";
 import { detectProject } from "./project-detect.mjs";
-import { provisionProject, setupPipelineScope, updateClaudeAttribution, updateClaudePermissions } from "./provision.mjs";
+import { provisionProject, updateClaudeAttribution, updateClaudePermissions } from "./provision.mjs";
 import { doctorProject } from "./doctor.mjs";
-import { collectMcpValues, generateMcp, listAvailableMcpServers, persistedMcpValues, readGeneratedMcpValues, readMcpConfig } from "./mcp.mjs";
-import { askConfirm, askEffortLevel, askPassword, askText, DEFAULT_EFFORT_LEVEL, isInteractive, printBox, printLogo, printSummary, selectMany, selectOne, style } from "./prompt.mjs";
+import { collectMcpValues, generateMcp, listAvailableMcpServers, mcpInputFields, persistedMcpValues, readGeneratedMcpValues, readMcpConfig } from "./mcp.mjs";
+import { askPassword, askText, DEFAULT_EFFORT_LEVEL, isInteractive, printBox, selectMany, selectOne } from "./prompt.mjs";
+import { runSetupWizard } from "./setup-wizard.mjs";
 import { ECC_RULE_PACKS, normalizeEccRules, selectEccRules } from "./ecc-rules.mjs";
 import { ensureRepoPatternGitignore, isTracked, readJson, readPrivateJson, readRepoLock, repoLockPath, writeJson } from "./fs-utils.mjs";
 import { applyOptionalSkills, OPTIONAL_SKILLS } from "./skills.mjs";
@@ -104,45 +105,11 @@ async function currentLocalSettingsEnv(target) {
   return settings.env || {};
 }
 
-function retryRows(setup) {
-  const options = setup.options || {};
-  return [
-    ["Status", setup.status],
-    ["Failed step", setup.failedStep || "unknown"],
-    ["Error", setup.error || "unknown"],
-    ["Setup pipeline", options.setupPipeline || "ecc"],
-    ...(usesGstack(options.setupPipeline) ? [["Plan-tune hooks", options.planTuneHooks ? "installed in .claude/settings.json" : "not installed"]] : []),
-    ["Profile", options.profile || "web"],
-    ["MCP servers", options.mcpServers?.join(", ") || "from profile"],
-    ["MCP values", options.mcpValueNames?.length ? options.mcpValueNames.join(", ") : "none"],
-    ["Rules", options.applyRules ? options.rules.join(", ") : "none"],
-    ["Optional skills", options.optionalSkills?.length ? options.optionalSkills.join(", ") : "none"],
-    ["Effort", options.effortLevel || DEFAULT_EFFORT_LEVEL],
-    ["Bypass permissions", options.permissionConfig?.bypass === "allow" ? "allowed by default" : "disabled"],
-    ["Commit attribution", attributionSummary(options.attributionConfig || { mode: "off" })],
-    ["Dry-run", options.dryRun ? "yes" : "no"]
-  ];
-}
-
-async function choosePreviousSetupOptions(target) {
+async function previousSetupOptions(target) {
   if (isTracked(target, ".repo-pattern/.repo-pattern.lock.json") || isTracked(target, ".repo-pattern.lock.json")) {
     throw new Error("repo-pattern lock is tracked. Untrack it before retrying setup.");
   }
-
-  const lock = await readRepoLock(target, {});
-  const options = setupOptionsFromLock(lock);
-  if (!options) return null;
-
-  printSummary("Previous setup did not complete", retryRows(lock.setup));
-  const answer = await selectOne({
-    message: "Press Enter to retry with previous settings, or edit them.",
-    options: [
-      { value: "retry", label: "Retry" },
-      { value: "edit", label: "Edit" }
-    ],
-    initialValue: "retry"
-  });
-  return answer === "retry" ? options : null;
+  return setupOptionsFromLock(await readRepoLock(target, {}));
 }
 
 function suggestedProfile(detection, fallback) {
@@ -153,8 +120,7 @@ function suggestedProfile(detection, fallback) {
 
 async function checkClaudeCode() {
   try {
-    const { stdout } = await execFileAsync("claude", ["--version"]);
-    printBox("Claude Code", [`version: ${stdout.trim()}`]);
+    await execFileAsync("claude", ["--version"]);
   } catch {
     throw new Error("Claude Code CLI is required. Install/login to Claude Code, then rerun setup.");
   }
@@ -211,62 +177,8 @@ function expectedSetupState(setupPipeline) {
   }[setupPipeline];
 }
 
-async function chooseSetupPipeline() {
-  return selectedPipeline(await selectMany({
-    message: "Choose setup pipeline",
-    options: [
-      { value: "ecc", label: "ECC", description: "project-scoped plugin with optional project rules" },
-      { value: "gstack", label: "gstack", description: "project-local at .claude/skills/gstack; requires Git and Bun" }
-    ],
-    initialValues: []
-  }));
-}
-
-async function choosePlanTuneHooks(setupPipeline, initialValue = false) {
-  if (setupPipeline !== "gstack" && setupPipeline !== "both") return false;
-  return selectOne({
-    message: "Install gstack plan-tune hooks?",
-    options: [
-      { value: false, label: "No", description: "keep target .claude/settings.json unchanged by gstack" },
-      { value: true, label: "Yes", description: "add gstack PreToolUse and PostToolUse hooks to target .claude/settings.json" }
-    ],
-    initialValue
-  });
-}
-
-async function chooseRuleConfig(detection, setupPipeline) {
-  if (!usesEcc(setupPipeline)) {
-    const installRules = await selectOne({
-      message: "Install project-local ECC rules?",
-      options: [
-        { value: false, label: "No", description: "do not install project-local ECC rules" },
-        { value: true, label: "Yes", description: "sync ECC rules without installing the ECC plugin" }
-      ],
-      initialValue: false
-    });
-    if (!installRules) return { applyRules: false, ruleMode: "auto", rules: [] };
-  }
-
-  const autoRules = selectEccRules(detection);
-  const ruleMode = await selectOne({
-    message: "Step 2/6 — Choose ECC rule detection mode",
-    options: [
-      { value: "auto", label: "auto", description: `detect from project (${autoRules.join(", ")})` },
-      { value: "manual", label: "manual", description: "choose rule packs by type" },
-      { value: "none", label: "none", description: "do not install project-local ECC rules" }
-    ],
-    initialValue: "auto"
-  });
-
-  if (ruleMode === "none") return { applyRules: false, ruleMode: "auto", rules: [] };
-  if (ruleMode !== "manual") return { applyRules: true, ruleMode, rules: autoRules };
-
-  const rules = normalizeEccRules(await selectMany({
-    message: "Choose ECC rule packs",
-    options: ECC_RULE_PACKS,
-    initialValues: autoRules
-  }));
-  return { applyRules: rules.length > 0, ruleMode, rules };
+export function interactiveSetupPipeline(previousOptions) {
+  return previousOptions?.setupPipeline || "none";
 }
 
 function defaultRuleConfig(setupPipeline, applyRules, detection) {
@@ -306,16 +218,6 @@ export function localSettingsPromptOptions(initialValues = {}, environment = pro
   }));
 }
 
-async function chooseLocalSettingsEnv(initialValues = {}, promptInitialValues = initialValues) {
-  printBox("Step 4/6 — Local Claude provider settings", ["These values are written to .claude/settings.local.json and gitignored."]);
-  const env = { ...initialValues };
-  const promptOptions = localSettingsPromptOptions(promptInitialValues);
-  for (const [name, , ask, validate] of LOCAL_SETTINGS_FIELDS) {
-    env[name] = await ask(name, { ...promptOptions[name], validate });
-  }
-  return env;
-}
-
 async function choosePermissionConfig() {
   return {
     bypass: await selectOne({
@@ -348,52 +250,6 @@ async function chooseAttributionConfig() {
       validate: validateRequired
     })
   };
-}
-
-function attributionSummary(attributionConfig) {
-  if (attributionConfig.mode === "on") return "Claude Code default";
-  if (attributionConfig.mode === "custom") return attributionConfig.commit;
-  return "off (commit: \"\")";
-}
-
-async function confirmSummary({ action, setupPipeline, planTuneHooks, target, mcpConfig, mcpValues, ruleConfig, optionalSkills, localSettingsEnv, effortLevel, attributionConfig, permissionConfig, dryRun }) {
-  const hasLocalSkill = optionalSkills.some((name) => !OPTIONAL_SKILLS.find((skill) => skill.value === name)?.plugin);
-  const writesGstack = usesGstack(setupPipeline);
-  printSummary("Setup summary", [
-    ["Action", action],
-    ["Setup pipeline", setupPipeline],
-    ["Pipeline scope", setupPipelineScope(setupPipeline)],
-    ...(usesGstack(setupPipeline) ? [["Plan-tune hooks", planTuneHooks ? "will add PreToolUse/PostToolUse hooks to .claude/settings.json" : "not installed"]] : []),
-    ["Target", target],
-    ["Profile", mcpConfig.profile],
-    ["MCP servers", mcpConfig.mcpServers?.join(", ") || "from profile"],
-    ["MCP values", Object.keys(mcpValues).length ? Object.keys(mcpValues).join(", ") : "none"],
-    ["Rules", ruleConfig.applyRules ? ruleConfig.rules.join(", ") : "none"],
-    ["Optional skills", optionalSkills.length ? optionalSkills.join(", ") : "none"],
-    ["Local settings", ".claude/settings.local.json"],
-    ["Base URL", localSettingsEnv.ANTHROPIC_BASE_URL],
-    ["Subagent session limit", localSettingsEnv.CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION],
-    ["Opus", localSettingsEnv.ANTHROPIC_DEFAULT_OPUS_MODEL],
-    ["Sonnet", localSettingsEnv.ANTHROPIC_DEFAULT_SONNET_MODEL],
-    ["Haiku", localSettingsEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL],
-    ["Effort", effortLevel],
-    ["Auth token", style("dim", "[hidden]")],
-    ["Bypass permissions", permissionConfig.bypass === "allow" ? "allowed by default" : "disabled"],
-    ["Commit attribution", attributionSummary(attributionConfig)],
-    ["Dry-run", dryRun ? "yes" : "no"],
-    ["Will write", `CLAUDE.md (if missing), .claude/CLAUDE.md, .claude/settings.json, .claude/settings.local.json, .mcp.json, .repo-pattern/.repo-pattern.json, .repo-pattern/.repo-pattern.lock.json${writesGstack ? ", .claude/skills/gstack, generated gstack wrappers, .repo-pattern/gstack" : ""}${optionalSkills.length ? ", optional skill/plugin config" : ""}${hasLocalSkill ? ", .claude/skills" : ""}`],
-    ["Will not write", hasLocalSkill || writesGstack ? ".claude/commands, .claude/hooks, .claude/scripts" : ".claude/skills, .claude/commands, .claude/hooks, .claude/scripts"]
-  ]);
-
-  const answer = await selectOne({
-    message: "Run setup now?",
-    options: [
-      { value: "yes", label: "Yes" },
-      { value: "no", label: "No" }
-    ],
-    initialValue: "yes"
-  });
-  return answer === "yes";
 }
 
 async function handleInitialized({ sourceRoot, target, profile, dryRun }) {
@@ -472,40 +328,20 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
     return;
   }
 
-  printLogo();
   await checkClaudeCode();
 
-  const previousOptions = await choosePreviousSetupOptions(target);
+  const previousOptions = await previousSetupOptions(target);
   const detection = await detectProject(target);
-  const selectedSetupPipeline = previousOptions?.setupPipeline || await chooseSetupPipeline();
-  if (!SETUP_PIPELINES.includes(selectedSetupPipeline)) throw new Error(`Unknown setup pipeline: ${selectedSetupPipeline}. Available: ${SETUP_PIPELINES.join(", ")}`);
-  const selectedPlanTuneHooks = previousOptions?.planTuneHooks ?? await choosePlanTuneHooks(selectedSetupPipeline, planTuneHooks);
-  const chosenProfile = previousOptions?.profile || await chooseProfile(sourceRoot, profile, detection);
-  const mcpConfig = previousOptions
-    ? { profile: previousOptions.profile, mcpServers: previousOptions.mcpServers }
-    : await chooseMcpConfig(sourceRoot, chosenProfile);
-  const ruleConfig = previousOptions
-    ? { applyRules: previousOptions.applyRules, ruleMode: previousOptions.ruleMode, rules: previousOptions.rules }
-    : await chooseRuleConfig(detection, selectedSetupPipeline);
-  const selectedOptionalSkills = previousOptions?.optionalSkills || await chooseOptionalSkills(optionalSkills);
-
   const audit = await auditProject(target);
-  printAudit(audit);
-
   if (audit.state === "LEGACY_VENDOR" && force && !migrate) {
     throw new Error("Target has legacy/local Claude runtime surfaces. Re-run setup with --migrate, not --force.");
   }
 
   const action = audit.state === "LEGACY_VENDOR" ? "migrate" : "setup";
   const shouldMigrate = previousOptions?.migrate || migrate;
-  if (action === "migrate" && !shouldMigrate) {
-    printBox("Migration required", ["Legacy/local Claude runtime surfaces detected.", "Recommended action: migrate, with backups."]);
-    const confirmed = await askConfirm("Run migrate?", false);
-    if (!confirmed) throw new Error("Setup cancelled.");
-  }
 
   const currentSettingsEnv = await currentLocalSettingsEnv(target);
-  const mcpValues = await chooseMcpValues(sourceRoot, mcpConfig, await readGeneratedMcpValues(target));
+  const generatedMcpValues = await readGeneratedMcpValues(target);
   const localSettingsTemplate = await readJson(path.join(sourceRoot, ".claude.example", "settings.local.example.json"), {});
   const defaultOverrides = Object.fromEntries([
     "CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION",
@@ -513,16 +349,62 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
   ].filter((name) => process.env[name]).map((name) => [name, process.env[name]]));
   const retryLocalSettingsEnv = { ...localSettingsTemplate.env, ...previousOptions?.localSettingsEnv, ...currentSettingsEnv, ...defaultOverrides };
   const promptInitialValues = { ...previousOptions?.localSettingsEnv, ...currentSettingsEnv, ...defaultOverrides };
-  const localSettingsEnv = previousOptions && !needsLocalSettingsPrompt(retryLocalSettingsEnv)
-    ? retryLocalSettingsEnv
-    : await chooseLocalSettingsEnv(retryLocalSettingsEnv, promptInitialValues);
-  const effortLevel = previousOptions?.effortLevel || await askEffortLevel();
-  const permissionConfig = previousOptions?.permissionConfig || await choosePermissionConfig();
-  const attributionConfig = previousOptions?.attributionConfig || await chooseAttributionConfig();
-
-  if (!await confirmSummary({ action, setupPipeline: selectedSetupPipeline, planTuneHooks: selectedPlanTuneHooks, target, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, effortLevel, attributionConfig, permissionConfig, dryRun })) {
-    throw new Error("Setup cancelled.");
-  }
+  const profileChoices = await profileOptions(sourceRoot);
+  const availableMcpServers = await listAvailableMcpServers(sourceRoot);
+  const mcpDefinitions = Object.fromEntries(await Promise.all([
+    ...PROFILE_NAMES.map(async (name) => [name, (await readMcpConfig({ sourceRoot, profile: name })).mcpServers]),
+    ...availableMcpServers.map(async (name) => [name, (await readMcpConfig({ sourceRoot, profile: "custom", mcpServers: [name] })).mcpServers])
+  ]));
+  const autoRules = selectEccRules(detection);
+  const wizardState = await runSetupWizard({
+    migrationChoice: action === "migrate" && !shouldMigrate ? "pending" : "yes",
+    retryChoice: previousOptions ? "pending" : "none",
+    setupPipeline: interactiveSetupPipeline(previousOptions),
+    planTuneHooks: usesGstack(interactiveSetupPipeline(previousOptions)),
+    applyRules: previousOptions?.applyRules || applyRules || usesEcc(interactiveSetupPipeline(previousOptions)),
+    profile: previousOptions?.profile || suggestedProfile(detection, profile),
+    mcpServers: previousOptions?.mcpServers || (profile === "custom" ? CUSTOM_MCP_DEFAULTS : null),
+    ruleMode: previousOptions?.ruleMode || "auto",
+    rules: previousOptions?.rules || autoRules,
+    optionalSkills: previousOptions?.optionalSkills || optionalSkills,
+    mcpValues: persistedMcpValues(generatedMcpValues),
+    localSettingsEnv: previousOptions && !needsLocalSettingsPrompt(retryLocalSettingsEnv) ? retryLocalSettingsEnv : promptInitialValues,
+    effortLevel: previousOptions?.effortLevel || DEFAULT_EFFORT_LEVEL,
+    permissionConfig: previousOptions?.permissionConfig || { bypass: "deny" },
+    attributionConfig: previousOptions?.attributionConfig || { mode: "off" }
+  }, {
+    profiles: profileChoices,
+    mcpServers: availableMcpServers,
+    mcpInputs: (selectedProfile, selectedServers) => mcpInputFields(selectedProfile === "custom"
+      ? Object.assign({}, ...selectedServers.map((name) => mcpDefinitions[name] || {}))
+      : mcpDefinitions[selectedProfile] || {}),
+    ruleModes: [
+      { value: "auto", label: "auto", hint: `detect from project (${autoRules.join(", ")})` },
+      { value: "manual", label: "manual", hint: "choose rule packs by type" },
+      { value: "none", label: "none", hint: "do not install project-local ECC rules" }
+    ],
+    rules: ECC_RULE_PACKS,
+    optionalSkills: OPTIONAL_SKILLS,
+    localSettings: LOCAL_SETTINGS_FIELDS.map(([name, fallback, ask, validate]) => ({
+      name,
+      initial: retryLocalSettingsEnv[name] || "",
+      placeholder: localSettingsPromptOptions(promptInitialValues)[name].placeholder || fallback,
+      validate,
+      mask: ask === askPassword
+    }))
+  });
+  const selectedSetupPipeline = wizardState.setupPipeline;
+  const selectedPlanTuneHooks = wizardState.planTuneHooks;
+  const mcpConfig = { profile: wizardState.profile, mcpServers: wizardState.mcpServers };
+  const ruleConfig = !wizardState.applyRules || wizardState.ruleMode === "none"
+    ? { applyRules: false, ruleMode: "auto", rules: [] }
+    : { applyRules: true, ruleMode: wizardState.ruleMode, rules: wizardState.rules };
+  const selectedOptionalSkills = wizardState.optionalSkills;
+  const mcpValues = wizardState.mcpValues;
+  const localSettingsEnv = { ...retryLocalSettingsEnv, ...wizardState.localSettingsEnv };
+  const effortLevel = wizardState.effortLevel;
+  const permissionConfig = wizardState.permissionConfig;
+  const attributionConfig = wizardState.attributionConfig;
 
   const retryOptions = setupRetryOptions({ action, setupPipeline: selectedSetupPipeline, planTuneHooks: selectedPlanTuneHooks, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, effortLevel, attributionConfig, permissionConfig, dryRun });
   await writeSetupStatus(target, { status: "running", startedAt: new Date().toISOString(), failedStep: null, error: null, options: retryOptions }, { dryRun, silent: true });

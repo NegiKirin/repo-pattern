@@ -1,5 +1,6 @@
-import { confirm, isCancel, multiselect, note, password, select, spinner, text } from "@clack/prompts";
-import readline from "node:readline";
+import React, { useState } from "react";
+import { Box, Text, render, useInput } from "ink";
+import BigText from "ink-big-text";
 
 export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max", "ultracode"];
 export const DEFAULT_EFFORT_LEVEL = "medium";
@@ -9,49 +10,8 @@ export function isInteractive() {
   return Boolean(process.stdin.isTTY && process.stdout.isTTY && !process.env.CI);
 }
 
-function handleCancel(value) {
-  if (isCancel(value)) throw new Error("Setup cancelled.");
-  return value;
-}
-
-function clackValidate(validate, fallback = null) {
-  if (!validate) return undefined;
-  return (value) => {
-    const result = validate(value || fallback || "");
-    if (result === true) return undefined;
-    if (result === false) return "Invalid";
-    return result;
-  };
-}
-
-export function resolveTextValue(value, { initial = "", placeholder = "" } = {}) {
-  return value || initial || placeholder;
-}
-
-export async function askText(message, { initial = "", placeholder = "", validate = null } = {}) {
-  const fallback = initial || placeholder;
-  const value = handleCancel(await text({
-    message,
-    initialValue: initial,
-    placeholder,
-    validate: clackValidate(validate, fallback)
-  }));
-  return resolveTextValue(value, { initial, placeholder });
-}
-
-export async function askPassword(message, { initial = "", validate = null } = {}) {
-  const value = handleCancel(await password({
-    message: initial ? `${message} (leave empty to keep current value)` : message,
-    validate: clackValidate(validate, initial)
-  }));
-  return value || initial;
-}
-
-export async function askConfirm(message, defaultYes = true) {
-  return handleCancel(await confirm({
-    message,
-    initialValue: defaultYes
-  })) === true;
+function cancelled() {
+  return new Error("Setup cancelled.");
 }
 
 function normalizeOptions(options) {
@@ -71,63 +31,153 @@ function enabledOptions(options) {
   return options.filter((option) => !option.disabled);
 }
 
+function runPrompt(Component, props = {}, { input = process.stdin, output = process.stdout } = {}) {
+  return new Promise((resolve, reject) => {
+    let instance;
+    let settled = false;
+    const done = (result) => {
+      if (settled) return;
+      settled = true;
+      instance?.unmount();
+      if (result instanceof Error) reject(result);
+      else resolve(result);
+    };
+    try {
+      instance = render(React.createElement(Component, { ...props, done }), {
+        stdin: input,
+        stdout: output,
+        exitOnCtrlC: false
+      });
+    } catch (error) {
+      done(error);
+    }
+  });
+}
+
+function Frame({ message, children, help = "Enter to continue · Esc to cancel" }) {
+  return React.createElement(Box, { flexDirection: "column", borderStyle: "round", borderColor: "cyan", paddingX: 1 },
+    React.createElement(Text, { bold: true, color: "cyan" }, "repo-pattern"),
+    React.createElement(Text, null, message),
+    children,
+    React.createElement(Text, { dimColor: true }, help)
+  );
+}
+
+function TextPrompt({ message, initial = "", placeholder = "", validate = null, mask = false, done }) {
+  const [value, setValue] = useState("");
+  const [error, setError] = useState("");
+  useInput((input, key) => {
+    if (key.escape || (key.ctrl && input === "c")) return done(cancelled());
+    if (key.return) {
+      const candidate = value || initial || placeholder;
+      const result = validate?.(candidate);
+      if (result === false) return setError("Invalid");
+      if (typeof result === "string") return setError(result);
+      return done(mask ? value || initial : candidate);
+    }
+    if (key.backspace || key.delete) return setValue((previous) => previous.slice(0, -1));
+    if (input && !key.ctrl && !key.meta) setValue((previous) => previous + input);
+  });
+  const display = value
+    ? (mask ? "•".repeat([...value].length) : value)
+    : (mask && initial ? "•".repeat([...initial].length) : initial || placeholder);
+  return React.createElement(Frame, { message },
+    React.createElement(Text, { color: "green" }, `› ${display || " "}`),
+    error ? React.createElement(Text, { color: "red" }, error) : null
+  );
+}
+
+function ConfirmPrompt({ message, defaultYes, done }) {
+  const [answer, setAnswer] = useState(defaultYes);
+  useInput((input, key) => {
+    if (key.escape || (key.ctrl && input === "c")) return done(cancelled());
+    if (key.leftArrow || key.rightArrow || input.toLowerCase() === "y" || input.toLowerCase() === "n") {
+      setAnswer(input.toLowerCase() === "y" ? true : input.toLowerCase() === "n" ? false : !answer);
+    }
+    if (key.return) done(answer);
+  });
+  return React.createElement(Frame, { message, help: "←/→ to choose · Enter to confirm · Esc to cancel" },
+    React.createElement(Text, { color: "green" }, `› ${answer ? "Yes" : "No"}`)
+  );
+}
+
+function SelectPrompt({ message, options, initialValue, many = false, done }) {
+  const choices = enabledOptions(normalizeOptions(options));
+  const initialIndex = Math.max(0, choices.findIndex((choice) => choice.value === initialValue));
+  const [index, setIndex] = useState(initialIndex);
+  const [selected, setSelected] = useState(() => new Set(many ? choices.filter((choice) => choice.selected).map((choice) => choice.value) : []));
+  useInput((input, key) => {
+    if (key.escape || (key.ctrl && input === "c")) return done(cancelled());
+    if (key.upArrow) return setIndex((previous) => Math.max(0, previous - 1));
+    if (key.downArrow) return setIndex((previous) => Math.min(choices.length - 1, previous + 1));
+    if (many && input === " ") return setSelected((previous) => {
+      const next = new Set(previous);
+      const value = choices[index].value;
+      if (next.has(value)) next.delete(value); else next.add(value);
+      return next;
+    });
+    if (key.return) return done(many ? choices.filter((choice) => selected.has(choice.value)).map((choice) => choice.value) : choices[index].value);
+  });
+  return React.createElement(Frame, { message, help: many ? "↑/↓ to move · Space to toggle · Enter to confirm · Esc to cancel" : "↑/↓ to move · Enter to confirm · Esc to cancel" },
+    ...choices.map((choice, choiceIndex) => React.createElement(Text, { key: String(choice.value), color: choiceIndex === index ? "cyan" : undefined },
+      `${choiceIndex === index ? "›" : " "} ${many ? (selected.has(choice.value) ? "◉" : "○") : " "} ${choice.label}${choice.hint ? ` — ${choice.hint}` : ""}`
+    ))
+  );
+}
+
+function EffortPrompt({ done }) {
+  const [index, setIndex] = useState(EFFORT_LEVELS.indexOf(DEFAULT_EFFORT_LEVEL));
+  useInput((input, key) => {
+    if (key.escape || (key.ctrl && input === "c")) return done(cancelled());
+    if (key.leftArrow) return setIndex((previous) => Math.max(0, previous - 1));
+    if (key.rightArrow) return setIndex((previous) => Math.min(EFFORT_LEVELS.length - 1, previous + 1));
+    if (key.return) done(EFFORT_LEVELS[index]);
+  });
+  return React.createElement(Frame, { message: "Choose effort level", help: "←/→ to choose · Enter to confirm · Esc to cancel" },
+    React.createElement(Text, { color: "green" }, renderEffortPicker(EFFORT_LEVELS[index], { color: false }))
+  );
+}
+
+export function resolveTextValue(value, { initial = "", placeholder = "" } = {}) {
+  return value || initial || placeholder;
+}
+
+export async function askText(message, { initial = "", placeholder = "", validate = null } = {}) {
+  return runPrompt(TextPrompt, { message, initial, placeholder, validate });
+}
+
+export async function askPassword(message, { initial = "", validate = null } = {}) {
+  return runPrompt(TextPrompt, { message: initial ? `${message} (leave empty to keep current value)` : message, initial, validate, mask: true });
+}
+
+export async function askConfirm(message, defaultYes = true) {
+  return runPrompt(ConfirmPrompt, { message, defaultYes });
+}
+
 export async function selectOne({ message, options, initialValue = null }) {
   const normalized = normalizeOptions(options);
-  if (normalized.some((choice) => choice.disabled && choice.value === initialValue)) {
-    throw new Error(`Initial option is disabled: ${initialValue}`);
-  }
-
-  const choices = enabledOptions(normalized);
-  return handleCancel(await select({
-    message,
-    options: choices,
-    initialValue
-  }));
+  if (normalized.some((choice) => choice.disabled && choice.value === initialValue)) throw new Error(`Initial option is disabled: ${initialValue}`);
+  return runPrompt(SelectPrompt, { message, options: normalized, initialValue });
 }
 
 export async function selectMany({ message, options, initialValues = [] }) {
   const choices = enabledOptions(normalizeOptions(options));
   const enabledValues = new Set(choices.map((choice) => choice.value));
   const selected = new Set(initialValues.filter((value) => enabledValues.has(value)));
-  for (const choice of choices) {
-    if (choice.selected) selected.add(choice.value);
-  }
-
-  return handleCancel(await multiselect({
-    message,
-    options: choices,
-    initialValues: [...selected],
-    required: false
-  }));
+  for (const choice of choices) if (choice.selected) selected.add(choice.value);
+  return runPrompt(SelectPrompt, { message, options: choices.map((choice) => ({ ...choice, selected: selected.has(choice.value) })), many: true });
 }
 
 export function printBox(title, lines = [], { progress = null } = {}) {
   progress?.flush?.();
-  if (isInteractive()) {
-    note(lines.join("\n"), title);
-    return;
-  }
-
   console.log(`\n== ${title} ==`);
   for (const line of lines) console.log(line);
 }
 
 const ANSI_RESET = "\x1b[0m";
-const ANSI_STYLES = {
-  dim: "\x1b[2m",
-  error: "\x1b[31m",
-  info: "\x1b[34m",
-  success: "\x1b[32m"
-};
+const ANSI_STYLES = { dim: "\x1b[2m", error: "\x1b[31m", info: "\x1b[34m", success: "\x1b[32m" };
 const LOGO_PALETTE = ["\x1b[38;5;39m", "\x1b[38;5;81m", "\x1b[38;5;141m", "\x1b[38;5;213m"];
-const LOGO_LINES = [
-  "  ____  ____ ",
-  " |  _ \\|  _ \\",
-  " | |_) | |_) |",
-  " |  _ <|  __/ ",
-  " |_| \\_\\_|    ",
-  "repo-pattern"
-];
+const LOGO_LINES = ["  ____  ____ ", " |  _ \\|  _ \\", " | |_) | |_) |", " |  _ <|  __/ ", " |_| \\_\\|_|    ", "repo-pattern"];
 
 function supportsAnsiColor() {
   return isInteractive() && !process.env.NO_COLOR && process.env.TERM !== "dumb";
@@ -153,50 +203,7 @@ export function renderEffortPicker(value, { columns = process.stdout.columns, co
 
 export function askEffortLevel({ input = process.stdin, output = process.stdout } = {}) {
   if (!input.isTTY || !output.isTTY) return Promise.resolve(DEFAULT_EFFORT_LEVEL);
-
-  return new Promise((resolve, reject) => {
-    let index = EFFORT_LEVELS.indexOf(DEFAULT_EFFORT_LEVEL);
-    let rawMode = false;
-    const color = supportsAnsiColor();
-    const render = () => output.write(color ? `\r\x1b[2K${renderEffortPicker(EFFORT_LEVELS[index], { columns: output.columns, color })}` : `${renderEffortPicker(EFFORT_LEVELS[index], { columns: output.columns, color })}\n`);
-    const cleanup = () => {
-      input.off("keypress", onKeypress);
-      if (rawMode) input.setRawMode(false);
-      input.pause();
-    };
-    const finish = (value) => {
-      cleanup();
-      if (color) output.write("\n");
-      resolve(value);
-    };
-    const fail = (error) => {
-      cleanup();
-      reject(error);
-    };
-    const onKeypress = (_character, key = {}) => {
-      try {
-        if (key.name === "return" || key.name === "enter") return finish(EFFORT_LEVELS[index]);
-        const nextIndex = nextEffortIndex(index, key.name);
-        if (nextIndex !== index) {
-          index = nextIndex;
-          render();
-        }
-      } catch (error) {
-        fail(error);
-      }
-    };
-
-    try {
-      readline.emitKeypressEvents(input);
-      input.on("keypress", onKeypress);
-      input.setRawMode(true);
-      rawMode = true;
-      input.resume();
-      render();
-    } catch (error) {
-      fail(error);
-    }
-  });
+  return runPrompt(EffortPrompt, {}, { input, output });
 }
 
 function gradient(line) {
@@ -214,88 +221,48 @@ export function renderLogo({ color = false } = {}) {
   return [...lines, "ECC-first Claude Code setup"];
 }
 
+function BrandHeader() {
+  return React.createElement(Box, { flexDirection: "column", marginBottom: 1 },
+    React.createElement(BigText, { text: "RP", font: "block", colors: ["cyan"] }),
+    React.createElement(Text, { bold: true, color: "cyan" }, "repo-pattern"),
+    React.createElement(Text, { dimColor: true }, "Claude Code workspace setup")
+  );
+}
+
 export function printLogo() {
-  printBox("repo-pattern", renderLogo({ color: supportsAnsiColor() }));
+  if (!isInteractive()) return printBox("repo-pattern", renderLogo());
+  const instance = render(React.createElement(BrandHeader));
+  instance.unmount();
 }
 
 const SUMMARY_VALUE_WIDTH = 72;
-
 function wrapValue(value) {
   const text = String(value);
   if (text.length <= SUMMARY_VALUE_WIDTH) return [text];
-
   const rawParts = text.includes(", ") ? text.split(", ") : text.split(" ");
   const parts = rawParts.map((part, index) => text.includes(", ") && index < rawParts.length - 1 ? `${part},` : part);
   const lines = [];
   let line = "";
-
-  function pushLine(value) {
-    lines.push(value);
-  }
-
   for (const part of parts) {
     if (part.length > SUMMARY_VALUE_WIDTH) {
-      if (line) {
-        pushLine(line);
-        line = "";
-      }
-      for (let i = 0; i < part.length; i += SUMMARY_VALUE_WIDTH) {
-        pushLine(part.slice(i, i + SUMMARY_VALUE_WIDTH));
-      }
+      if (line) lines.push(line);
+      line = "";
+      for (let i = 0; i < part.length; i += SUMMARY_VALUE_WIDTH) lines.push(part.slice(i, i + SUMMARY_VALUE_WIDTH));
       continue;
     }
-
     const next = line ? `${line} ${part}` : part;
-    if (next.length > SUMMARY_VALUE_WIDTH && line) {
-      pushLine(line);
-      line = part;
-    } else {
-      line = next;
-    }
+    if (next.length > SUMMARY_VALUE_WIDTH && line) { lines.push(line); line = part; } else line = next;
   }
-
-  if (line) pushLine(line);
+  if (line) lines.push(line);
   return lines;
 }
-
 function summaryLines(rows) {
   const width = Math.max(...rows.map(([label]) => label.length), 0);
-  const lines = [];
-  for (const [label, value] of rows) {
-    const wrapped = wrapValue(value);
-    lines.push(`${label.padEnd(width)}  ${wrapped[0]}`);
-    for (const continuation of wrapped.slice(1)) {
-      lines.push(`${"".padEnd(width)}  ${continuation}`);
-    }
-  }
-  return lines;
+  return rows.flatMap(([label, value]) => wrapValue(value).map((line, index) => `${index ? "" : label}`.padEnd(width) + `  ${line}`));
 }
-
 export function printSummary(title, rows = [], { progress = null } = {}) {
   progress?.flush?.();
-  const lines = summaryLines(rows);
-  if (!isInteractive()) {
-    printBox(title, lines);
-    return;
-  }
-  note(lines.join("\n"), title);
+  printBox(title, summaryLines(rows));
 }
-
-export async function withSpinner(message, task) {
-  if (!isInteractive()) return task();
-
-  const s = spinner();
-  s.start(message);
-  try {
-    const result = await task();
-    s.stop(`${message} done`);
-    return result;
-  } catch (error) {
-    s.stop(`${message} failed`);
-    throw error;
-  }
-}
-
-export function printSection(title) {
-  console.log(isInteractive() ? `\n◆ ${title}` : `\n== ${title} ==`);
-}
+export async function withSpinner(_message, task) { return task(); }
+export function printSection(title) { console.log(`\n== ${title} ==`); }

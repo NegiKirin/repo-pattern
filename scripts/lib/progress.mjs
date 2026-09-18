@@ -1,4 +1,5 @@
-import { spinner } from "@clack/prompts";
+import React from "react";
+import { Box, Text, render } from "ink";
 
 const MILESTONES = [0, 25, 50, 75, 100];
 const GROUPS = [
@@ -139,37 +140,52 @@ export function createProgressReporter({ write = null, plan = [], setupId = "set
   return { beginOperation, failOperation, skipOperation, operations, flush() {} };
 }
 
-function createInteractiveSetupProgress(plan, { spinnerFactory = spinner, hasExtendedSkills = false } = {}) {
+function ProgressView({ groups }) {
+  return React.createElement(Box, { flexDirection: "column", borderStyle: "round", borderColor: "cyan", paddingX: 1 },
+    React.createElement(Text, { bold: true, color: "cyan" }, "repo-pattern"),
+    ...groups.map((group) => React.createElement(Text, { key: group.id, color: group.failed ? "red" : group.stopped ? "green" : "yellow" },
+      `${group.stopped ? (group.failed ? "✖" : "✔") : "◆"} ${group.label}${group.detail ? ` ${group.detail}` : ""}`
+    ))
+  );
+}
+
+function createInteractiveSetupProgress(plan, { hasExtendedSkills = false } = {}) {
   const operations = new Map(plan.map((entry) => [entry.id, { ...entry, started: false, completed: false, failed: false, skipped: false }]));
   const groups = new Map(GROUPS.map(({ id, label }) => [id, {
     id,
     label,
-    spinner: spinnerFactory(),
     operationIds: plan.filter((entry) => groupForOperation(entry.id) === id).map((entry) => entry.id),
     hasWork: id === "setup" || (id === "skills" && hasExtendedSkills) || plan.some((entry) => groupForOperation(entry.id) === id),
     started: false,
     stopped: false,
+    failed: false,
+    detail: "",
     managed: false
   }]));
+  const instance = render(React.createElement(ProgressView, { groups: [...groups.values()] }));
+
+  function refresh() {
+    instance.rerender(React.createElement(ProgressView, { groups: [...groups.values()] }));
+  }
 
   function startGroup(id) {
     const group = groups.get(id);
     if (!group || group.started || group.stopped) return;
-    group.spinner.start(group.label);
     group.started = true;
+    refresh();
   }
 
-  function stopGroup(id, detail) {
+  function stopGroup(id, detail, failed = false) {
     const group = groups.get(id);
     if (!group || group.stopped) return;
-    startGroup(id);
-    group.spinner.stop(`${group.label} ${detail}`);
+    group.started = true;
     group.stopped = true;
+    group.failed = failed;
+    group.detail = detail;
+    refresh();
   }
 
-  for (const group of groups.values()) {
-    if (!group.hasWork) stopGroup(group.id, "Skipped");
-  }
+  for (const group of groups.values()) if (!group.hasWork) stopGroup(group.id, "Skipped");
 
   function finishGroupWhenReady(id) {
     const group = groups.get(id);
@@ -181,8 +197,8 @@ function createInteractiveSetupProgress(plan, { spinnerFactory = spinner, hasExt
   }
 
   function failGroup(id, detail = "failed") {
-    stopGroup(id, detail === "failed" ? "failed" : `${detail} failed`);
-    stopGroup("setup", "failed");
+    stopGroup(id, detail === "failed" ? "failed" : `${detail} failed`, true);
+    stopGroup("setup", "failed", true);
   }
 
   function operationHandle(operation) {
@@ -211,6 +227,10 @@ function createInteractiveSetupProgress(plan, { spinnerFactory = spinner, hasExt
     };
   }
 
+  function unmount() {
+    instance.unmount();
+  }
+
   return {
     beginOperation(spec) {
       if (!spec.id) throw new Error("Progress operation id is required.");
@@ -235,21 +255,17 @@ function createInteractiveSetupProgress(plan, { spinnerFactory = spinner, hasExt
       if (group) group.managed = true;
       startGroup(id);
     },
-    completeGroup(id) {
-      stopGroup(id, "completed");
-    },
+    completeGroup(id) { stopGroup(id, "completed"); },
     failGroup,
     complete({ detail = "completed" } = {}) {
-      for (const group of groups.values()) {
-        if (!group.stopped && group.id !== "setup") stopGroup(group.id, "completed");
-      }
+      for (const group of groups.values()) if (!group.stopped && group.id !== "setup") stopGroup(group.id, "completed");
       stopGroup("setup", detail);
+      unmount();
     },
     fail() {
-      for (const group of groups.values()) {
-        if (group.id !== "setup" && group.started && !group.stopped) stopGroup(group.id, "failed");
-      }
-      stopGroup("setup", "failed");
+      for (const group of groups.values()) if (group.id !== "setup" && group.started && !group.stopped) stopGroup(group.id, "failed", true);
+      stopGroup("setup", "failed", true);
+      unmount();
     },
     flush() {},
     operations
