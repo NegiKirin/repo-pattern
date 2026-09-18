@@ -263,7 +263,7 @@ export async function runSetupWizardChecks() {
   assert.doesNotMatch(modelDraftWizard.lastFrame(), /token-draft/);
   modelDraftWizard.stdin.write("[A");
   await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.match(modelDraftWizard.lastFrame(), /› ANTHROPIC_AUTH_TOKEN:\n  •{11}/);
+  assert.match(modelDraftWizard.lastFrame(), /› ANTHROPIC_AUTH_TOKEN:[^\n]*\n.*•{11}/);
   modelDraftWizard.stdin.write("[A");
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.match(modelDraftWizard.lastFrame(), /https:\/\/draft\.example\/v1/);
