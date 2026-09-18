@@ -38,21 +38,20 @@ After installing, run interactive setup:
 repo-pattern setup
 ```
 
-For scriptable setup:
+Interactive setup uses a single Ink + React wizard. It shows the installed
+repo-pattern and Claude Code versions, keeps every choice in one screen, and
+never prints secret values. The wizard guides you through:
 
-```bash
-repo-pattern setup --profile web --setup-pipeline ecc --yes
-repo-pattern setup --profile web --setup-pipeline gstack --yes
-repo-pattern setup --profile web --setup-pipeline gstack --with-rules --yes
-repo-pattern setup --profile web --setup-pipeline none --with-rules --yes
-```
+1. Choose ECC and/or gstack workflow (or leave both unselected for base metadata only).
+2. Choose whether and how to install project-local ECC rules.
+3. Choose an MCP profile, then enter only the values required by its selected servers.
+4. Choose optional skills, local provider settings, effort level, permissions, and attribution.
+5. Confirm setup. Failed setup retries and migration confirmation use the same wizard.
 
-Pipeline scope is explicit:
-
-- `ecc` (default) — project-scoped ECC.
-- `gstack` — project-local gstack at `.claude/skills/gstack`.
-- `both` — project-scoped ECC plus project-local gstack.
-- `none` — base project metadata only.
+Use `↑`/`↓` to move through normal lists, `Space` to toggle multi-select items,
+and `Enter` to continue. `←` goes back. On the effort-level screen, use `←`/`→`
+to move, `Esc` to go back, and `Ctrl+C` to cancel. Passwords and MCP secrets are
+masked while typing.
 
 gstack requires Git and Bun v1.0+ on `PATH`. repo-pattern never downloads Bun and never runs the upstream `gstack/setup` script. It keeps the checkout in `.claude/skills/gstack`, runtime state in `.repo-pattern/gstack/`, and both locations gitignored. A valid existing local checkout is reused unchanged; a valid global checkout is migration-only input copied to the target without modification. Bootstrap materializes required review support files beside generated wrappers from that project-local checkout. Optional plan-tune hooks are merged only into target `.claude/settings.json`.
 
@@ -171,11 +170,4 @@ Each full `repo-pattern setup` run reconciles repo-pattern-managed state to its 
 
 Full setup details live in [docs/repo-pattern/setup-guide.md](docs/repo-pattern/setup-guide.md).
 Third-party license notices are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-From a source checkout, replace `repo-pattern` with:
-
-```bash
-node scripts/repo-pattern.mjs
-```
-
 
