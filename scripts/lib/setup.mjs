@@ -46,6 +46,7 @@ const LOCAL_SETTINGS_FIELDS = [
   ["ANTHROPIC_DEFAULT_HAIKU_MODEL", "claude-haiku-4-5", askText, validateRequired]
 ];
 const RETRY_SECRET_LOCAL_SETTINGS = new Set(["ANTHROPIC_AUTH_TOKEN", "CONTEXT7_API_KEY", "TAVILY_API_KEY"]);
+const LOCAL_SETTINGS_PLACEHOLDERS = { ANTHROPIC_AUTH_TOKEN: "sk-.............." };
 
 function setupLockPath(target) {
   return repoLockPath(target);
@@ -390,7 +391,7 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
     localSettings: LOCAL_SETTINGS_FIELDS.map(([name, fallback, ask, validate]) => ({
       name,
       initial: retryLocalSettingsEnv[name] || "",
-      placeholder: localSettingsPromptOptions(promptInitialValues)[name].placeholder || fallback,
+      placeholder: LOCAL_SETTINGS_PLACEHOLDERS[name] || localSettingsPromptOptions(promptInitialValues)[name].placeholder || fallback,
       validate,
       mask: ask === askPassword
     }))

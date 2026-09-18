@@ -281,10 +281,15 @@ export function SetupWizard({ initialState, data, done, initialPageId = null }) 
           const value = index === mcpFieldIndex ? current : state.mcpValues[field.name] || field.defaultValue || "";
           const isActive = index === mcpFieldIndex;
           const [server, name] = field.label.split(/:\s*/, 2);
-          const color = isActive ? (value ? "green" : field.defaultValue ? "gray" : "cyan") : undefined;
+          const color = isActive ? "cyan" : undefined;
+          const shownValue = display(value, { ...field, mask: field.kind === "secret", placeholder: field.placeholder || field.defaultValue });
+          const isPlaceholder = !value && Boolean(field.placeholder || field.defaultValue);
           return [
             React.createElement(Text, { key: `${field.name}:server` }, `  ${server}:`),
-            React.createElement(Text, { key: `${field.name}:name`, color, dimColor: !isActive }, `${isActive ? "›" : " "} ${name}: ${display(value, { ...field, mask: field.kind === "secret", placeholder: field.placeholder || field.defaultValue })}`),
+            React.createElement(Text, { key: `${field.name}:name`, color, dimColor: !isActive },
+              `${isActive ? "›" : " "} ${name}: `,
+              React.createElement(Text, { color: isPlaceholder ? "gray" : value ? "green" : undefined }, shownValue)
+            ),
             index < mcpFields.length - 1 ? React.createElement(Text, { key: `${field.name}:gap` }, " ") : null
           ];
         }))
@@ -292,10 +297,12 @@ export function SetupWizard({ initialState, data, done, initialPageId = null }) 
           ? React.createElement(Box, { flexDirection: "column" }, ...modelFields.flatMap((field, index) => {
             const value = index === modelFieldIndex ? current : state.localSettingsEnv[field.name] || field.initial || field.placeholder || "";
             const isActive = index === modelFieldIndex;
-            const color = isActive ? (value ? "green" : field.placeholder ? "gray" : "cyan") : undefined;
+            const color = isActive ? "cyan" : undefined;
+            const shownValue = display(value, field);
+            const isPlaceholder = !state.localSettingsEnv[field.name] && !field.initial && Boolean(field.placeholder);
             return [
               React.createElement(Text, { key: `${field.name}:label`, color, dimColor: !isActive }, `${isActive ? "›" : " "} ${field.name}:`),
-              React.createElement(Text, { key: `${field.name}:value` }, `  ${display(value, field)}`),
+              React.createElement(Text, { key: `${field.name}:value` }, "  ", React.createElement(Text, { color: isPlaceholder ? "gray" : value ? "green" : undefined }, shownValue)),
               index < modelFields.length - 1 ? React.createElement(Text, { key: `${field.name}:gap` }, " ") : null
             ];
           }))

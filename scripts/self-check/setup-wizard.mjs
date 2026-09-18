@@ -17,7 +17,7 @@ const data = {
   optionalSkills: [{ value: "herdr", label: "herdr" }],
   localSettings: [
     { name: "ANTHROPIC_BASE_URL", initial: "", placeholder: "https://example.com/v1", validate: (value) => /^https?:\/\//.test(value) ? true : "Use a valid URL." },
-    { name: "ANTHROPIC_AUTH_TOKEN", initial: "", placeholder: "token", mask: true, validate: (value) => value ? true : "Required" },
+    { name: "ANTHROPIC_AUTH_TOKEN", initial: "", placeholder: "sk-..............", mask: true, validate: (value) => value ? true : "Required" },
     { name: "ANTHROPIC_DEFAULT_OPUS_MODEL", initial: "", placeholder: "claude-opus-4-8", validate: (value) => value ? true : "Required" },
     { name: "ANTHROPIC_DEFAULT_SONNET_MODEL", initial: "", placeholder: "claude-sonnet-4-6", validate: (value) => value ? true : "Required" },
     { name: "ANTHROPIC_DEFAULT_HAIKU_MODEL", initial: "", placeholder: "claude-haiku-4-5", validate: (value) => value ? true : "Required" }
@@ -156,7 +156,7 @@ export async function runSetupWizardChecks() {
   assert.match(mcpWizard.lastFrame(), /MCP secret/);
   assert.match(mcpWizard.lastFrame(), /  context7:/);
   assert.match(mcpWizard.lastFrame(), /› CONTEXT7_API_KEY:/);
-  assert.match(mcpWizard.lastFrame(), /ctx7sk-\.\.\.+/);
+  assert.match(mcpWizard.lastFrame(), /› CONTEXT7_API_KEY: ctx7sk-\.\.\.+/);
   assert.match(mcpWizard.lastFrame(), /tavily:/);
   assert.match(mcpWizard.lastFrame(), /TAVILY_API_KEY:/);
   assert.match(mcpWizard.lastFrame(), /tvly-\.\.\.+/);
