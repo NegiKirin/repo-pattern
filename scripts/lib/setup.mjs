@@ -39,8 +39,8 @@ function validateUrl(value) {
 }
 
 const LOCAL_SETTINGS_FIELDS = [
-  ["ANTHROPIC_AUTH_TOKEN", "", askPassword, validateRequired],
   ["ANTHROPIC_BASE_URL", "https://example.com/v1", askText, validateUrl],
+  ["ANTHROPIC_AUTH_TOKEN", "", askPassword, validateRequired],
   ["ANTHROPIC_DEFAULT_OPUS_MODEL", "claude-opus-4-8", askText, validateRequired],
   ["ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-sonnet-4-6", askText, validateRequired],
   ["ANTHROPIC_DEFAULT_HAIKU_MODEL", "claude-haiku-4-5", askText, validateRequired]

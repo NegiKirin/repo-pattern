@@ -199,7 +199,7 @@ assert.equal(defaultPromptOptions.ANTHROPIC_DEFAULT_SONNET_MODEL.placeholder, "c
 assert.equal(defaultPromptOptions.ANTHROPIC_DEFAULT_HAIKU_MODEL.placeholder, "claude-haiku-4-5");
 assert.equal(defaultPromptOptions.ANTHROPIC_AUTH_TOKEN.placeholder, "");
 assert.deepEqual(Object.values(defaultPromptOptions).map(({ initial }) => initial), ["", "", "", "", ""]);
-assert.deepEqual(Object.values(defaultPromptOptions).map(({ placeholder }) => placeholder), ["", "https://example.com/v1", "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"]);
+assert.deepEqual(Object.values(defaultPromptOptions).map(({ placeholder }) => placeholder), ["https://example.com/v1", "", "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"]);
 const currentPromptOptions = localSettingsPromptOptions({
   ANTHROPIC_AUTH_TOKEN: secretSentinel,
   ANTHROPIC_BASE_URL: "https://provider.example/v1",
@@ -207,8 +207,8 @@ const currentPromptOptions = localSettingsPromptOptions({
   ANTHROPIC_DEFAULT_SONNET_MODEL: "custom-sonnet",
   ANTHROPIC_DEFAULT_HAIKU_MODEL: "custom-haiku"
 }, {});
-assert.deepEqual(Object.values(currentPromptOptions).map(({ initial }) => initial), [secretSentinel, "https://provider.example/v1", "custom-opus", "custom-sonnet", "custom-haiku"]);
-assert.deepEqual(Object.values(currentPromptOptions).map(({ placeholder }) => placeholder), ["", "https://example.com/v1", "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"]);
+assert.deepEqual(Object.values(currentPromptOptions).map(({ initial }) => initial), ["https://provider.example/v1", secretSentinel, "custom-opus", "custom-sonnet", "custom-haiku"]);
+assert.deepEqual(Object.values(currentPromptOptions).map(({ placeholder }) => placeholder), ["https://example.com/v1", "", "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"]);
 const invalidPromptOptions = localSettingsPromptOptions({
   ANTHROPIC_AUTH_TOKEN: secretSentinel,
   ANTHROPIC_BASE_URL: "not-a-url",
@@ -216,7 +216,7 @@ const invalidPromptOptions = localSettingsPromptOptions({
   ANTHROPIC_DEFAULT_SONNET_MODEL: "",
   ANTHROPIC_DEFAULT_HAIKU_MODEL: "custom-haiku"
 }, {});
-assert.deepEqual(Object.values(invalidPromptOptions).map(({ initial }) => initial), [secretSentinel, "", "", "", "custom-haiku"]);
+assert.deepEqual(Object.values(invalidPromptOptions).map(({ initial }) => initial), ["", secretSentinel, "", "", "custom-haiku"]);
 assert.deepEqual(localSettingsPromptOptions({}, {}), defaultPromptOptions);
 assert.equal(needsLocalSettingsPrompt({ ANTHROPIC_BASE_URL: "https://example.com/v1" }), true);
 assert.equal(needsLocalSettingsPrompt({
