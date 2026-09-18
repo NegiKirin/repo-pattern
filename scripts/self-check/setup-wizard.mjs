@@ -4,6 +4,7 @@ import { render } from "ink-testing-library";
 import { SetupWizard, effortColor, nextEffortCursor, previousPageIndex, pruneWizardState, renderEffortOptions, wizardPages } from "../lib/setup-wizard.mjs";
 
 const data = {
+  claudeCodeVersion: "1.0.0",
   profiles: ["web", "custom"],
   profileServers: { web: ["context7"], custom: [] },
   mcpServers: ["context7"],
@@ -90,5 +91,6 @@ export async function runSetupWizardChecks() {
   effortWizard.stdin.write("[C");
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.match(effortWizard.lastFrame(), /\[high\]/);
+  assert.match(effortWizard.lastFrame(), /Claude Code · 1\.0\.0/);
   effortWizard.unmount();
 }

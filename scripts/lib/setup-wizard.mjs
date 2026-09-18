@@ -1,7 +1,10 @@
+import { createRequire } from "node:module";
 import React, { useState } from "react";
 import { Box, Text, render, useInput } from "ink";
 import BigText from "ink-big-text";
 import { EFFORT_LEVELS } from "./prompt.mjs";
+
+const { version } = createRequire(import.meta.url)("../../package.json");
 
 const PIPELINE_OPTIONS = [
   { value: "ecc", label: "ECC", hint: "project-scoped plugin with optional project rules" },
@@ -205,8 +208,14 @@ export function SetupWizard({ initialState, data, done, initialPageId = null }) 
   });
 
   return React.createElement(Box, { flexDirection: "column", borderStyle: "round", borderColor: "cyan", paddingX: 1 },
-    React.createElement(BigText, { text: "RP", font: "block", colors: ["cyan"] }),
-    React.createElement(Text, { bold: true, color: "cyan" }, `repo-pattern · Step ${pageIndex + 1} of ${pages.length}`),
+    React.createElement(Box, { alignItems: "flex-start", gap: 2 },
+      React.createElement(BigText, { text: "RP", font: "block", colors: ["cyan"] }),
+      React.createElement(Box, { flexDirection: "column" },
+        React.createElement(Text, { bold: true, color: "cyan" }, `repo-pattern v${version}`),
+        data.claudeCodeVersion ? React.createElement(Text, { dimColor: true }, `Claude Code · ${data.claudeCodeVersion}`) : null
+      )
+    ),
+    React.createElement(Text, { bold: true, color: "cyan" }, `Step ${pageIndex + 1} of ${pages.length}`),
     React.createElement(Text, null, page.title),
     page.kind === "text"
       ? React.createElement(Text, { color: "green" }, `› ${display(current, page)}`)

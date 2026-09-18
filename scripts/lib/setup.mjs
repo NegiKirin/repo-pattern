@@ -120,7 +120,8 @@ function suggestedProfile(detection, fallback) {
 
 async function checkClaudeCode() {
   try {
-    await execFileAsync("claude", ["--version"]);
+    const { stdout } = await execFileAsync("claude", ["--version"]);
+    return stdout.trim();
   } catch {
     throw new Error("Claude Code CLI is required. Install/login to Claude Code, then rerun setup.");
   }
@@ -328,7 +329,7 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
     return;
   }
 
-  await checkClaudeCode();
+  const claudeCodeVersion = await checkClaudeCode();
 
   const previousOptions = await previousSetupOptions(target);
   const detection = await detectProject(target);
@@ -373,6 +374,7 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
     permissionConfig: previousOptions?.permissionConfig || { bypass: "deny" },
     attributionConfig: previousOptions?.attributionConfig || { mode: "off" }
   }, {
+    claudeCodeVersion,
     profiles: profileChoices,
     mcpServers: availableMcpServers,
     mcpInputs: (selectedProfile, selectedServers) => mcpInputFields(selectedProfile === "custom"
