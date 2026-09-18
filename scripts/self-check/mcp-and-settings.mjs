@@ -8,7 +8,7 @@ import { applyMcpValues, generateMcp, mcpSecretPrompt, persistedMcpValues, readG
 import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, provisionProject, reconcileLocalPluginSettings, setupPipelineScope, updateClaudeAttribution, updateClaudePermissions } from "../lib/provision.mjs";
 import { writePrivateJson } from "../lib/fs-utils.mjs";
 import { printSummary, renderLogo, resolveTextValue, style } from "../lib/prompt.mjs";
-import { localSettingsPromptOptions, needsLocalSettingsPrompt, setupProject, setupRetryOptions } from "../lib/setup.mjs";
+import { interactiveSetupPipeline, localSettingsPromptOptions, needsLocalSettingsPrompt, setupProject, setupRetryOptions } from "../lib/setup.mjs";
 import { applyEccRules, buildAgentManifest, clearEccRules, formatEccCloneError, hasGitUpstream, validateAgentManifest } from "../lib/rules.mjs";
 import { applyOptionalSkills, applyPluginSkillSettings, expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills, OPTIONAL_SKILLS } from "../lib/skills.mjs";
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
@@ -34,6 +34,8 @@ assert.deepEqual({
   CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: "2"
 });
 assert.equal("workflowSizeGuideline" in localSettingsTemplate.env, false);
+assert.equal(interactiveSetupPipeline(null), "none");
+assert.equal(interactiveSetupPipeline({ setupPipeline: "gstack" }), "gstack");
 
 const mcpServers = {
   context7: {
@@ -197,7 +199,7 @@ assert.equal(defaultPromptOptions.ANTHROPIC_DEFAULT_SONNET_MODEL.placeholder, "c
 assert.equal(defaultPromptOptions.ANTHROPIC_DEFAULT_HAIKU_MODEL.placeholder, "claude-haiku-4-5");
 assert.equal(defaultPromptOptions.ANTHROPIC_AUTH_TOKEN.placeholder, "");
 assert.deepEqual(Object.values(defaultPromptOptions).map(({ initial }) => initial), ["", "", "", "", ""]);
-assert.deepEqual(Object.values(defaultPromptOptions).map(({ placeholder }) => placeholder), ["", "https://example.com/v1", "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"]);
+assert.deepEqual(Object.values(defaultPromptOptions).map(({ placeholder }) => placeholder), ["https://example.com/v1", "", "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"]);
 const currentPromptOptions = localSettingsPromptOptions({
   ANTHROPIC_AUTH_TOKEN: secretSentinel,
   ANTHROPIC_BASE_URL: "https://provider.example/v1",
@@ -205,8 +207,8 @@ const currentPromptOptions = localSettingsPromptOptions({
   ANTHROPIC_DEFAULT_SONNET_MODEL: "custom-sonnet",
   ANTHROPIC_DEFAULT_HAIKU_MODEL: "custom-haiku"
 }, {});
-assert.deepEqual(Object.values(currentPromptOptions).map(({ initial }) => initial), [secretSentinel, "https://provider.example/v1", "custom-opus", "custom-sonnet", "custom-haiku"]);
-assert.deepEqual(Object.values(currentPromptOptions).map(({ placeholder }) => placeholder), ["", "https://example.com/v1", "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"]);
+assert.deepEqual(Object.values(currentPromptOptions).map(({ initial }) => initial), ["https://provider.example/v1", secretSentinel, "custom-opus", "custom-sonnet", "custom-haiku"]);
+assert.deepEqual(Object.values(currentPromptOptions).map(({ placeholder }) => placeholder), ["https://example.com/v1", "", "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"]);
 const invalidPromptOptions = localSettingsPromptOptions({
   ANTHROPIC_AUTH_TOKEN: secretSentinel,
   ANTHROPIC_BASE_URL: "not-a-url",
@@ -214,7 +216,7 @@ const invalidPromptOptions = localSettingsPromptOptions({
   ANTHROPIC_DEFAULT_SONNET_MODEL: "",
   ANTHROPIC_DEFAULT_HAIKU_MODEL: "custom-haiku"
 }, {});
-assert.deepEqual(Object.values(invalidPromptOptions).map(({ initial }) => initial), [secretSentinel, "", "", "", "custom-haiku"]);
+assert.deepEqual(Object.values(invalidPromptOptions).map(({ initial }) => initial), ["", secretSentinel, "", "", "custom-haiku"]);
 assert.deepEqual(localSettingsPromptOptions({}, {}), defaultPromptOptions);
 assert.equal(needsLocalSettingsPrompt({ ANTHROPIC_BASE_URL: "https://example.com/v1" }), true);
 assert.equal(needsLocalSettingsPrompt({

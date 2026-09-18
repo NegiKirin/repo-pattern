@@ -1,6 +1,7 @@
 {
   "servers": [
     "context7",
+    "shadcn",
     "playwright",
     "chrome-devtools",
     "gitnexus",

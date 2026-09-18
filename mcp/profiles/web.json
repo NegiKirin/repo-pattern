@@ -2,6 +2,7 @@
   "servers": [
     "chrome-devtools",
     "context7",
+    "shadcn",
     "playwright",
     "tavily"
   ]

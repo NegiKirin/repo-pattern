@@ -58,7 +58,7 @@ export function mcpSecretPrompt(input) {
   return helpUrl ? `MCP secret — ${input.label} (get key: ${helpUrl})` : `MCP secret — ${input.label}`;
 }
 
-function findMcpInputs(mcpServers) {
+export function mcpInputFields(mcpServers) {
   const inputs = [];
   const seen = new Set();
 
@@ -137,7 +137,7 @@ export async function readMcpConfig({ sourceRoot, profile = "web", mcpServers: s
 }
 
 export async function collectMcpValues(mcpServers, { yes = false, values = {} } = {}) {
-  const inputs = findMcpInputs(mcpServers);
+  const inputs = mcpInputFields(mcpServers);
   const nextValues = { ...values };
 
   if (yes || !isInteractive()) return nextValues;
@@ -167,7 +167,7 @@ export async function collectMcpValues(mcpServers, { yes = false, values = {} } 
 }
 
 function warnMissingMcpValues(mcpServers, values, { progress = null, silent = false } = {}) {
-  const missing = missingRequiredInputs(findMcpInputs(mcpServers), { ...process.env, ...values });
+  const missing = missingRequiredInputs(mcpInputFields(mcpServers), { ...process.env, ...values });
   if (missing.length === 0) return [];
   const names = missing.map((input) => input.name);
   if (!silent) console.warn(style("info", `MCP values missing: ${names.join(", ")}. Export env vars or edit .mcp.json before using those servers.`));

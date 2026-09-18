@@ -1,0 +1,10 @@
+{
+  "shadcn": {
+    "command": "npx",
+    "args": [
+      "shadcn@latest",
+      "mcp"
+    ],
+    "description": "shadcn/ui component registry, documentation, and UI generation"
+  }
+}

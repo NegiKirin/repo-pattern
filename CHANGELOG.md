@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.16] - 2026-09-18
+
+**Web and full MCP profiles can now generate the shadcn MCP server.**
+
+### Added
+
+- Add shadcn to the web and full MCP profiles, with custom setup selection through the existing server catalog.
+
+### Changed
+
+- Document shadcn profile output and verify its generated configuration and server ordering.
+
 ## [0.2.15] - 2026-08-29
 
 **Setup now lets you choose Claude Code's effort level before provisioning.**
