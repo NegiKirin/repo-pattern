@@ -57,7 +57,9 @@ export async function runSetupWizardChecks() {
   assert.equal(pruneWizardState(initial, data).planTuneHooks, true);
   assert.ok(pages.some((page) => page.id === "mcpServers"));
   assert.ok(pages.some((page) => page.id === "rules"));
+  assert.equal(pages.findIndex((page) => page.id === "ruleMode") < pages.findIndex((page) => page.id === "profile"), true);
   assert.equal(previousPageIndex(pages, pages.findIndex((page) => page.id === "mcpServers")), pages.findIndex((page) => page.id === "profile"));
+  assert.equal(pages.findIndex((page) => page.id === "mcp:CONTEXT7_API_KEY") < pages.findIndex((page) => page.id === "optionalSkills"), true);
 
   const namedProfile = pruneWizardState({ ...initial, profile: "web" }, data);
   assert.deepEqual(namedProfile.mcpServers, null);

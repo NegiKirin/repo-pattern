@@ -77,13 +77,13 @@ export function wizardPages(state, data) {
     ]
     : [];
   const configurationPages = [
-    { id: "pipeline", title: "Choose setup pipeline", kind: "many", options: PIPELINE_OPTIONS },
-    { id: "profile", title: "Choose MCP profile", kind: "one", options: options(data.profiles) },
-    ...(state.profile === "custom" ? [{ id: "mcpServers", title: "Choose MCP servers", kind: "many", options: options(data.mcpServers) }] : []),
+    { id: "pipeline", title: "Choose setup workflow", kind: "many", options: PIPELINE_OPTIONS },
     ...(!usesEcc(state.setupPipeline) ? [{ id: "installRules", title: "Install project-local ECC rules?", kind: "one", options: [{ value: false, label: "No" }, { value: true, label: "Yes" }] }] : []),
     ...rulePages,
-    { id: "optionalSkills", title: "Optional external skills", kind: "many", options: options(data.optionalSkills) },
+    { id: "profile", title: "Choose MCP profile", kind: "one", options: options(data.profiles) },
+    ...(state.profile === "custom" ? [{ id: "mcpServers", title: "Choose MCP servers", kind: "many", options: options(data.mcpServers) }] : []),
     ...mcpInputs(state, data).map((input) => ({ id: `mcp:${input.name}`, name: input.name, title: `${input.kind === "secret" ? "MCP secret" : "MCP value"} — ${input.label}`, kind: "text", mask: input.kind === "secret", placeholder: input.defaultValue, validate: input.validate })),
+    { id: "optionalSkills", title: "Optional external skills", kind: "many", options: options(data.optionalSkills) },
     ...data.localSettings.map((field) => ({ id: `local:${field.name}`, name: field.name, title: field.name, kind: "text", mask: field.mask, initial: field.initial, placeholder: field.placeholder, validate: field.validate })),
     { id: "effort", title: "Choose effort level", kind: "one", options: EFFORT_LEVELS.map((value) => ({ value, label: value })) },
     { id: "permission", title: "Allow bypass permissions mode?", kind: "one", options: [{ value: "deny", label: "No" }, { value: "allow", label: "Yes" }] },
