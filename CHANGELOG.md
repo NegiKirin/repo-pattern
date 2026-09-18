@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.17] - 2026-09-18
+
+**Interactive setup now uses a persistent Ink + React wizard.**
+**MCP profiles and every available MCP server are documented in the README.**
+
+### Added
+
+- Add a single-screen interactive setup wizard with back navigation, retry and migration choices, secret masking, and mounted interaction coverage.
+- Show repo-pattern and installed Claude Code versions in the wizard header.
+- Add an MCP profile matrix and descriptions of Chrome DevTools, Context7, GitNexus, Playwright, shadcn, and Tavily.
+
+### Changed
+
+- Order setup as workflow, optional ECC rules, MCP selection and values, optional skills, local provider settings, effort, permissions, and attribution.
+- Enable gstack plan-tune hooks automatically and keep ECC rules available independently of the ECC workflow.
+
 ## [0.2.16] - 2026-09-18
 
 **Web and full MCP profiles can now generate the shadcn MCP server.**
