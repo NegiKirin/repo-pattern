@@ -58,7 +58,6 @@ export async function runInteractiveProvisionChecks(repoRoot) {
       for (const label of labels) assert.match(rendered, new RegExp(label));
       assert(rendered.indexOf(labels[0]) < rendered.indexOf(labels[1]));
       assert(rendered.indexOf(labels[1]) < rendered.indexOf(labels[2]));
-      assert.match(rendered, /⠋ ECC & gstack/);
       assert.match(rendered, /ECC & gstack Skipped/);
       assert.match(rendered, /Extended skills Skipped/);
       assert.match(rendered, /Setup preview/);

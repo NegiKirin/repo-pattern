@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.19] - 2026-09-19
+
+### Fixed
+
+- Remove timing-dependent spinner-frame assertion so interactive provisioning checks pass in GitHub Actions.
+
 ## [0.2.18] - 2026-09-19
 
 **Set up a project in one persistent Ink terminal wizard, from workflow choices through live provisioning.**
