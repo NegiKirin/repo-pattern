@@ -6,6 +6,7 @@
 
 - Set conservative default limits for concurrent subagents, delegation depth, and tool calls in generated local settings.
 - Explain in the setup wizard that Claude Code v2.1.257+ ignores project-configured bypass mode.
+- Allow generated workspaces to use general-purpose Claude Code subagents.
 
 ## [0.2.20] - 2026-09-19
 
