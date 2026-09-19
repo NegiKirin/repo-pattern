@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
 const GENERATED_ATTRIBUTION_HOOK_SOURCE = "generated-attribution-removal";
-const CLAUDE_ATTRIBUTION_LINE = /^(?:🤖 Generated with Claude Code|Co-Authored-By: Claude(?: [^<]+)? <noreply@anthropic\.com>)$/;
+const CLAUDE_ATTRIBUTION_LINE = /^(?:🤖 Generated with (?:Claude Code|\[Claude Code\]\(https:\/\/claude\.com\/claude-code\))|Co-Authored-By: Claude(?: [^<]+)? <noreply@anthropic\.com>)$/;
+const MAX_ATTRIBUTION_FILE_BYTES = 1024 * 1024;
 
 async function attributionMode() {
   try {
@@ -22,16 +24,37 @@ function removeGeneratedAttribution(command) {
   }, "");
 }
 
-function prBodyFile(command) {
-  if (!/\bgh\s+pr\s+(?:create|edit)\b/.test(command)) return null;
-  const match = command.match(/--body-file(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/);
-  return match?.[1] || match?.[2] || match?.[3] || null;
+function attributedFiles(command) {
+  const file = '(?:"([^"]+)"|\'([^\']+)\'|([^\\s;&|]+))';
+  return [
+    ["\\bgh\\s+pr\\s+(?:create|edit)\\b", "--body-file"],
+    ["\\bglab\\s+mr\\s+(?:create|update)\\b", "--description-file"],
+    ["\\bgit\\s+commit\\b", "(?:-F|--file)"]
+  ].flatMap(([commandPattern, option]) => [...command.matchAll(new RegExp(`${commandPattern}(?:(?![;&|]).)*?${option}(?:=|\\s+)${file}`, "g"))].map((match) => match[1] || match[2] || match[3]));
 }
 
-async function hasGeneratedAttribution(file) {
+async function removeFileAttribution(file) {
+  let temporary;
+  let created = false;
   try {
-    return (await fs.readFile(file, "utf8")).split(/\r?\n/).some((line) => CLAUDE_ATTRIBUTION_LINE.test(line));
+    const details = await fs.stat(file);
+    if (details.size > MAX_ATTRIBUTION_FILE_BYTES) return false;
+    const text = await fs.readFile(file, "utf8");
+    const cleaned = removeGeneratedAttribution(text);
+    if (cleaned === text) return true;
+    temporary = path.join(path.dirname(file), `.${path.basename(file)}.repo-pattern-${randomUUID()}`);
+    const handle = await fs.open(temporary, "wx", 0o600);
+    created = true;
+    try {
+      await handle.chmod(details.mode);
+      await handle.writeFile(cleaned, "utf8");
+    } finally {
+      await handle.close();
+    }
+    await fs.rename(temporary, file);
+    return true;
   } catch {
+    if (created) await fs.rm(temporary, { force: true }).catch(() => {});
     return false;
   }
 }
@@ -61,10 +84,13 @@ if (input.tool_name !== "Bash") {
 
 const mode = await attributionMode();
 const command = mode === "off" ? removeGeneratedAttribution(input.tool_input.command) : input.tool_input.command;
-const bodyFile = prBodyFile(command);
-if (mode === "off" && bodyFile && await hasGeneratedAttribution(bodyFile)) {
-  process.stdout.write(`${JSON.stringify({ permissionDecision: "deny", reason: `Remove generated attribution from PR body file: ${bodyFile}` })}\n`);
-  process.exit(0);
+if (mode === "off") {
+  for (const file of attributedFiles(command)) {
+    if (!await removeFileAttribution(file)) {
+      process.stdout.write(`${JSON.stringify({ permissionDecision: "deny", reason: `Cannot remove generated attribution from referenced file: ${file}` })}\n`);
+      process.exit(0);
+    }
+  }
 }
 if (command !== input.tool_input.command) {
   process.stdout.write(`${JSON.stringify({ permissionDecision: "allow", updatedInput: { command } })}\n`);
