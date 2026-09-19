@@ -107,15 +107,7 @@ try {
   await fs.access(path.join(defaultProvisionTarget, ".claude", "rules", "ecc", "common"));
   assert.equal(localSettings.model, "sonnet");
   assert.equal(localSettings.workflowSizeGuideline, "small");
-  assert.deepEqual({
-    CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: localSettings.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY,
-    MAX_THINKING_TOKENS: localSettings.env.MAX_THINKING_TOKENS,
-    CLAUDE_CODE_SUBAGENT_MODEL: localSettings.env.CLAUDE_CODE_SUBAGENT_MODEL
-  }, {
-    CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: "2",
-    MAX_THINKING_TOKENS: "10000",
-    CLAUDE_CODE_SUBAGENT_MODEL: "haiku"
-  });
+  assert.deepEqual(Object.fromEntries(["CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS", "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH", "CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY", "MAX_THINKING_TOKENS", "CLAUDE_CODE_SUBAGENT_MODEL"].map((name) => [name, localSettings.env[name]])), { CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS: "4", CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH: "1", CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: "5", MAX_THINKING_TOKENS: "10000", CLAUDE_CODE_SUBAGENT_MODEL: "haiku" });
   assert.equal("workflowSizeGuideline" in localSettings.env, false);
   await updateClaudePermissions({ sourceRoot: repoRoot, target: defaultProvisionTarget, permissionConfig: { bypass: "allow" } });
   const updatedSettings = JSON.parse(await fs.readFile(settingsPath, "utf8"));
