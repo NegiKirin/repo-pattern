@@ -54,6 +54,12 @@ export async function runGeneratedAttributionHookChecks(repoRoot) {
       assert.equal(result.status, 0);
       assert.equal(result.stdout, command === expected ? "" : `${JSON.stringify({ permissionDecision: "allow", updatedInput: { command: expected } })}\n`);
     }
+    const prBody = path.join(hookTarget, "pr-body.md");
+    await fs.writeFile(prBody, "Summary\n\n🤖 Generated with Claude Code\n", "utf8");
+    const prCommand = `gh pr create --body-file ${prBody}`;
+    assert.deepEqual(JSON.parse(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: prCommand } })).stdout), { permissionDecision: "deny", reason: `Remove generated attribution from PR body file: ${prBody}` });
+    await fs.writeFile(prBody, "Summary\n", "utf8");
+    assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: prCommand } })).stdout, "");
     await writeHookMode("on");
     const generated = "title\n🤖 Generated with Claude Code\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>";
     assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: generated } })).stdout, "");

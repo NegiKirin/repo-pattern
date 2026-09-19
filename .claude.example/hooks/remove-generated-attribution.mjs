@@ -22,6 +22,20 @@ function removeGeneratedAttribution(command) {
   }, "");
 }
 
+function prBodyFile(command) {
+  if (!/\bgh\s+pr\s+(?:create|edit)\b/.test(command)) return null;
+  const match = command.match(/--body-file(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/);
+  return match?.[1] || match?.[2] || match?.[3] || null;
+}
+
+async function hasGeneratedAttribution(file) {
+  try {
+    return (await fs.readFile(file, "utf8")).split(/\r?\n/).some((line) => CLAUDE_ATTRIBUTION_LINE.test(line));
+  } catch {
+    return false;
+  }
+}
+
 let input;
 try {
   input = JSON.parse(await new Promise((resolve, reject) => {
@@ -45,9 +59,13 @@ if (input.tool_name !== "Bash") {
   process.exit(0);
 }
 
-const command = await attributionMode() === "off"
-  ? removeGeneratedAttribution(input.tool_input.command)
-  : input.tool_input.command;
+const mode = await attributionMode();
+const command = mode === "off" ? removeGeneratedAttribution(input.tool_input.command) : input.tool_input.command;
+const bodyFile = prBodyFile(command);
+if (mode === "off" && bodyFile && await hasGeneratedAttribution(bodyFile)) {
+  process.stdout.write(`${JSON.stringify({ permissionDecision: "deny", reason: `Remove generated attribution from PR body file: ${bodyFile}` })}\n`);
+  process.exit(0);
+}
 if (command !== input.tool_input.command) {
   process.stdout.write(`${JSON.stringify({ permissionDecision: "allow", updatedInput: { command } })}\n`);
 }
