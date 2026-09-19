@@ -24,13 +24,17 @@ function removeGeneratedAttribution(command) {
   }, "");
 }
 
+function shellPath(file) {
+  return file.replace(/^~(?=\/|$)/, process.env.HOME || "~").replace(/^\$\{HOME\}|^\$HOME/, process.env.HOME || "$HOME");
+}
+
 function attributedFiles(command) {
   const file = '(?:"([^"]+)"|\'([^\']+)\'|([^\\s;&|]+))';
   return [
     ["\\bgh\\s+pr\\s+(?:create|edit)\\b", "--body-file"],
     ["\\bglab\\s+mr\\s+(?:create|update)\\b", "--description-file"],
     ["\\bgit\\s+commit\\b", "(?:-F|--file)"]
-  ].flatMap(([commandPattern, option]) => [...command.matchAll(new RegExp(`${commandPattern}(?:(?![;&|]).)*?${option}(?:=|\\s+)${file}`, "g"))].map((match) => match[1] || match[2] || match[3]));
+  ].flatMap(([commandPattern, option]) => [...command.matchAll(new RegExp(`${commandPattern}(?:(?![;&|]).)*?${option}(?:=|\\s+)${file}`, "g"))].map((match) => shellPath(match[1] || match[2] || match[3])));
 }
 
 async function removeFileAttribution(file) {

@@ -35,7 +35,7 @@ export async function runGeneratedAttributionHookChecks(repoRoot) {
 
   function runHook(input) {
     const hookPath = path.join(repoRoot, ".claude.example", "hooks", "remove-generated-attribution.mjs");
-    return spawnSync("node", [hookPath], { input, encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: hookTarget } });
+    return spawnSync("node", [hookPath], { input, encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: hookTarget, HOME: hookTarget } });
   }
 
   try {
@@ -61,6 +61,12 @@ export async function runGeneratedAttributionHookChecks(repoRoot) {
     assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: prCommand } })).stdout, "");
     assert.equal(await fs.readFile(prBody, "utf8"), "Summary\n\n");
     assert.equal((await fs.stat(prBody)).mode & 0o777, 0o600);
+    await fs.writeFile(prBody, "Summary\n🤖 Generated with Claude Code\n", "utf8");
+    assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: "gh pr create --body-file ~/pr-body.md" } })).stdout, "");
+    assert.equal(await fs.readFile(prBody, "utf8"), "Summary\n");
+    await fs.writeFile(prBody, "Summary\n🤖 Generated with Claude Code\n", "utf8");
+    assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: "gh pr create --body-file $HOME/pr-body.md" } })).stdout, "");
+    assert.equal(await fs.readFile(prBody, "utf8"), "Summary\n");
     await fs.writeFile(prBody, "Summary\n", "utf8");
     assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: prCommand } })).stdout, "");
     await fs.writeFile(prBody, "Summary\n🤖 Generated with Claude Code\n", "utf8");
