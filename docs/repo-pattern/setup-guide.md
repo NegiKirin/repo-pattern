@@ -458,7 +458,7 @@ Local preferences and Anthropic provider/model values go in:
 .claude/settings.local.json
 ```
 
-This file also contains `enabledPlugins` and `extraKnownMarketplaces` for ECC and selected optional plugin skills. Full `setup` treats its current pipeline and optional-skill selection as the source of truth: it removes deselected repo-pattern-managed plugin entries and legacy local attribution, but preserves provider credentials, unrelated local settings, and unknown third-party plugin and marketplace entries.
+This file also contains `enabledPlugins` and `extraKnownMarketplaces` for ECC and selected optional plugin skills. Full `setup` treats its current pipeline and optional-skill selection as the source of truth: it removes deselected repo-pattern-managed plugin entries and legacy local attribution, but preserves provider credentials, unrelated local settings, and unknown third-party plugin and marketplace entries. Generated local settings set `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`, so configured ordinary subagents use `CLAUDE_CODE_SUBAGENT_MODEL`; shared settings deny Claude conversation-fork agents.
 
 Selected local-copy skills are written under `.claude/skills/`; selected ECC rule packs are written under `.claude/rules/ecc/`. A full setup rerun removes deselected repo-pattern-managed skill directories and ECC packs. The separate initialized-project **Add optional skills** action is add-only.
 

@@ -35,7 +35,7 @@ export async function runGeneratedAttributionHookChecks(repoRoot) {
 
   function runHook(input) {
     const hookPath = path.join(repoRoot, ".claude.example", "hooks", "remove-generated-attribution.mjs");
-    return spawnSync("node", [hookPath], { input, encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: hookTarget } });
+    return spawnSync("node", [hookPath], { input, encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: hookTarget, HOME: hookTarget } });
   }
 
   try {
@@ -54,6 +54,42 @@ export async function runGeneratedAttributionHookChecks(repoRoot) {
       assert.equal(result.status, 0);
       assert.equal(result.stdout, command === expected ? "" : `${JSON.stringify({ permissionDecision: "allow", updatedInput: { command: expected } })}\n`);
     }
+    const prBody = path.join(hookTarget, "pr-body.md");
+    await fs.writeFile(prBody, "Summary\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n", "utf8");
+    const prCommand = `gh pr create --body-file ${prBody}`;
+    await fs.chmod(prBody, 0o600);
+    assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: prCommand } })).stdout, "");
+    assert.equal(await fs.readFile(prBody, "utf8"), "Summary\n\n");
+    assert.equal((await fs.stat(prBody)).mode & 0o777, 0o600);
+    await fs.writeFile(prBody, "Summary\n🤖 Generated with Claude Code\n", "utf8");
+    assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: "gh pr create --body-file ~/pr-body.md" } })).stdout, "");
+    assert.equal(await fs.readFile(prBody, "utf8"), "Summary\n");
+    await fs.writeFile(prBody, "Summary\n🤖 Generated with Claude Code\n", "utf8");
+    assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: "gh pr create --body-file $HOME/pr-body.md" } })).stdout, "");
+    assert.equal(await fs.readFile(prBody, "utf8"), "Summary\n");
+    await fs.writeFile(prBody, "Summary\n", "utf8");
+    assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: prCommand } })).stdout, "");
+    await fs.writeFile(prBody, "Summary\n🤖 Generated with Claude Code\n", "utf8");
+    assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: `printf -- '--body-file ${path.join(hookTarget, "clean.md")}'; ${prCommand}` } })).stdout, "");
+    assert.equal(await fs.readFile(prBody, "utf8"), "Summary\n");
+    await fs.writeFile(prBody, `${"x".repeat(1024 * 1024)}\n🤖 Generated with Claude Code\n`, "utf8");
+    assert.deepEqual(JSON.parse(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: prCommand } })).stdout), { permissionDecision: "deny", reason: `Cannot remove generated attribution from referenced file: ${prBody}` });
+    const mrDescription = path.join(hookTarget, "mr-description.md");
+    await fs.writeFile(mrDescription, "Summary\n\n🤖 Generated with Claude Code\n", "utf8");
+    const mrCommand = `glab mr create --description-file ${mrDescription}`;
+    assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: mrCommand } })).stdout, "");
+    assert.equal(await fs.readFile(mrDescription, "utf8"), "Summary\n\n");
+    await fs.writeFile(mrDescription, "Summary\n", "utf8");
+    assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: mrCommand } })).stdout, "");
+    const commitMessage = path.join(hookTarget, "commit-message.txt");
+    await fs.writeFile(commitMessage, "Subject\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n", "utf8");
+    for (const commitCommand of [`git commit -F ${commitMessage}`, `git commit --file=${commitMessage}`]) {
+      assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: commitCommand } })).stdout, "");
+      assert.equal(await fs.readFile(commitMessage, "utf8"), "Subject\n\n");
+      await fs.writeFile(commitMessage, "Subject\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n", "utf8");
+    }
+    await fs.writeFile(commitMessage, "Subject\n", "utf8");
+    assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: `git commit -F ${commitMessage}` } })).stdout, "");
     await writeHookMode("on");
     const generated = "title\n🤖 Generated with Claude Code\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>";
     assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: generated } })).stdout, "");

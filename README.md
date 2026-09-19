@@ -147,7 +147,7 @@ target-project/
 
 `repo-pattern` preserves an existing root `CLAUDE.md` and keeps machine-local values out of git.
 
-`.claude/settings.json` is generated from the tracked shared-settings template. It owns Claude Code permissions, MCP approvals, hooks, and commit/PR attribution. `.claude/settings.local.json` is generated from the local-settings template. It owns provider values plus selected plugin and marketplace entries; it never owns attribution.
+`.claude/settings.json` is generated from the tracked shared-settings template. It owns Claude Code permissions, MCP approvals, hooks, and commit/PR attribution, including denial of Claude conversation-fork agents. `.claude/settings.local.json` is generated from the local-settings template. It owns provider values plus selected plugin and marketplace entries; it never owns attribution. The generated local environment pins configured ordinary subagents to the selected `CLAUDE_CODE_SUBAGENT_MODEL`.
 
 Each full `repo-pattern setup` run reconciles repo-pattern-managed state to its current pipeline, rule, and optional-skill selection. It removes deselected managed plugins, marketplaces, local skills, and ECC rules, while preserving provider credentials, unrelated local settings, and unknown third-party plugins or marketplaces. The initialized-project **Add optional skills** action remains additive.
 
