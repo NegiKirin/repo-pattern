@@ -15,7 +15,9 @@
   "extraKnownMarketplaces": {},
   "env": {
     "ENABLE_TOOL_SEARCH": "auto:5",
-    "CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY": "2",
+    "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": "4",
+    "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "1",
+    "CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY": "5",
     "MAX_THINKING_TOKENS": "10000",
     "CLAUDE_CODE_SUBAGENT_MODEL": "haiku",
     "ANTHROPIC_BASE_URL": "https://example.com/v1",

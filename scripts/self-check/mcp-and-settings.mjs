@@ -28,11 +28,7 @@ assert.deepEqual(localSettingsTemplate.extraKnownMarketplaces, {});
 assert.equal(localSettingsTemplate.workflowSizeGuideline, "small");
 assert.equal(localSettingsTemplate.effortLevel, "medium");
 assert.equal("effortLevel" in localSettingsTemplate.env, false);
-assert.deepEqual({
-  CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: localSettingsTemplate.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY
-}, {
-  CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: "2"
-});
+assert.deepEqual(Object.fromEntries(["CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS", "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH", "CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY"].map((name) => [name, localSettingsTemplate.env[name]])), { CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS: "4", CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH: "1", CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: "5" });
 assert.equal("workflowSizeGuideline" in localSettingsTemplate.env, false);
 assert.equal(interactiveSetupPipeline(null), "none");
 assert.equal(interactiveSetupPipeline({ setupPipeline: "gstack" }), "gstack");

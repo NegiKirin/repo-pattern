@@ -94,7 +94,7 @@ export function wizardPages(state, data) {
     ...(data.localSettings.some((field) => MODEL_SETTING_NAMES.has(field.name)) ? [{ id: "modelSettings", title: "Configure third-party provider & models", kind: "modelSettings", fields: data.localSettings.filter((field) => MODEL_SETTING_NAMES.has(field.name)) }] : []),
     ...data.localSettings.filter((field) => !MODEL_SETTING_NAMES.has(field.name)).map((field) => ({ id: `local:${field.name}`, name: field.name, title: field.name, kind: "text", mask: field.mask, initial: field.initial, placeholder: field.placeholder, validate: field.validate })),
     { id: "effort", title: "Choose effort level", kind: "one", options: EFFORT_LEVELS.map((value) => ({ value, label: value })) },
-    { id: "permission", title: "Allow bypass permissions mode?", kind: "one", options: [{ value: "deny", label: "No" }, { value: "allow", label: "Yes" }] },
+    { id: "permission", title: "Allow bypass permissions mode?", note: "Claude Code v2.1.257+ ignores this setting from project config.", kind: "one", options: [{ value: "deny", label: "No" }, { value: "allow", label: "Yes" }] },
     { id: "attribution", title: "Commit attribution?", kind: "one", options: [{ value: "off", label: "off" }, { value: "on", label: "on" }, { value: "custom", label: "custom" }] },
     ...(state.attributionConfig.mode === "custom" ? [{ id: "attributionCommit", title: "Custom commit attribution", kind: "text", initial: "Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>", validate: (value) => String(value || "").trim() ? true : "Required" }] : [])
   ];
@@ -274,6 +274,7 @@ export function SetupWizard({ initialState, data, done, initialPageId = null }) 
   return React.createElement(WizardShell, { claudeCodeVersion: data.claudeCodeVersion },
     React.createElement(Text, { bold: true, color: "cyan" }, `Step ${pageIndex + 1} of ${pages.length}`),
     React.createElement(Text, null, page.title),
+    page.note ? React.createElement(Text, { dimColor: true }, page.note) : null,
     React.createElement(Text, null, " "),
     page.kind === "text"
       ? React.createElement(Text, { color: current ? "green" : page.placeholder ? "gray" : undefined }, `› ${display(current, page)}`)

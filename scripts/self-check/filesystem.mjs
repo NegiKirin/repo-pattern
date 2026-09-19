@@ -139,7 +139,9 @@ try {
   assert.equal(localSettings.model, "sonnet");
   assert.equal(localSettings.workflowSizeGuideline, "small");
   assert.equal(localSettings.env.CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION, "7");
-  assert.equal(localSettings.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY, "2");
+  assert.equal(localSettings.env.CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS, "4");
+  assert.equal(localSettings.env.CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH, "1");
+  assert.equal(localSettings.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY, "5");
   assert.equal(localSettings.env.MAX_THINKING_TOKENS, "9000");
   assert.equal(localSettings.env.CLAUDE_CODE_SUBAGENT_MODEL, "haiku");
   assert.equal("workflowSizeGuideline" in localSettings.env, false);

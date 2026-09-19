@@ -71,6 +71,7 @@ export async function runSetupWizardChecks() {
     { value: "ultracode", label: "[ultracode]", color: "magenta" }
   ]);
   const pages = wizardPages(initial, data);
+  assert.equal(pages.find((page) => page.id === "permission").note, "Claude Code v2.1.257+ ignores this setting from project config.");
   assert.equal(pages.some((page) => page.id === "planTuneHooks"), false);
   assert.equal(pruneWizardState(initial, data).planTuneHooks, true);
   assert.ok(pages.some((page) => page.id === "mcpServers"));
