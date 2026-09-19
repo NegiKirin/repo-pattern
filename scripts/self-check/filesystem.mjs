@@ -144,6 +144,7 @@ try {
   assert.equal(localSettings.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY, "5");
   assert.equal(localSettings.env.MAX_THINKING_TOKENS, "9000");
   assert.equal(localSettings.env.CLAUDE_CODE_SUBAGENT_MODEL, "haiku");
+  assert.equal(localSettings.env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE, "1");
   assert.equal("workflowSizeGuideline" in localSettings.env, false);
   assert.equal(settings.permissions.defaultMode, "bypassPermissions");
   assert.equal("disableBypassPermissionsMode" in settings.permissions, false);

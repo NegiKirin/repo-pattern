@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.22] - 2026-09-19
+
+### Changed
+
+- Keep the configured Haiku model for applicable ordinary Claude Code subagents, even when an agent declares a different model.
+
 ## [0.2.21] - 2026-09-19
 
 ### Changed
