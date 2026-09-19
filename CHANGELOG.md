@@ -5,6 +5,11 @@
 ### Changed
 
 - Keep the configured Haiku model for applicable ordinary Claude Code subagents, even when an agent declares a different model.
+- Block Claude Code conversation-fork agents in generated project settings.
+
+### Fixed
+
+- Remove generated Claude attribution from PR, merge-request, and commit message files before they are submitted.
 
 ## [0.2.21] - 2026-09-19
 
