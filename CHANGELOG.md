@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.1] - 2026-09-29
+
+### Changed
+
+- Generate a root `.gitignore` that covers common operating-system files, environment secrets, coding-agent state, local databases, and standard build artifacts across supported ecosystems.
+
 ## [1.0.0] - 2026-09-29
 
 ### Changed

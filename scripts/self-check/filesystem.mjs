@@ -161,7 +161,55 @@ try {
   assert.equal(repoConfig.mcp.generated, true);
   assert.equal(await fs.readFile(path.join(provisionTemplateTarget, ".claude", "CLAUDE.md"), "utf8"), await fs.readFile(path.join(repoRoot, ".claude.example", "CLAUDE.md"), "utf8"));
   const provisionGitignore = (await fs.readFile(path.join(provisionTemplateTarget, ".gitignore"), "utf8")).split(/\r?\n/);
-  for (const line of [".DS_Store", "Thumbs.db", ".vscode/", ".idea/", ".claude/", ".mcp.json"]) {
+  for (const line of [
+    "# OS",
+    ".DS_Store",
+    "Thumbs.db",
+    "Desktop.ini",
+    "# Environment variables and secrets",
+    ".env",
+    ".env.*",
+    "!.env.example",
+    "!.env.*.example",
+    "# Coding agents: generated or project-local configuration",
+    ".claude/",
+    ".mcp.json",
+    "CLAUDE.md",
+    "AGENTS.md",
+    ".playwright-mcp/",
+    ".gstack/",
+    ".impeccable/",
+    "# Local databases",
+    "*.sqlite",
+    "*.sqlite3",
+    "*.db",
+    "# Node.js",
+    "node_modules/",
+    "dist/",
+    "build/",
+    ".next/",
+    ".nuxt/",
+    ".vite/",
+    ".turbo/",
+    "*.tsbuildinfo",
+    "# Python",
+    "__pycache__/",
+    "*.py[cod]",
+    ".pytest_cache/",
+    ".mypy_cache/",
+    ".ruff_cache/",
+    ".venv/",
+    "venv/",
+    "# Java / JVM",
+    ".gradle/",
+    "target/",
+    "*.class",
+    "# Go",
+    "bin/",
+    "*.test",
+    "coverage.out",
+    "# Rust"
+  ]) {
     assert(provisionGitignore.includes(line));
   }
   const repoPatternGitignore = (await fs.readFile(path.join(provisionTemplateTarget, ".repo-pattern", ".gitignore"), "utf8")).trim();
