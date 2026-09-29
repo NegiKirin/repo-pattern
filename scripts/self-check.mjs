@@ -10,7 +10,7 @@ import { runGeneratedAttributionHookChecks } from "./self-check/generated-attrib
 import { runGitProgressChecks } from "./self-check/git-progress.mjs";
 import { runMcpAndSettingsChecks } from "./self-check/mcp-and-settings.mjs";
 import { runMcpInputFieldsChecks } from "./self-check/mcp-input-fields.mjs";
-import { runMcpProfileChecks } from "./self-check/mcp-profiles.mjs";
+import { runMcpServerChecks } from "./self-check/mcp-servers.mjs";
 import { runProvisionAndPipelineChecks } from "./self-check/provision-and-pipelines.mjs";
 import { runProgressChecks } from "./self-check/progress.mjs";
 import { runQualityGateChecks } from "./self-check/quality-gates.mjs";
@@ -19,7 +19,7 @@ import { runSetupWizardChecks } from "./self-check/setup-wizard.mjs";
 await runGeneratedAttributionHookChecks(new URL("..", import.meta.url).pathname);
 await runMcpAndSettingsChecks();
 await runMcpInputFieldsChecks();
-await runMcpProfileChecks();
+await runMcpServerChecks();
 await runEccRulesAndManifestChecks();
 await runEffortPickerChecks();
 await runEccSourceAndTransactionChecks();

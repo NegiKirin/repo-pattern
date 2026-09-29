@@ -6,6 +6,21 @@ import { runGitWithProgress } from "./git-progress.mjs";
 import { printSummary } from "./prompt.mjs";
 
 
+export const OPTIONAL_SKILL_GROUPS = [
+  ["Design and frontend", ["taste", "ui-ux-pro-max", "impeccable", "huashu-design"]],
+  ["Project patterns", ["nextjs-pattern", "fastapi-pattern"]],
+  ["Documentation", ["document-specialist"]],
+  ["Terminal workflow", ["herdr"]]
+];
+
+export function groupedOptionalSkillOptions(skills) {
+  const byValue = new Map(skills.map((skill) => [skill.value, skill]));
+  return OPTIONAL_SKILL_GROUPS.flatMap(([label, values]) => [
+    { group: true, label },
+    ...values.map((value) => byValue.get(value))
+  ]);
+}
+
 export const OPTIONAL_SKILLS = [
   {
     value: "taste",

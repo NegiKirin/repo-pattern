@@ -54,7 +54,7 @@ function valueForPage(state, page) {
 }
 
 function mcpInputs(state, data) {
-  return data.mcpInputs(state.profile, state.mcpServers || []);
+  return data.mcpInputs(state.mcpServers || []);
 }
 
 function options(values) {
@@ -69,7 +69,6 @@ export function pruneWizardState(state, data) {
     next.ruleMode = "auto";
     next.rules = [];
   }
-  if (next.profile !== "custom") next.mcpServers = null;
   const required = new Set(mcpInputs(next, data).map((input) => input.name));
   next.mcpValues = Object.fromEntries(Object.entries(next.mcpValues).filter(([name]) => required.has(name)));
   if (next.attributionConfig.mode !== "custom") delete next.attributionConfig.commit;
@@ -87,8 +86,7 @@ export function wizardPages(state, data) {
     { id: "pipeline", title: "Choose setup workflow", kind: "many", options: PIPELINE_OPTIONS },
     ...(!usesEcc(state.setupPipeline) ? [{ id: "installRules", title: "Install project-local ECC rules & agents?", kind: "one", options: [{ value: false, label: "No" }, { value: true, label: "Yes" }] }] : []),
     ...rulePages,
-    { id: "profile", title: "Choose MCP profile", kind: "one", options: options(data.profiles) },
-    ...(state.profile === "custom" ? [{ id: "mcpServers", title: "Choose MCP servers", kind: "many", options: options(data.mcpServers) }] : []),
+    { id: "mcpServers", title: "Choose MCP servers", kind: "many", options: options(data.mcpServers) },
     ...(mcpInputs(state, data).length ? [{ id: "mcpInputs", title: "MCP secret", kind: "mcpInputs", fields: mcpInputs(state, data) }] : []),
     { id: "optionalSkills", title: "Optional external skills", kind: "many", options: options(data.optionalSkills) },
     ...(data.localSettings.some((field) => MODEL_SETTING_NAMES.has(field.name)) ? [{ id: "modelSettings", title: "Configure third-party provider & models", kind: "modelSettings", fields: data.localSettings.filter((field) => MODEL_SETTING_NAMES.has(field.name)) }] : []),
@@ -188,7 +186,8 @@ export function SetupWizard({ initialState, data, done, initialPageId = null }) 
   const pages = wizardPages(state, data);
   const pageIndex = Math.max(0, pages.findIndex((page) => page.id === pageId));
   const page = pages[pageIndex];
-  const choices = page.options || [];
+  const renderedChoices = page.options || [];
+  const choices = renderedChoices.filter((choice) => !choice.group);
   const mcpFields = page.kind === "mcpInputs" ? page.fields || [] : [];
   const modelFields = page.kind === "modelSettings" ? page.fields || [] : [];
   const activeMcpField = mcpFields[mcpFieldIndex];
@@ -259,12 +258,10 @@ export function SetupWizard({ initialState, data, done, initialPageId = null }) 
       return setState(updatePage(state, page, [...selected], data));
     }
     if (!key.return) return;
-    if (page.id === "mcpServers" && choices.length === 0) return setError("Custom MCP profile requires at least one server.");
     if (page.kind === "one" && choices.length === 0) return setError("No options available.");
     const value = page.kind === "many" ? selectedValues : page.id === "effort" ? effortValue : choices[cursor].value;
     if (page.id === "migrationChoice" && value === "no") return done(new Error("Setup cancelled."));
     if (page.id === "confirm") return value === "yes" ? done(state) : done(new Error("Setup cancelled."));
-    if (page.id === "mcpServers" && value.length === 0) return setError("Custom MCP profile requires at least one server.");
     const next = updatePage(state, page, value, data);
     const nextPages = wizardPages(next, data);
     const nextPage = nextPages[Math.min(pageIndex + 1, nextPages.length - 1)];
@@ -314,14 +311,15 @@ export function SetupWizard({ initialState, data, done, initialPageId = null }) 
       : page.id === "effort"
         ? React.createElement(Box, null, ...renderEffortOptions(choices.map((choice) => choice.value), effortValue).map((choice) => React.createElement(Text, { key: choice.value, color: choice.color, dimColor: !choice.color }, `${choice.label}  `)))
         : React.createElement(Box, { flexDirection: "column" },
-          ...choices.map((choice, index) => React.createElement(
-            Box,
-            { key: String(choice.value) },
-            React.createElement(Text, { color: index === cursor ? "cyan" : undefined }, `${index === cursor ? "›" : " "} ${page.kind === "many" ? (selectedValues.includes(choice.value) ? "◉" : "○") : " "} ${choice.label}${choice.hint ? ` — ${choice.hint}` : ""}`),
-            page.id === "profile" && index === cursor && choice.description
-              ? React.createElement(Text, { dimColor: true }, `  · ${choice.description}`)
-              : null
-          ))
+          ...renderedChoices.map((choice) => {
+            if (choice.group) return React.createElement(Text, { key: `group:${choice.label}`, bold: true, dimColor: true }, `  ${choice.label}`);
+            const index = choices.indexOf(choice);
+            return React.createElement(
+              Box,
+              { key: String(choice.value) },
+              React.createElement(Text, { color: index === cursor ? "cyan" : undefined }, `${index === cursor ? "›" : " "} ${page.kind === "many" ? (selectedValues.includes(choice.value) ? "◉" : "○") : " "} ${choice.label}${choice.hint ? ` — ${choice.hint}` : ""}`)
+            );
+          })
         ),
     error ? React.createElement(Box, { marginTop: 1 }, React.createElement(Text, { color: "red" }, error)) : null,
     React.createElement(Text, null, " "),

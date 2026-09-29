@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.0.0] - 2026-09-29
+
+### Changed
+
+- Choose MCP servers directly with repeatable `--mcp <name>` options. Scripted setup and MCP regeneration default to Context7, Tavily, and GitNexus when no server is named.
+- Group interactive MCP choices while allowing an empty selection, and show newly added catalog servers under Other servers.
+
+### Removed
+
+- Remove MCP profiles and their configuration files. Existing profile-based retry or lock state now stops before writes and tells users to rerun setup with explicit server choices.
+
+### Added
+
+- Add the `shadcn-studio` MCP server definition.
+
 ## [0.2.22] - 2026-09-19
 
 ### Changed

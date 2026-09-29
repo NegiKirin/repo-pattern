@@ -10,19 +10,31 @@ import { askPassword, askText, DEFAULT_EFFORT_LEVEL, isInteractive, printBox, se
 import { runSetupWizard } from "./setup-wizard.mjs";
 import { ECC_RULE_PACKS, normalizeEccRules, selectEccRules } from "./ecc-rules.mjs";
 import { ensureRepoPatternGitignore, isTracked, readJson, readPrivateJson, readRepoLock, repoLockPath, writeJson } from "./fs-utils.mjs";
-import { applyOptionalSkills, OPTIONAL_SKILLS } from "./skills.mjs";
+import { applyOptionalSkills, groupedOptionalSkillOptions, OPTIONAL_SKILLS } from "./skills.mjs";
 
 const execFileAsync = promisify(execFile);
 
-const PROFILE_NAMES = ["web", "backend", "research", "full"];
-export const CUSTOM_MCP_DEFAULTS = ["context7", "tavily"];
+export const DEFAULT_MCP_SERVERS = ["context7", "tavily", "gitnexus"];
 
-async function profileOptions(sourceRoot) {
-  const options = await Promise.all(PROFILE_NAMES.map(async (name) => {
-    const { profileServers } = await readMcpConfig({ sourceRoot, profile: name });
-    return { value: name, label: name, description: profileServers.join(", ") };
-  }));
-  return [...options, { value: "custom", label: "custom", description: "choose exact MCP servers" }];
+export function groupedMcpOptions(servers) {
+  const descriptions = Object.fromEntries(servers.map((server) => [server.value, server.hint]));
+  const groupedServers = [
+    ...DEFAULT_MCP_SERVERS,
+    "chrome-devtools",
+    "playwright",
+    "shadcn",
+    "shadcn-studio"
+  ];
+  const ungroupedServers = servers.filter((server) => !groupedServers.includes(server.value));
+  return [
+    { group: true, label: "Core / Must have" },
+    ...DEFAULT_MCP_SERVERS.map((value) => ({ value, label: value, hint: descriptions[value] })),
+    { group: true, label: "Development tools" },
+    ...["chrome-devtools", "playwright"].map((value) => ({ value, label: value, hint: descriptions[value] })),
+    { group: true, label: "UI / shadcn" },
+    ...["shadcn", "shadcn-studio"].map((value) => ({ value, label: value, hint: descriptions[value] })),
+    ...(ungroupedServers.length > 0 ? [{ group: true, label: "Other servers" }, ...ungroupedServers] : [])
+  ];
 }
 
 function validateRequired(value) {
@@ -61,7 +73,6 @@ export function setupRetryOptions({ action, setupPipeline, planTuneHooks = false
     action,
     setupPipeline,
     planTuneHooks,
-    profile: mcpConfig.profile,
     mcpServers: mcpConfig.mcpServers,
     mcpValueNames: Object.keys(persistedMcpValues(mcpValues)),
     migrate: action === "migrate",
@@ -79,12 +90,12 @@ export function setupRetryOptions({ action, setupPipeline, planTuneHooks = false
 
 export function setupOptionsFromLock(lock) {
   const setup = lock?.setup;
+  const options = setup?.options || null;
+  if (options?.profile || lock?.mcp?.profile) throw new Error("MCP profiles are no longer supported. Rerun repo-pattern setup to choose MCP servers.");
   if (!["failed", "running"].includes(setup?.status)) return null;
-  const options = setup.options || null;
   if (!options) return null;
   return {
     ...options,
-    profile: options.profile === "minimal" ? "backend" : options.profile,
     effortLevel: options.effortLevel || DEFAULT_EFFORT_LEVEL,
     permissionConfig: options.permissionConfig?.bypass === "allow" ? { bypass: "allow" } : { bypass: "deny" }
   };
@@ -113,11 +124,6 @@ async function previousSetupOptions(target) {
   return setupOptionsFromLock(await readRepoLock(target, {}));
 }
 
-function suggestedProfile(detection, fallback) {
-  if (fallback) return fallback;
-  if (["frontend", "fullstack", "node"].includes(detection.repoType)) return "web";
-  return "backend";
-}
 
 async function checkClaudeCode() {
   try {
@@ -128,28 +134,20 @@ async function checkClaudeCode() {
   }
 }
 
-async function chooseProfile(sourceRoot, profile, detection) {
-  return selectOne({
-    message: "Step 1/6 — Choose MCP profile",
-    options: await profileOptions(sourceRoot),
-    initialValue: suggestedProfile(detection, profile)
-  });
+export async function chooseMcpConfig(sourceRoot, initialValues = DEFAULT_MCP_SERVERS) {
+  const availableServers = await listAvailableMcpServers(sourceRoot);
+  return {
+    mcpServers: await selectMany({
+      message: "Choose MCP servers",
+      options: groupedMcpOptions(availableServers.map((value) => ({ value, label: value }))),
+      initialValues
+    })
+  };
 }
 
-export async function chooseMcpConfig(sourceRoot, profile) {
-  if (profile !== "custom") return { profile, mcpServers: null };
-  const mcpServers = await selectMany({
-    message: "Choose MCP servers",
-    options: await listAvailableMcpServers(sourceRoot),
-    initialValues: CUSTOM_MCP_DEFAULTS
-  });
-  if (mcpServers.length === 0) throw new Error("Custom MCP profile requires at least one server.");
-  return { profile, mcpServers };
-}
-
-async function chooseMcpValues(sourceRoot, mcpConfig, values = {}) {
-  const { mcpServers } = await readMcpConfig({ sourceRoot, profile: mcpConfig.profile, mcpServers: mcpConfig.mcpServers });
-  return collectMcpValues(mcpServers, { values: persistedMcpValues(values) });
+async function chooseMcpValues(sourceRoot, mcpServers, values = {}) {
+  const config = await readMcpConfig({ sourceRoot, mcpServers });
+  return collectMcpValues(config.mcpServers, { values: persistedMcpValues(values) });
 }
 
 const SETUP_PIPELINES = ["ecc", "gstack", "both", "none"];
@@ -201,7 +199,7 @@ function hasRequestedRules(audit, ruleConfig) {
 async function chooseOptionalSkills(initialValues = []) {
   return selectMany({
     message: "Step 3/6 — Optional external skills",
-    options: OPTIONAL_SKILLS,
+    options: groupedOptionalSkillOptions(OPTIONAL_SKILLS),
     initialValues
   });
 }
@@ -254,14 +252,14 @@ async function chooseAttributionConfig() {
   };
 }
 
-async function handleInitialized({ sourceRoot, target, profile, dryRun }) {
+async function handleInitialized({ sourceRoot, target, mcpServers, dryRun }) {
   printBox("Already initialized", ["This target already looks like a repo-pattern setup."]);
 
   const action = await selectOne({
     message: "What do you want to do?",
     options: [
       { value: "doctor", label: "Run doctor" },
-      { value: "mcp", label: "Regenerate MCP profile" },
+      { value: "mcp", label: "Regenerate MCP servers" },
       { value: "skills", label: "Add optional skills" },
       { value: "permissions", label: "Configure bypass permissions" },
       { value: "attribution", label: "Update commit attribution" },
@@ -272,14 +270,11 @@ async function handleInitialized({ sourceRoot, target, profile, dryRun }) {
 
   if (action === "doctor") await doctorProject(target, { dryRun });
   if (action === "mcp") {
-    const detection = await detectProject(target);
-    const chosenProfile = await chooseProfile(sourceRoot, profile, detection);
-    const mcpConfig = await chooseMcpConfig(sourceRoot, chosenProfile);
-    const mcpValues = await chooseMcpValues(sourceRoot, mcpConfig, await readGeneratedMcpValues(target));
+    const mcpConfig = await chooseMcpConfig(sourceRoot, mcpServers);
+    const mcpValues = await chooseMcpValues(sourceRoot, mcpConfig.mcpServers, await readGeneratedMcpValues(target));
     await generateMcp({
       sourceRoot,
       target,
-      profile: mcpConfig.profile,
       mcpServers: mcpConfig.mcpServers,
       mcpValues,
       dryRun
@@ -300,21 +295,19 @@ async function handleInitialized({ sourceRoot, target, profile, dryRun }) {
   }
 }
 
-export async function setupProject({ sourceRoot, target, profile = "backend", setupPipeline = "ecc", planTuneHooks = false, dryRun = false, force = false, migrate = false, yes = false, applyRules = false, optionalSkills = [] }) {
+export async function setupProject({ sourceRoot, target, mcpServers = [], setupPipeline = "ecc", planTuneHooks = false, dryRun = false, force = false, migrate = false, yes = false, applyRules = false, optionalSkills = [] }) {
   if (!SETUP_PIPELINES.includes(setupPipeline)) throw new Error(`Unknown setup pipeline: ${setupPipeline}. Available: ${SETUP_PIPELINES.join(", ")}`);
   if (planTuneHooks && !["gstack", "both"].includes(setupPipeline)) throw new Error("--with-plan-tune-hooks requires --setup-pipeline gstack or both.");
   if (!isInteractive()) {
     if (!yes) throw new Error("setup requires an interactive terminal, or pass --yes for scriptable mode.");
-    if (profile === "custom") throw new Error("setup --yes cannot use the custom profile; choose a named profile.");
-
+    await previousSetupOptions(target);
     const detection = await detectProject(target);
-    const selectedProfile = suggestedProfile(detection, profile);
     const ruleConfig = defaultRuleConfig(setupPipeline, applyRules, detection);
 
     await provisionProject({
       sourceRoot,
       target,
-      profile: selectedProfile,
+      mcpServers: mcpServers.length > 0 ? mcpServers : DEFAULT_MCP_SERVERS,
       setupPipeline,
       mcpValues: await readGeneratedMcpValues(target),
       dryRun,
@@ -351,12 +344,8 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
   ].filter((name) => process.env[name]).map((name) => [name, process.env[name]]));
   const retryLocalSettingsEnv = { ...localSettingsTemplate.env, ...previousOptions?.localSettingsEnv, ...currentSettingsEnv, ...defaultOverrides };
   const promptInitialValues = { ...previousOptions?.localSettingsEnv, ...currentSettingsEnv, ...defaultOverrides };
-  const profileChoices = await profileOptions(sourceRoot);
   const availableMcpServers = await listAvailableMcpServers(sourceRoot);
-  const mcpDefinitions = Object.fromEntries(await Promise.all([
-    ...PROFILE_NAMES.map(async (name) => [name, (await readMcpConfig({ sourceRoot, profile: name })).mcpServers]),
-    ...availableMcpServers.map(async (name) => [name, (await readMcpConfig({ sourceRoot, profile: "custom", mcpServers: [name] })).mcpServers])
-  ]));
+  const mcpDefinitions = Object.fromEntries(await Promise.all(availableMcpServers.map(async (name) => [name, (await readMcpConfig({ sourceRoot, mcpServers: [name] })).mcpServers])));
   const autoRules = selectEccRules(detection);
   const { state: wizardState, controller: wizardController } = await runSetupWizard({
     migrationChoice: action === "migrate" && !shouldMigrate ? "pending" : "yes",
@@ -364,8 +353,7 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
     setupPipeline: interactiveSetupPipeline(previousOptions),
     planTuneHooks: usesGstack(interactiveSetupPipeline(previousOptions)),
     applyRules: previousOptions?.applyRules || applyRules || usesEcc(interactiveSetupPipeline(previousOptions)),
-    profile: previousOptions?.profile || suggestedProfile(detection, profile),
-    mcpServers: previousOptions?.mcpServers || (profile === "custom" ? CUSTOM_MCP_DEFAULTS : null),
+    mcpServers: previousOptions?.mcpServers || (mcpServers.length > 0 ? mcpServers : DEFAULT_MCP_SERVERS),
     ruleMode: previousOptions?.ruleMode || "auto",
     rules: previousOptions?.rules || autoRules,
     optionalSkills: previousOptions?.optionalSkills || optionalSkills,
@@ -376,18 +364,15 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
     attributionConfig: previousOptions?.attributionConfig || { mode: "off" }
   }, {
     claudeCodeVersion,
-    profiles: profileChoices,
-    mcpServers: availableMcpServers.map((name) => ({ value: name, label: name, hint: mcpDefinitions[name]?.[name]?.description })),
-    mcpInputs: (selectedProfile, selectedServers) => mcpInputFields(selectedProfile === "custom"
-      ? Object.assign({}, ...selectedServers.map((name) => mcpDefinitions[name] || {}))
-      : mcpDefinitions[selectedProfile] || {}),
+    mcpServers: groupedMcpOptions(availableMcpServers.map((name) => ({ value: name, label: name, hint: mcpDefinitions[name]?.[name]?.description }))),
+    mcpInputs: (selectedServers) => mcpInputFields(Object.assign({}, ...selectedServers.map((name) => mcpDefinitions[name] || {}))),
     ruleModes: [
       { value: "auto", label: "auto", hint: `detect from project (${autoRules.join(", ")})` },
       { value: "manual", label: "manual", hint: "choose rule packs by type" },
       { value: "none", label: "none", hint: "do not install project-local ECC rules" }
     ],
     rules: ECC_RULE_PACKS,
-    optionalSkills: OPTIONAL_SKILLS,
+    optionalSkills: groupedOptionalSkillOptions(OPTIONAL_SKILLS),
     localSettings: LOCAL_SETTINGS_FIELDS.map(([name, fallback, ask, validate]) => ({
       name,
       initial: retryLocalSettingsEnv[name] || "",
@@ -398,7 +383,7 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
   });
   const selectedSetupPipeline = wizardState.setupPipeline;
   const selectedPlanTuneHooks = wizardState.planTuneHooks;
-  const mcpConfig = { profile: wizardState.profile, mcpServers: wizardState.mcpServers };
+  const mcpConfig = { mcpServers: wizardState.mcpServers };
   const ruleConfig = !wizardState.applyRules || wizardState.ruleMode === "none"
     ? { applyRules: false, ruleMode: "auto", rules: [] }
     : { applyRules: true, ruleMode: wizardState.ruleMode, rules: wizardState.rules };
@@ -415,7 +400,6 @@ export async function setupProject({ sourceRoot, target, profile = "backend", se
     await provisionProject({
       sourceRoot,
       target,
-      profile: mcpConfig.profile,
       setupPipeline: selectedSetupPipeline,
       planTuneHooks: selectedPlanTuneHooks,
       mcpServers: mcpConfig.mcpServers,

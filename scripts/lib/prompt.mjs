@@ -17,6 +17,7 @@ function cancelled() {
 function normalizeOptions(options) {
   return options.map((option) => {
     if (typeof option === "string") return { label: option, value: option };
+    if (option.group) return { label: option.label, group: true };
     return {
       label: option.title || option.label || option.value,
       value: option.value,
@@ -103,7 +104,8 @@ function ConfirmPrompt({ message, defaultYes, done }) {
 }
 
 function SelectPrompt({ message, options, initialValue, many = false, done }) {
-  const choices = enabledOptions(normalizeOptions(options));
+  const renderedOptions = normalizeOptions(options);
+  const choices = enabledOptions(renderedOptions.filter((option) => !option.group));
   const initialIndex = Math.max(0, choices.findIndex((choice) => choice.value === initialValue));
   const [index, setIndex] = useState(initialIndex);
   const [selected, setSelected] = useState(() => new Set(many ? choices.filter((choice) => choice.selected).map((choice) => choice.value) : []));
@@ -120,9 +122,13 @@ function SelectPrompt({ message, options, initialValue, many = false, done }) {
     if (key.return) return done(many ? choices.filter((choice) => selected.has(choice.value)).map((choice) => choice.value) : choices[index].value);
   });
   return React.createElement(Frame, { message, help: many ? "↑/↓ to move · Space to toggle · Enter to confirm · Esc to cancel" : "↑/↓ to move · Enter to confirm · Esc to cancel" },
-    ...choices.map((choice, choiceIndex) => React.createElement(Text, { key: String(choice.value), color: choiceIndex === index ? "cyan" : undefined },
-      `${choiceIndex === index ? "›" : " "} ${many ? (selected.has(choice.value) ? "◉" : "○") : " "} ${choice.label}${choice.hint ? ` — ${choice.hint}` : ""}`
-    ))
+    ...renderedOptions.map((choice) => {
+      if (choice.group) return React.createElement(Text, { key: `group:${choice.label}`, bold: true, dimColor: true }, `  ${choice.label}`);
+      const choiceIndex = choices.indexOf(choice);
+      return React.createElement(Text, { key: String(choice.value), color: choiceIndex === index ? "cyan" : undefined },
+        `${choiceIndex === index ? "›" : " "} ${many ? (selected.has(choice.value) ? "◉" : "○") : " "} ${choice.label}${choice.hint ? ` — ${choice.hint}` : ""}`
+      );
+    })
   );
 }
 
@@ -162,11 +168,16 @@ export async function selectOne({ message, options, initialValue = null }) {
 }
 
 export async function selectMany({ message, options, initialValues = [] }) {
-  const choices = enabledOptions(normalizeOptions(options));
+  const normalized = normalizeOptions(options);
+  const choices = enabledOptions(normalized.filter((option) => !option.group));
   const enabledValues = new Set(choices.map((choice) => choice.value));
   const selected = new Set(initialValues.filter((value) => enabledValues.has(value)));
   for (const choice of choices) if (choice.selected) selected.add(choice.value);
-  return runPrompt(SelectPrompt, { message, options: choices.map((choice) => ({ ...choice, selected: selected.has(choice.value) })), many: true });
+  return runPrompt(SelectPrompt, {
+    message,
+    options: normalized.map((choice) => choice.group ? choice : { ...choice, selected: selected.has(choice.value) }),
+    many: true
+  });
 }
 
 export function printBox(title, lines = [], { progress = null } = {}) {
