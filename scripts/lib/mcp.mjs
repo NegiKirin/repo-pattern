@@ -120,26 +120,19 @@ export function applyMcpValues(mcpServers, values = {}) {
   return replacePlaceholders(mcpServers, safeValues);
 }
 
-export async function readMcpConfig({ sourceRoot, profile = "web", mcpServers: selectedServers = null }) {
-  const profileDir = path.join(sourceRoot, "mcp", "profiles");
-  const profileData = selectedServers ? null : await readJson(path.join(profileDir, `${profile}.json`));
-  const profileServers = selectedServers || profileData?.servers;
-  if (!profileServers) {
-    const profiles = (await fs.readdir(profileDir)).filter((name) => name.endsWith(".json")).map((name) => path.basename(name, ".json")).sort();
-    throw new Error(`MCP profile not found: ${profile}. Available profiles: ${profiles.join(", ")}`);
-  }
-  if (profile === "custom" && profileServers.length === 0) throw new Error("Custom MCP profile requires at least one server.");
+export async function readMcpConfig({ sourceRoot, mcpServers: selectedServers = [] }) {
+  const availableServers = await listAvailableMcpServers(sourceRoot);
+  const enabledServers = [...new Set(selectedServers || [])];
+  const invalid = enabledServers.filter((name) => !availableServers.includes(name));
+  if (invalid.length > 0) throw new Error(`Unknown MCP server(s): ${invalid.join(", ")}. Available: ${availableServers.join(", ")}`);
 
   const mcpServers = {};
-
-  for (const name of profileServers) {
-    const serverPath = path.join(sourceRoot, "mcp", "servers", `${name}.json`);
-    if (!exists(serverPath)) throw new Error(`MCP server definition not found: ${name}`);
-    const serverData = await readJson(serverPath);
+  for (const name of enabledServers) {
+    const serverData = await readJson(path.join(sourceRoot, "mcp", "servers", `${name}.json`));
     Object.assign(mcpServers, serverData);
   }
 
-  return { profileServers, mcpServers };
+  return { enabledServers, mcpServers };
 }
 
 export async function collectMcpValues(mcpServers, { yes = false, values = {} } = {}) {
@@ -200,11 +193,11 @@ async function syncEnabledMcpServers(target, servers, { dryRun = false, silent =
   await writeJson(settingsPath, settings, { dryRun, silent });
 }
 
-export async function generateMcp({ sourceRoot, target, profile = "web", mcpServers: selectedServers = null, mcpValues = {}, yes = false, dryRun = false, progress = null, silent = false }) {
+export async function generateMcp({ sourceRoot, target, mcpServers: selectedServers = [], mcpValues = {}, yes = false, dryRun = false, progress = null, silent = false }) {
   const operation = progress?.beginOperation?.({ id: "mcp-generation", label: "Generating MCP workspace", totalUnits: 4, unitLabel: "items", weight: 1 });
   let completed = 0;
   const advance = (detail) => operation?.update({ completedUnits: ++completed, totalUnits: 4, detail });
-  const { profileServers, mcpServers } = await readMcpConfig({ sourceRoot, profile, mcpServers: selectedServers });
+  const { enabledServers, mcpServers } = await readMcpConfig({ sourceRoot, mcpServers: selectedServers });
   if (isTracked(target, ".mcp.json")) throw new Error(".mcp.json is tracked. Untrack it before generating MCP config with local values.");
   if (isTracked(target, ".claude/settings.json")) throw new Error(".claude/settings.json is tracked. Untrack it before enabling MCP servers.");
   const values = await collectMcpValues(mcpServers, { yes: yes || silent, values: mcpValues });
@@ -216,17 +209,19 @@ export async function generateMcp({ sourceRoot, target, profile = "web", mcpServ
     await appendGitignoreLine(target, ".mcp.json", { dryRun, silent });
     advance("Writing .mcp.json");
 
-    await syncEnabledMcpServers(target, profileServers, { dryRun, silent });
+    await syncEnabledMcpServers(target, enabledServers, { dryRun, silent });
     advance("Enabling MCP servers");
 
     await ensureRepoPatternGitignore(target, { dryRun, silent });
     advance("Writing workspace state");
     const lockPath = repoLockPath(target);
     const lock = await readRepoLock(target, {});
-    lock.mcp = lock.mcp || {};
-    lock.mcp.profile = profile;
-    lock.mcp.enabledServers = profileServers;
-    lock.mcp.generatedAt = new Date().toISOString();
+    const { profile: _profile, ...mcp } = lock.mcp || {};
+    lock.mcp = {
+      ...mcp,
+      enabledServers,
+      generatedAt: new Date().toISOString()
+    };
     await writeJson(lockPath, lock, { dryRun, silent });
     advance("Writing setup lock");
     operation?.complete({ detail: dryRun ? "preview" : "completed" });
@@ -238,9 +233,8 @@ export async function generateMcp({ sourceRoot, target, profile = "web", mcpServ
   const missingValues = warnMissingMcpValues(mcpServers, values, { progress, silent });
   if (!silent) {
     printSummary("MCP generated", [
-      ["Profile", profile],
       ["Enabled servers", Object.keys(mcpServers).join(", ")],
-      ["Claude enabled", profileServers.join(", ")]
+      ["Claude enabled", enabledServers.join(", ")]
     ], { progress });
   }
   return { missingValues, ...(missingValues.length > 0 ? { warnings: [`MCP values pending: ${missingValues.join(", ")}`] } : {}) };

@@ -74,23 +74,24 @@ function workflowName(setupPipeline) {
   }[setupPipeline];
 }
 
-async function repoPatternConfig(sourceRoot, profile, setupPipeline) {
+async function repoPatternConfig(sourceRoot, setupPipeline) {
   const template = await readJson(path.join(sourceRoot, ".repo-pattern.example.json"), {});
-  const { ecc, ...base } = template;
+  const { ecc, mcp: templateMcp = {}, ...base } = template;
+  const { profile: _profile, ...mcp } = templateMcp;
   return {
     ...base,
     workflow: workflowName(setupPipeline),
     ...(usesEcc(setupPipeline) ? { ecc } : {}),
     mode: "target",
     mcp: {
-      ...(template.mcp || {}),
-      profile,
+      ...mcp,
       generated: true
     }
   };
 }
 
-function lockConfig(target, profile, setupPipeline, lock = {}, pipelineStatus = {}, planTuneHooks = false) {
+function lockConfig(target, setupPipeline, lock = {}, pipelineStatus = {}, planTuneHooks = false) {
+  const { profile: _profile, ...mcp } = lock.mcp || {};
   const status = typeof pipelineStatus === "string" ? { ecc: pipelineStatus, gstack: pipelineStatus } : pipelineStatus;
   const eccStatus = status.ecc || "not-run";
   const gstack = status.gstack || { status: "not-run" };
@@ -127,8 +128,7 @@ function lockConfig(target, profile, setupPipeline, lock = {}, pipelineStatus = 
       }
     } : {}),
     mcp: {
-      ...(lock.mcp || {}),
-      profile,
+      ...mcp,
       generatedAt: null
     }
   };
@@ -311,7 +311,7 @@ async function writeLocalSettings({ sourceRoot, target, localSettingsEnv = {}, e
   await appendGitignoreLine(target, ".claude/", { dryRun, silent });
 }
 
-export async function provisionProject({ sourceRoot, target, profile = "web", setupPipeline = "ecc", planTuneHooks = false, mcpServers = null, mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, effortLevel = "medium", attributionConfig = { mode: "off" }, permissionConfig = { bypass: "deny" }, ruleMode = "auto", rules = null, applyRules = null, optionalSkills = [], interactiveSetup = false, renderProgress = null, onBeforeSuccessSummary = null }) {
+export async function provisionProject({ sourceRoot, target, setupPipeline = "ecc", planTuneHooks = false, mcpServers = [], mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, effortLevel = "medium", attributionConfig = { mode: "off" }, permissionConfig = { bypass: "deny" }, ruleMode = "auto", rules = null, applyRules = null, optionalSkills = [], interactiveSetup = false, renderProgress = null, onBeforeSuccessSummary = null }) {
   if (!SETUP_PIPELINES.includes(setupPipeline)) throw new Error(`Unknown setup pipeline: ${setupPipeline}. Available: ${SETUP_PIPELINES.join(", ")}`);
   const shouldApplyRules = applyRules ?? usesEcc(setupPipeline);
   if (planTuneHooks && !usesGstack(setupPipeline)) throw new Error("--with-plan-tune-hooks requires --setup-pipeline gstack or both.");
@@ -406,11 +406,11 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
     advanceWorkspace("Writing local settings");
     await ensureRepoPatternGitignore(target, { dryRun, silent: interactiveSetup });
     advanceWorkspace("Writing workspace state");
-    mcpResult = await generateMcp({ sourceRoot, target, profile, mcpServers, mcpValues, dryRun, progress, silent: interactiveSetup });
+    mcpResult = await generateMcp({ sourceRoot, target, mcpServers, mcpValues, dryRun, progress, silent: interactiveSetup });
     if (mcpResult.warnings) setupWarnings.push(...mcpResult.warnings);
     workspace?.complete({ detail: dryRun ? "preview" : "completed" });
     eccStatus = usesEcc(setupPipeline) ? await setupEcc({ sourceRoot, target, dryRun, configurePlugin: false, silent: interactiveSetup }) : null;
-    await writePrivateJson(repoConfigPath(target), await repoPatternConfig(sourceRoot, profile, setupPipeline), {
+    await writePrivateJson(repoConfigPath(target), await repoPatternConfig(sourceRoot, setupPipeline), {
       dryRun,
       label: ".repo-pattern/.repo-pattern.json",
       parentLabel: ".repo-pattern",
@@ -471,7 +471,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
       label: ".repo-pattern/.repo-pattern.lock.json",
       parentLabel: ".repo-pattern"
     });
-    await writePrivateJson(lockPath, lockConfig(target, profile, setupPipeline, currentLock, { ecc: eccStatus, gstack: gstackStatus }, planTuneHooks), {
+    await writePrivateJson(lockPath, lockConfig(target, setupPipeline, currentLock, { ecc: eccStatus, gstack: gstackStatus }, planTuneHooks), {
       dryRun,
       label: ".repo-pattern/.repo-pattern.lock.json",
       parentLabel: ".repo-pattern",
@@ -495,7 +495,7 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
     label: ".repo-pattern/.repo-pattern.lock.json",
     parentLabel: ".repo-pattern"
   });
-  await writePrivateJson(lockPath, lockConfig(target, profile, setupPipeline, currentLock, { ecc: eccStatus, gstack: gstackStatus }, planTuneHooks), {
+  await writePrivateJson(lockPath, lockConfig(target, setupPipeline, currentLock, { ecc: eccStatus, gstack: gstackStatus }, planTuneHooks), {
     dryRun,
     label: ".repo-pattern/.repo-pattern.lock.json",
     parentLabel: ".repo-pattern",
@@ -526,7 +526,6 @@ export async function provisionProject({ sourceRoot, target, profile = "web", se
     ["Setup pipeline", setupPipeline],
     ["Pipeline scope", setupPipelineScope(setupPipeline)],
     ...(usesGstack(setupPipeline) ? [["gstack", "installed at .claude/skills/gstack"], ["Plan-tune hooks", planTuneHooks ? "installed in .claude/settings.json" : "not installed"]] : []),
-    ["Profile", profile],
     [dryRun ? "Would write" : "Written", `CLAUDE.md (if missing), .claude/, .mcp.json, .repo-pattern/.repo-pattern.json, .repo-pattern/.repo-pattern.lock.json${optionalSkills.length ? ", optional skill/plugin config" : ""}`],
     ["Doctor", dryRun ? "skipped (dry-run)" : style("success", "passed")],
     ["Next", next]

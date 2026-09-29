@@ -1,0 +1,7 @@
+{
+  "shadcn-studio": {
+    "command": "npx",
+    "args": ["-y", "shadcn-studio-mcp"],
+    "description": "shadcn/ui Studio component design and generation"
+  }
+}

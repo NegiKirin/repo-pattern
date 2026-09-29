@@ -91,7 +91,7 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
     const actualMcpServers = settings.enabledMcpjsonServers || [];
     check(
       JSON.stringify(actualMcpServers) === JSON.stringify(expectedMcpServers),
-      ".claude/settings.json enabledMcpjsonServers matches MCP profile"
+      ".claude/settings.json enabledMcpjsonServers matches selected MCP servers"
     );
   }
   const appliedRules = lock.ecc?.appliedRules || [];

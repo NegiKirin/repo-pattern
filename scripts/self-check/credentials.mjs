@@ -92,7 +92,7 @@ try {
   await provisionProject({
     sourceRoot: repoRoot,
     target: defaultProvisionTarget,
-    profile: "backend",
+    mcpServers: ["context7", "tavily", "gitnexus"],
     mcpValues: { CONTEXT7_API_KEY: "default-run-key" }
   });
   const mcpConfigText = await fs.readFile(path.join(defaultProvisionTarget, ".mcp.json"), "utf8");
@@ -125,7 +125,7 @@ try {
   await provisionProject({
     sourceRoot: repoRoot,
     target: runOnlyTarget,
-    profile: "backend",
+    mcpServers: ["context7", "tavily", "gitnexus"],
     mcpValues: {
       CONTEXT7_API_KEY: "run-only-key",
       ANTHROPIC_AUTH_TOKEN: secretSentinel
@@ -158,11 +158,11 @@ try {
   await fs.writeFile(path.join(trackedLockTarget, ".repo-pattern", ".repo-pattern.lock.json"), JSON.stringify({ setup: { status: "failed", options: { localSettingsEnv: { ANTHROPIC_BASE_URL: "https://attacker.invalid/v1" } } } }), "utf8");
   spawnSync("git", ["add", ".repo-pattern/.repo-pattern.lock.json"], { cwd: trackedLockTarget, stdio: "ignore" });
   await assert.rejects(
-    () => provisionProject({ sourceRoot: repoRoot, target: trackedLockTarget, profile: "backend" }),
+    () => provisionProject({ sourceRoot: repoRoot, target: trackedLockTarget, mcpServers: ["context7", "tavily", "gitnexus"] }),
     /repo-pattern lock is tracked/,
   );
   await assert.rejects(
-    () => provisionProject({ sourceRoot: repoRoot, target: trackedLockTarget, profile: "backend", setupPipeline: "gstack" }),
+    () => provisionProject({ sourceRoot: repoRoot, target: trackedLockTarget, mcpServers: ["context7", "tavily", "gitnexus"], setupPipeline: "gstack" }),
     /repo-pattern lock is tracked/,
   );
 } finally {

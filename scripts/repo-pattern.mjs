@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import packageJson from "../package.json" with { type: "json" };
 import { auditProject, printAudit } from "./lib/audit.mjs";
 import { cleanupProject } from "./lib/cleanup.mjs";
-import { generateMcp, readGeneratedMcpValues } from "./lib/mcp.mjs";
+import { generateMcp, listAvailableMcpServers, readGeneratedMcpValues } from "./lib/mcp.mjs";
 import { doctorProject } from "./lib/doctor.mjs";
 import { applyEccRules } from "./lib/rules.mjs";
 import { setupProject } from "./lib/setup.mjs";
@@ -15,6 +15,7 @@ const __dirname = path.dirname(__filename);
 const sourceRoot = path.resolve(__dirname, "..");
 const optionalSkillNames = OPTIONAL_SKILLS.map((skill) => skill.value).join(", ");
 const setupPipelineNames = ["ecc", "gstack", "both", "none"];
+const DEFAULT_MCP_SERVERS = ["context7", "tavily", "gitnexus"];
 
 function requiredOptionValue(rest, index, arg) {
   const value = rest[index + 1];
@@ -25,7 +26,7 @@ function requiredOptionValue(rest, index, arg) {
   return value;
 }
 
-function parseArgs(argv) {
+async function parseArgs(argv) {
   let [command, ...rest] = argv;
   if (command === "-h" || command === "--help") {
     command = "help";
@@ -37,7 +38,7 @@ function parseArgs(argv) {
   const options = {
     command: command || "help",
     target: ".",
-    profile: null,
+    mcpServers: [],
     setupPipeline: "ecc",
     planTuneHooks: false,
     dryRun: false,
@@ -51,7 +52,7 @@ function parseArgs(argv) {
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
     if (arg === "--target") options.target = requiredOptionValue(rest, i++, arg);
-    else if (arg === "--profile") options.profile = requiredOptionValue(rest, i++, arg);
+    else if (arg === "--mcp") options.mcpServers.push(requiredOptionValue(rest, i++, arg));
     else if (arg === "--setup-pipeline") options.setupPipeline = requiredOptionValue(rest, i++, arg);
     else if (arg === "--with-plan-tune-hooks") options.planTuneHooks = true;
     else if (arg === "--dry-run") options.dryRun = true;
@@ -78,6 +79,8 @@ function parseArgs(argv) {
     process.exit(2);
   }
 
+  options.mcpServers = [...new Set(options.mcpServers)];
+
   const invalidSkills = invalidOptionalSkills(options.optionalSkills);
   if (invalidSkills.length > 0) {
     console.error(`Unknown optional skill(s): ${invalidSkills.join(", ")}. Available: ${optionalSkillNames}`);
@@ -86,6 +89,13 @@ function parseArgs(argv) {
 
   if (options.planTuneHooks && !["gstack", "both"].includes(options.setupPipeline)) {
     console.error("--with-plan-tune-hooks requires --setup-pipeline gstack or both.");
+    process.exit(2);
+  }
+
+  const availableMcpServers = await listAvailableMcpServers(sourceRoot);
+  const invalidMcpServers = options.mcpServers.filter((name) => !availableMcpServers.includes(name));
+  if (invalidMcpServers.length > 0) {
+    console.error(`Unknown MCP server(s): ${invalidMcpServers.join(", ")}. Available: ${availableMcpServers.join(", ")}`);
     process.exit(2);
   }
 
@@ -100,19 +110,19 @@ Usage:
   repo-pattern help
   repo-pattern version  # also: -V, --version
   repo-pattern setup
-  repo-pattern setup --profile web --setup-pipeline ecc --yes
-  repo-pattern setup --profile web --setup-pipeline gstack --yes
-  repo-pattern setup --profile web --setup-pipeline gstack --with-plan-tune-hooks --yes
-  repo-pattern setup --profile web --setup-pipeline both --yes
-  repo-pattern setup --profile web --setup-pipeline none --yes
-  repo-pattern setup --profile web --migrate --yes
+  repo-pattern setup --mcp context7 --mcp tavily --mcp gitnexus --setup-pipeline ecc --yes
+  repo-pattern setup --mcp context7 --mcp tavily --setup-pipeline gstack --yes
+  repo-pattern setup --mcp context7 --mcp tavily --setup-pipeline gstack --with-plan-tune-hooks --yes
+  repo-pattern setup --mcp context7 --mcp tavily --setup-pipeline both --yes
+  repo-pattern setup --mcp context7 --mcp tavily --setup-pipeline none --yes
+  repo-pattern setup --mcp context7 --mcp tavily --migrate --yes
   repo-pattern setup --with-skill taste --yes
   repo-pattern setup --with-skill ui-ux-pro-max --yes  # requires Python 3.x
   repo-pattern setup --with-skill nextjs-pattern --yes
   repo-pattern setup --with-skills nextjs-pattern,fastapi-pattern --yes
 
 Advanced:
-  repo-pattern mcp --profile web
+  repo-pattern mcp --mcp context7 --mcp tavily
   repo-pattern rules
   repo-pattern audit
   repo-pattern doctor
@@ -120,7 +130,8 @@ Advanced:
 
 Options:
   --target <path>                  Target project path. Default: .
-  --profile <name>                 MCP profile for scriptable commands. Setup detects web projects; otherwise backend.
+  --mcp <name>                     Enable an MCP server. Repeat for multiple servers.
+                                  Defaults to context7, tavily, gitnexus with --yes.
   --setup-pipeline <ecc|gstack|both|none>
                                   Setup pipeline. Default: ecc
                                   ecc: project-scoped ECC
@@ -144,7 +155,7 @@ Setup UI:
 }
 
 async function main() {
-  const options = parseArgs(process.argv.slice(2));
+  const options = await parseArgs(process.argv.slice(2));
 
   try {
     switch (options.command) {
@@ -166,7 +177,7 @@ async function main() {
         await cleanupProject({ sourceRoot, ...options });
         break;
       case "mcp":
-        await generateMcp({ sourceRoot, target: options.target, profile: options.profile || "web", mcpValues: await readGeneratedMcpValues(options.target), yes: options.yes, dryRun: options.dryRun });
+        await generateMcp({ sourceRoot, target: options.target, mcpServers: options.mcpServers.length > 0 ? options.mcpServers : DEFAULT_MCP_SERVERS, mcpValues: await readGeneratedMcpValues(options.target), yes: options.yes, dryRun: options.dryRun });
         break;
       case "rules":
         await applyEccRules({ target: options.target, dryRun: options.dryRun });

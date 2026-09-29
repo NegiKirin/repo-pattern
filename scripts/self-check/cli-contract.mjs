@@ -145,21 +145,12 @@ assert.equal(result.status, 0);
 assert.match(result.stdout, /Target\s+.*repo-pattern/);
 
 result = runCli(["mcp", "--profile", "minimal", "--yes", "--dry-run"]);
-assert.equal(result.status, 1);
-assert.match(result.stderr, /MCP profile not found: minimal\. Available profiles: backend, full, research, web/);
+assert.equal(result.status, 2);
+assert.match(result.stderr, /Unknown argument: --profile/);
 
-const invalidProfileTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-invalid-profile-"));
-try {
-  result = runCli(["setup", "--target", invalidProfileTarget, "--profile", "minimal", "--setup-pipeline", "none", "--yes"]);
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /MCP profile not found: minimal\. Available profiles: backend, full, research, web/);
-} finally {
-  await fs.rm(invalidProfileTarget, { recursive: true, force: true });
-}
-
-result = runCli(["mcp", "--profile", "nope", "--yes"]);
-assert.equal(result.status, 1);
-assert.match(result.stderr, /MCP profile not found: nope\. Available profiles: backend, full, research, web/);
+result = runCli(["mcp", "--mcp", "nope", "--yes"]);
+assert.equal(result.status, 2);
+assert.match(result.stderr, /Unknown MCP server\(s\): nope\. Available: .*context7.*shadcn-studio/);
 
 const mcpReuseTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-mcp-reuse-"));
 try {
@@ -175,7 +166,7 @@ try {
   await fs.writeFile(path.join(mcpReuseTarget, ".claude", "settings.json"), JSON.stringify({
     enabledMcpjsonServers: ["filesystem", "sequential-thinking", "context7"]
   }), "utf8");
-  result = runCli(["mcp", "--target", mcpReuseTarget, "--profile", "research", "--yes"]);
+  result = runCli(["mcp", "--target", mcpReuseTarget, "--mcp", "context7", "--mcp", "tavily", "--yes"]);
   assert.equal(result.status, 0, result.stderr);
   const mcpConfig = JSON.parse(await fs.readFile(path.join(mcpReuseTarget, ".mcp.json"), "utf8"));
   const settings = JSON.parse(await fs.readFile(path.join(mcpReuseTarget, ".claude", "settings.json"), "utf8"));
@@ -195,7 +186,7 @@ try {
   }), "utf8");
   const eccFixture = await writeEccGitFixture(setupReuseTarget);
   assert.equal(hasGitUpstream(eccFixture), false);
-  result = runCli(["setup", "--target", setupReuseTarget, "--profile", "backend", "--setup-pipeline", "ecc", "--yes"]);
+  result = runCli(["setup", "--target", setupReuseTarget, "--mcp", "context7", "--mcp", "tavily", "--mcp", "gitnexus", "--setup-pipeline", "ecc", "--yes"]);
   assert.equal(result.status, 0, result.stderr);
   assert.doesNotMatch(`${result.stdout}${result.stderr}`, /ECC cache exists but git pull failed/);
   assert.match(await fs.readFile(path.join(setupReuseTarget, ".mcp.json"), "utf8"), /persisted-setup-key/);
@@ -206,7 +197,7 @@ try {
 
 const gstackSetupTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-setup-"));
 try {
-  result = runCli(["setup", "--target", gstackSetupTarget, "--profile", "backend", "--setup-pipeline", "gstack", "--yes", "--dry-run"]);
+  result = runCli(["setup", "--target", gstackSetupTarget, "--mcp", "context7", "--mcp", "tavily", "--mcp", "gitnexus", "--setup-pipeline", "gstack", "--yes", "--dry-run"]);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /git clone --single-branch --depth 1|copy .*\.claude\/skills\/gstack/);
   assert.match(result.stdout, /write gstack skill wrapper/);
@@ -219,7 +210,7 @@ try {
 
 const gstackHooksSetupTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-hooks-setup-"));
 try {
-  result = runCli(["setup", "--target", gstackHooksSetupTarget, "--profile", "backend", "--setup-pipeline", "gstack", "--with-plan-tune-hooks", "--yes", "--dry-run"]);
+  result = runCli(["setup", "--target", gstackHooksSetupTarget, "--mcp", "context7", "--mcp", "tavily", "--mcp", "gitnexus", "--setup-pipeline", "gstack", "--with-plan-tune-hooks", "--yes", "--dry-run"]);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Plan-tune hooks\s+installed in \.claude\/settings\.json/);
   assert.doesNotMatch(result.stdout, /\.\/setup|~\/\.claude\/settings\.json/);
@@ -250,7 +241,7 @@ try {
     () => generateMcp({
       sourceRoot: repoRoot,
       target: mcpSymlinkTarget,
-      profile: "backend",
+      mcpServers: ["context7", "tavily", "gitnexus"],
       mcpValues: { CONTEXT7_API_KEY: "mcp-symlink-key" },
       yes: true
     }),

@@ -19,7 +19,6 @@
     "rulesScope": "project"
   },
   "mcp": {
-    "profile": "web",
     "generated": true
   }
 }

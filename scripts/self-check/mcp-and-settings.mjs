@@ -136,7 +136,7 @@ assert.deepEqual(applyPermissionSettings({ permissions: { defaultMode: "bypassPe
 assert.deepEqual(setupRetryOptions({
   action: "setup",
   setupPipeline: "gstack",
-  mcpConfig: { profile: "web", mcpServers: null },
+  mcpConfig: { mcpServers: ["context7"] },
   mcpValues: {
     CONTEXT7_API_KEY: "secret",
     ANTHROPIC_AUTH_TOKEN: secretSentinel
@@ -157,8 +157,7 @@ assert.deepEqual(setupRetryOptions({
   action: "setup",
   setupPipeline: "gstack",
   planTuneHooks: false,
-  profile: "web",
-  mcpServers: null,
+  mcpServers: ["context7"],
   mcpValueNames: ["CONTEXT7_API_KEY"],
   migrate: false,
   applyRules: false,
@@ -364,7 +363,7 @@ try {
   await provisionProject({
     sourceRoot: repoRoot,
     target: mixedSkillTarget,
-    profile: "backend",
+    mcpServers: ["context7", "tavily", "gitnexus"],
     setupPipeline: "none",
     applyRules: false
   });

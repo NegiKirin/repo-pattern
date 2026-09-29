@@ -113,13 +113,13 @@ export async function runGeneratedAttributionHookChecks(repoRoot) {
     } }), "utf8");
     await fs.mkdir(path.join(target, ".repo-pattern"), { recursive: true });
     await fs.writeFile(path.join(target, ".repo-pattern", ".repo-pattern.json"), JSON.stringify({ workflow: "none", runtime: { localSkills: false, localCommands: false, localHooks: false, localScripts: false, localRules: false } }), "utf8");
-    await provisionProject({ sourceRoot: repoRoot, target, profile: "backend", setupPipeline: "none", applyRules: false });
+    await provisionProject({ sourceRoot: repoRoot, target, mcpServers: ["context7", "tavily", "gitnexus"], setupPipeline: "none", applyRules: false });
     let settings = JSON.parse(await fs.readFile(path.join(target, ".claude", "settings.json"), "utf8"));
     assert.equal(settings.hooks.PreToolUse.filter((entry) => entry._repo_pattern_source === "generated-attribution-removal").length, 1);
     assert.equal(settings.hooks.PreToolUse.find((entry) => entry._repo_pattern_source === "generated-attribution-removal")._repo_pattern_attribution_mode, "off");
     assert.equal(settings.hooks.PreToolUse.length, 3);
     assert.equal(settings.hooks.PostToolUse[0].hooks[0].command, "post");
-    await provisionProject({ sourceRoot: repoRoot, target, profile: "backend", setupPipeline: "none", applyRules: false });
+    await provisionProject({ sourceRoot: repoRoot, target, mcpServers: ["context7", "tavily", "gitnexus"], setupPipeline: "none", applyRules: false });
     settings = JSON.parse(await fs.readFile(path.join(target, ".claude", "settings.json"), "utf8"));
     assert.equal(settings.hooks.PreToolUse.filter((entry) => entry._repo_pattern_source === "generated-attribution-removal").length, 1);
     settings.hooks.PreToolUse.push({ _repo_pattern_source: "generated-attribution-removal", hooks: [{ command: "duplicate" }] });

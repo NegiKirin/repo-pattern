@@ -47,7 +47,7 @@ export async function runInteractiveProvisionChecks(repoRoot) {
       await provisionProject({
         sourceRoot: repoRoot,
         target: successTarget,
-        profile: "backend",
+        mcpServers: ["context7", "tavily", "gitnexus"],
         setupPipeline: "none",
         dryRun: true,
         mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
@@ -78,7 +78,7 @@ export async function runInteractiveProvisionChecks(repoRoot) {
       await provisionProject({
         sourceRoot: repoRoot,
         target: pluginTarget,
-        profile: "backend",
+        mcpServers: ["context7", "tavily", "gitnexus"],
         setupPipeline: "none",
         optionalSkills: ["taste"],
         dryRun: true,
@@ -101,7 +101,7 @@ export async function runInteractiveProvisionChecks(repoRoot) {
       await provisionProject({
         sourceRoot: repoRoot,
         target: parityTarget,
-        profile: "backend",
+        mcpServers: ["context7", "tavily", "gitnexus"],
         setupPipeline: "both",
         optionalSkills: ["document-specialist"],
         dryRun: true,
@@ -132,7 +132,7 @@ export async function runInteractiveProvisionChecks(repoRoot) {
         await provisionProject({
           sourceRoot: repoRoot,
           target: asymmetricTarget,
-          profile: "backend",
+          mcpServers: ["context7", "tavily", "gitnexus"],
           setupPipeline: "none",
           dryRun: true,
           mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
@@ -154,7 +154,7 @@ export async function runInteractiveProvisionChecks(repoRoot) {
         () => provisionProject({
           sourceRoot: repoRoot,
           target: completionFailureTarget,
-          profile: "backend",
+          mcpServers: ["context7", "tavily", "gitnexus"],
           setupPipeline: "none",
           dryRun: true,
           mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
@@ -184,7 +184,7 @@ export async function runInteractiveProvisionChecks(repoRoot) {
       await provisionProject({
         sourceRoot: repoRoot,
         target: warningTarget,
-        profile: "backend",
+        mcpServers: ["context7", "tavily", "gitnexus"],
         setupPipeline: "none",
         dryRun: true,
         interactiveSetup: true
@@ -208,7 +208,7 @@ export async function runInteractiveProvisionChecks(repoRoot) {
           () => provisionProject({
             sourceRoot: repoRoot,
             target: gstackFailureTarget,
-            profile: "backend",
+            mcpServers: ["context7", "tavily", "gitnexus"],
             setupPipeline: "gstack",
             mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
             interactiveSetup: true
@@ -248,7 +248,7 @@ export async function runInteractiveProvisionChecks(repoRoot) {
         () => provisionProject({
           sourceRoot: repoRoot,
           target: failureTarget,
-          profile: "backend",
+          mcpServers: ["context7", "tavily", "gitnexus"],
           setupPipeline: "none",
           interactiveSetup: true,
           optionalSkills: ["nope"]

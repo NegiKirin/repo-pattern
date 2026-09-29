@@ -53,7 +53,7 @@ try {
     () => provisionProject({
       sourceRoot: repoRoot,
       target: provisionRollbackTarget,
-      profile: "backend",
+      mcpServers: ["context7", "tavily", "gitnexus"],
       setupPipeline: "none",
       applyRules: true,
       ruleMode: "manual",
@@ -102,7 +102,7 @@ try {
     () => provisionProject({
       sourceRoot: repoRoot,
       target: optionalSkillRollbackTarget,
-      profile: "backend",
+      mcpServers: ["context7", "tavily", "gitnexus"],
       setupPipeline: "none",
       optionalSkills: ["document-specialist"]
     }),
@@ -153,7 +153,7 @@ try {
       () => provisionProject({
         sourceRoot: repoRoot,
         target: failedGstackProvisionTarget,
-        profile: "backend",
+        mcpServers: ["context7", "tavily", "gitnexus"],
         setupPipeline: "both",
         localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: "replacement-token" }
       }),
@@ -243,7 +243,7 @@ try {
   await fs.writeFile(repoConfigOutside, "{}\n", "utf8");
   await fs.symlink(repoConfigOutside, path.join(symlinkWriteTarget, ".repo-pattern", ".repo-pattern.json"));
   await assert.rejects(
-    () => provisionProject({ sourceRoot: repoRoot, target: symlinkWriteTarget, profile: "backend", setupPipeline: "none" }),
+    () => provisionProject({ sourceRoot: repoRoot, target: symlinkWriteTarget, mcpServers: ["context7", "tavily", "gitnexus"], setupPipeline: "none" }),
     /repo-pattern\.json must not be a symlink/
   );
   assert.equal(await fs.readFile(repoConfigOutside, "utf8"), "{}\n");
@@ -279,7 +279,7 @@ try {
   await provisionProject({
     sourceRoot: repoRoot,
     target: bothProvisionTarget,
-    profile: "backend",
+    mcpServers: ["context7", "tavily", "gitnexus"],
     setupPipeline: "both",
     migrate: true,
     planTuneHooks: true,
@@ -317,7 +317,7 @@ try {
   await provisionProject({
     sourceRoot: repoRoot,
     target: noPipelineProvisionTarget,
-    profile: "backend",
+    mcpServers: ["context7", "tavily", "gitnexus"],
     setupPipeline: "none",
     localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: secretSentinel },
     effortLevel: "ultracode",
