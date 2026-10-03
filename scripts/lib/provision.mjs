@@ -12,6 +12,7 @@ import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, ensureRepoP
 import { printSummary, style } from "./prompt.mjs";
 import { createSetupProgress } from "./progress.mjs";
 import { applyOptionalSkills, OPTIONAL_SKILLS, reconcilePluginSkillSettings } from "./skills.mjs";
+import { installHerdrIntegration } from "./herdr.mjs";
 
 const TARGET_CLAUDE_MD = "";
 const BASIC_GITIGNORE_LINES = [
@@ -216,7 +217,7 @@ export function applyPermissionSettings(settings, permissionConfig = { bypass: "
 async function writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun, silent = false }) {
   const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.example.json"), {});
   const current = await readPrivateJson(path.join(target, ".claude", "settings.json"), {}, { label: ".claude/settings.json", parentLabel: ".claude" });
-  const settings = applyGeneratedAttributionHook(applyPermissionSettings(applyAttributionSetting({ ...template, hooks: current.hooks || template.hooks }, attributionConfig), permissionConfig), attributionConfig);
+  const settings = applyGeneratedAttributionHook(applyPermissionSettings(applyAttributionSetting({ ...template, ...current, hooks: current.hooks || template.hooks }, attributionConfig), permissionConfig), attributionConfig);
   await writePrivateJson(path.join(target, ".claude", "settings.json"), settings, {
     dryRun,
     label: ".claude/settings.json",
@@ -487,6 +488,9 @@ export async function provisionProject({ sourceRoot, target, setupPipeline = "ec
       progress,
       silent: interactiveSetup
     });
+    if (!audit.hasRepoPatternJson && audit.state !== "LEGACY_VENDOR" && optionalSkills.includes("herdr")) {
+      await installHerdrIntegration({ target, dryRun, silent: interactiveSetup });
+    }
     if (hasPluginOnlySkills) progress?.completeGroup?.("skills");
   } catch (error) {
     progress?.fail({ detail: "failed" });

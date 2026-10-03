@@ -74,3 +74,22 @@ Optional skills are not bundled with repo-pattern. When explicitly selected by t
 - Source: https://github.com/ogulcancelik/herdr/
 - License: AGPL-3.0-or-later or commercial
 - Copyright (c) 2025 Ogulcan Celik and contributors
+
+The optional skill retains its existing AGPL-3.0-or-later revision. Separately,
+repo-pattern vendors the unmodified Claude integration script (version 9) from
+revision `c5051933f812a07e8014cd11dde2e2caac3af84c`, whose upstream license is
+Apache-2.0:
+
+- Script: https://github.com/ogulcancelik/herdr/blob/c5051933f812a07e8014cd11dde2e2caac3af84c/src/integration/assets/claude/herdr-agent-state.sh
+- License: https://github.com/ogulcancelik/herdr/blob/c5051933f812a07e8014cd11dde2e2caac3af84c/LICENSE
+- Repository-owned copies: `scripts/vendor/herdr/herdr-agent-state.sh` and `scripts/vendor/herdr/LICENSE`.
+- Verified on 2026-10-03 against the authoritative upstream files; both copies are byte-identical. No root upstream `NOTICE` file exists at that revision.
+
+Fresh setup selecting Herdr copies the script to `.claude/hooks/herdr-agent-state.sh`
+and merges one `SessionStart` command into project `.claude/settings.json` using
+`$CLAUDE_PROJECT_DIR`. It does not run Herdr's installer, install the binary,
+modify user settings, or migrate existing projects. The runtime requires a POSIX
+shell and `python3`; missing Python, execution outside Herdr, subagent events,
+and unavailable sockets are harmless no-ops. The integration reports the main
+session through `pane.report_agent_session` only when Herdr supplies its environment.
+Dry-run previews the script copy and hook merge without writing either.
