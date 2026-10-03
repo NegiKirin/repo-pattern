@@ -42,6 +42,10 @@ export async function runGeneratedAttributionHookChecks(repoRoot) {
     await writeHookMode("off");
     for (const [command, expected] of [
       ["title\n🤖 Generated with Claude Code\nbody", "title\nbody"],
+      ["title\nGenerated with [Claude Code](https://claude.com/claude-code)\nbody", "title\nbody"],
+      ["title\r\nGenerated with Claude Code\r\nbody", "title\r\nbody"],
+      ["title\\nGenerated with [Claude Code](https://claude.com/claude-code)\\nbody", "title\\nbody"],
+      ["title Generated with [Claude Code](https://claude.com/claude-code)", "title Generated with [Claude Code](https://claude.com/claude-code)"],
       ["title\r\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\r\nbody", "title\r\nbody"],
       ["title\\n🤖 Generated with Claude Code\\nbody", "title\\nbody"],
       ["🤖 Generated with Claude Code\n", ""],
@@ -55,7 +59,7 @@ export async function runGeneratedAttributionHookChecks(repoRoot) {
       assert.equal(result.stdout, command === expected ? "" : `${JSON.stringify({ permissionDecision: "allow", updatedInput: { command: expected } })}\n`);
     }
     const prBody = path.join(hookTarget, "pr-body.md");
-    await fs.writeFile(prBody, "Summary\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n", "utf8");
+    await fs.writeFile(prBody, "Summary\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\nGenerated with [Claude Code](https://claude.com/claude-code)\n", "utf8");
     const prCommand = `gh pr create --body-file ${prBody}`;
     await fs.chmod(prBody, 0o600);
     assert.equal(runHook(JSON.stringify({ tool_name: "Bash", tool_input: { command: prCommand } })).stdout, "");

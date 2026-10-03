@@ -4,7 +4,7 @@ import path from "node:path";
 import process from "node:process";
 
 const GENERATED_ATTRIBUTION_HOOK_SOURCE = "generated-attribution-removal";
-const CLAUDE_ATTRIBUTION_LINE = /^(?:🤖 Generated with (?:Claude Code|\[Claude Code\]\(https:\/\/claude\.com\/claude-code\))|Co-Authored-By: Claude(?: [^<]+)? <noreply@anthropic\.com>)$/;
+const CLAUDE_ATTRIBUTION_LINE = /^(?:(?:🤖 )?Generated with (?:Claude Code|\[Claude Code\]\(https:\/\/claude\.com\/claude-code\))|Co-Authored-By: Claude(?: [^<]+)? <noreply@anthropic\.com>)$/;
 const MAX_ATTRIBUTION_FILE_BYTES = 1024 * 1024;
 
 async function attributionMode() {
