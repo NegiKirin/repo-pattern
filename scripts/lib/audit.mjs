@@ -21,7 +21,10 @@ async function hasOnlyGeneratedAttributionHookFile(target) {
   if (!exists(hooksDir)) return true;
   try {
     const entries = await fs.readdir(hooksDir, { withFileTypes: true });
-    return entries.length === 1 && entries[0].isFile() && entries[0].name === "remove-generated-attribution.mjs";
+    const config = await readRepoConfig(target, {});
+    const hasHerdr = expectedOptionalSkillDirs(config.optionalSkills || []).includes("herdr");
+    const allowed = ["remove-generated-attribution.mjs", ...(hasHerdr ? ["herdr-agent-state.sh"] : [])];
+    return entries.length > 0 && entries.every((entry) => entry.isFile() && allowed.includes(entry.name));
   } catch {
     return false;
   }

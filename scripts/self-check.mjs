@@ -20,6 +20,7 @@ import { runSetupWizardChecks } from "./self-check/setup-wizard.mjs";
 
 await runGeneratedAttributionHookChecks(new URL("..", import.meta.url).pathname);
 await runMcpAndSettingsChecks();
+await (await import("./self-check/herdr.mjs")).runHerdrChecks();
 await runMcpInputFieldsChecks();
 await runMcpServerChecks();
 await runEccRulesAndManifestChecks();
