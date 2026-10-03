@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.1.0] - 2026-10-03
+
+### Added
+
+- Upgrade project-local gstack installations with `repo-pattern upgrade-gstack`, preserving the previous installation when validation fails.
+
+### Fixed
+
+- Keep careful, guard, and freeze hooks and their shared state project-local across setup, repair, and upgrade, including project paths with spaces and apostrophes.
+- Reject missing or invalid safety dependencies before reporting setup or upgrade success, preserve foreign skills and unrelated hooks, and report incomplete rollback with a retained recovery snapshot.
+
 ## [1.0.1] - 2026-09-29
 
 ### Changed
