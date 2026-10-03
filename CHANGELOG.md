@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.0] - 2026-10-03
+
+### Added
+
+- Select Herdr during fresh setup to install its project-local session integration, without installing the Herdr binary or changing global Claude Code settings.
+- Preview the Herdr script and hook registration with dry-run. The integration reports main Claude sessions only and safely skips execution outside Herdr or when its socket is unavailable.
+
+### Fixed
+
+- Preserve unrelated project settings when generating shared Claude Code settings, and deduplicate Herdr session hooks without removing other hooks.
+
 ## [1.1.0] - 2026-10-03
 
 ### Added
