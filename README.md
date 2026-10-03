@@ -111,8 +111,6 @@ target-project/
     └── .repo-pattern.lock.json
 ```
 
-`.claude/settings.json` owns permissions, MCP approvals, hooks, and commit/PR attribution. Full setup reconciles repo-pattern-managed plugin settings, optional skills, and ECC rules without removing unrelated settings or third-party plugins.
-
 ## Safety defaults
 
 - `.claude/`, `.mcp.json`, and `.repo-pattern` state are generated locally and gitignored.

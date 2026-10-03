@@ -45,3 +45,42 @@ AGENTS.md
 Thumbs.db
 
 .gstack
+# OS
+Desktop.ini
+# Environment variables and secrets
+!.env.example
+!.env.*.example
+# Coding agents: generated or project-local configuration
+/CLAUDE.md
+.playwright-mcp/
+.gstack/
+.impeccable/
+# Local databases
+*.sqlite
+*.sqlite3
+*.db
+# Node.js
+dist/
+build/
+.next/
+.nuxt/
+.vite/
+.turbo/
+*.tsbuildinfo
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+# Java / JVM
+.gradle/
+target/
+*.class
+# Go
+bin/
+*.test
+coverage.out
+# Rust
