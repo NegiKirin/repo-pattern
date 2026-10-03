@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { appendGitignoreLine, copyRecursiveWithProgress, ensureDir, exists, isTracked, readJson, removePath, writeJson, writePrivateJson } from "./fs-utils.mjs";
 import { runGitWithProgress } from "./git-progress.mjs";
+import { assertGstackSafety } from "./gstack-safety.mjs";
 import { printSummary } from "./prompt.mjs";
 
 const GSTACK_REPOSITORY = "https://github.com/garrytan/gstack.git";
@@ -123,6 +124,7 @@ function redactedGstackDiagnostic(error) {
     .join("\n");
   const diagnostics = [
     "gstack output: [redacted].",
+    ...(/^gstack safety skill ownership conflict: \.claude\/skills\//.test(error.message || "") ? ["gstack safety skill ownership conflict. Preserve the foreign skill; resolve ownership before rerunning setup."] : []),
     ...(Number.isInteger(error.status) ? [`Exit code: ${error.status}.`] : []),
     ...(/\b(?:bun)\b/i.test(output) ? ["Bun prerequisite failed."] : []),
     ...(/\b(?:git|clone|checkout)\b/i.test(output) ? ["Git checkout operation failed."] : []),
@@ -134,8 +136,13 @@ function redactedGstackDiagnostic(error) {
   return diagnostics.join("\n").slice(0, GSTACK_DIAGNOSTIC_MAX_CHARS);
 }
 
-function replaceGstackPaths(source, checkout, statePath) {
-  return source
+function replaceGstackPaths(source, checkout, statePath, safetyRewrite = true) {
+  const converted = safetyRewrite ? source
+    .replace(/^([\t ]*command:[\t ]*)"(bash )?(?:~|\$HOME)\/\.claude\/skills\/gstack\/((?:scripts|(?:careful|freeze)\/bin)\/check-(?:careful|freeze)\.sh)"[\t ]*$/gm,
+      (_, prefix, interpreter, script) => `${prefix}${JSON.stringify(`GSTACK_HOME=${shellQuote(statePath)} ${interpreter || ""}${shellQuote(path.join(checkout, script))}`)}`)
+    .replace(/(?:~|\$HOME)\/\.claude\/skills\/gstack\/bin\/gstack-paths(?=[)\s])/g,
+      `GSTACK_HOME=${shellQuote(statePath)} ${shellQuote(path.join(checkout, "bin", "gstack-paths"))}`) : source;
+  return converted
     .replaceAll("~/.claude/skills/gstack", checkout)
     .replaceAll("$HOME/.claude/skills/gstack", checkout)
     .replaceAll("${GSTACK_HOME:-$HOME/.gstack}", statePath)
@@ -157,7 +164,7 @@ function replaceGstackPaths(source, checkout, statePath) {
 }
 
 function shellQuote(value) {
-  return `'${String(value).replaceAll("'", `"'"'`)}'`;
+  return `'${String(value).replaceAll("'", `'"'"'`)}'`;
 }
 
 function isInside(root, candidate) {
@@ -256,6 +263,7 @@ async function snapshotGstackArtifacts(target, wrappers, assets, sidecars, state
     throw error;
   }
   return {
+    snapshotRoot,
     async rollback() {
       for (const entry of [...entries].reverse()) {
         await assertNoSymlinkPath(target, path.relative(target, entry.destination));
@@ -277,7 +285,13 @@ async function expectedGstackWrappers(target, checkout, statePath) {
   const skillDirs = await skillDirectories(checkout);
   return Promise.all(skillDirs.map(async ({ source: sourceDir, relative }) => {
     const wrapper = path.relative(target, path.join(skillsRoot, relative || "_gstack-command"));
-    const source = await fs.readFile(path.join(sourceDir, "SKILL.md"), "utf8");
+    let source = await fs.readFile(path.join(sourceDir, "SKILL.md"), "utf8");
+    if (relative === "gstack-upgrade") {
+      const frontmatter = source.match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/)?.[0];
+      if (!frontmatter) throw new Error("gstack upgrade frontmatter is invalid.");
+      const body = await fs.readFile(new URL("./gstack-upgrade.md", import.meta.url), "utf8");
+      source = `${frontmatter}\n${body.replaceAll("{{TARGET}}", shellQuote(target))}`;
+    }
     return { wrapper, content: wrapperContent(source, checkout, statePath) };
   })).then((wrappers) => wrappers.sort((left, right) => left.wrapper.localeCompare(right.wrapper)));
 }
@@ -326,7 +340,7 @@ async function expectedGstackSidecars(checkout) {
   }));
 }
 
-export async function bootstrapGstack({ target, checkout = gstackCheckoutPath(target), statePath = gstackStatePath(target), dryRun = false, progress = null, silent = false }) {
+export async function bootstrapGstack({ target, checkout = gstackCheckoutPath(target), statePath = gstackStatePath(target), previousWrappers = [], previousAssets = [], previousSidecars = [], dryRun = false, progress = null, silent = false }) {
   await assertNoSymlinkPath(target, path.relative(target, checkout));
   await assertNoSymlinkPath(target, path.relative(target, statePath));
   if (dryRun) {
@@ -336,6 +350,20 @@ export async function bootstrapGstack({ target, checkout = gstackCheckoutPath(ta
     return [];
   }
   const wrappers = await expectedGstackWrappers(target, checkout, statePath);
+  for (const { wrapper, content } of wrappers) {
+    const skill = path.relative(path.join(".claude", "skills"), wrapper);
+    const file = path.join(target, wrapper, "SKILL.md");
+    await assertNoSymlinkPath(target, path.relative(target, file));
+    try {
+      const actual = await fs.readFile(file, "utf8");
+      const upstream = await fs.readFile(path.join(checkout, skill === "_gstack-command" ? "" : skill, "SKILL.md"), "utf8");
+      const legacy = replaceGstackPaths(upstream, checkout, statePath, false);
+      const previous = previousWrappers.find((entry) => entry.wrapper === wrapper)?.content;
+      if (actual !== content && actual !== upstream && actual !== legacy && actual !== previous) throw new Error(`gstack safety skill ownership conflict: ${wrapper}`);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
   const assets = await expectedGstackAssets(target, checkout, statePath);
   const sidecars = await expectedGstackSidecars(checkout);
   for (const { wrapper } of wrappers) await assertNoSymlinkPath(target, wrapper);
@@ -346,6 +374,18 @@ export async function bootstrapGstack({ target, checkout = gstackCheckoutPath(ta
     ...assets.map(({ asset, content }) => ({ label: "Writing gstack assets", destination: path.join(target, ".claude", "skills", asset), content, kind: "asset" })),
     ...sidecars.map(({ sidecar, content }) => ({ label: "Writing gstack sidecars", destination: path.join(target, ".claude", "skills", sidecar), content, kind: "sidecar" }))
   ];
+  for (const item of work.filter(({ kind }) => kind !== "wrapper")) {
+    await assertNoSymlinkPath(target, path.relative(target, item.destination));
+    try {
+      const actual = await fs.readFile(item.destination, "utf8");
+      const previous = item.kind === "asset"
+        ? previousAssets.find(({ asset }) => path.join(target, ".claude", "skills", asset) === item.destination)?.content
+        : previousSidecars.find(({ sidecar }) => path.join(target, ".claude", "skills", sidecar) === item.destination)?.content;
+      if (actual !== item.content && actual !== previous) throw new Error(`gstack safety skill ownership conflict: ${path.relative(target, item.destination)}`);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
   const operation = progress?.beginOperation?.({ id: "gstack-bootstrap", label: "Bootstrapping gstack", totalUnits: work.length + 1, unitLabel: "items", weight: 2 });
   try {
     let completed = 0;
@@ -458,12 +498,13 @@ export async function resolveGstackCheckout({
   run: runCommand = run,
   copy = copyRecursiveWithProgress,
   clone = null,
+  upgrade = false,
   progress = null,
   silent = false
 }) {
   const localCheckout = gstackCheckoutPath(target);
   await assertNoSymlinkPath(target, path.relative(target, localCheckout));
-  if (await isValidGstackCheckout(localCheckout, { run: runCommand })) {
+  if (!upgrade && await isValidGstackCheckout(localCheckout, { run: runCommand })) {
     const operation = progress?.beginOperation?.({ id: "gstack-checkout", label: "Using gstack checkout", totalUnits: 1, weight: 2 });
     operation?.complete({ detail: "local checkout ready" });
     return {
@@ -473,7 +514,11 @@ export async function resolveGstackCheckout({
       async rollback() {}
     };
   }
-  const globalValid = await isValidGstackCheckout(globalCheckout, { run: runCommand });
+  if (upgrade && await exists(localCheckout)) {
+    const changes = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: localCheckout, encoding: "utf8" });
+    if (changes.trim()) throw new Error("gstack checkout has local changes. Preserve and resolve them before upgrading.");
+  }
+  const globalValid = !upgrade && await isValidGstackCheckout(globalCheckout, { run: runCommand });
   if (dryRun) {
     const operation = progress?.beginOperation?.({ id: "gstack-checkout", label: globalValid ? "Copying gstack checkout" : "Downloading gstack", totalUnits: 1, weight: 3 });
     if (!silent) console.log(`[dry-run] ${globalValid ? `copy ${globalCheckout} -> ${localCheckout}` : `git clone --single-branch --depth 1 ${GSTACK_REPOSITORY} ${localCheckout}`}`);
@@ -586,7 +631,7 @@ export function gstackEnvironment(bun, environment = process.env) {
   return { ...environment, PATH: `${path.dirname(bun)}${path.delimiter}${environment.PATH || ""}` };
 }
 
-export async function setupGstack({ target, dryRun = false, planTuneHooks = false, resolveCheckout = resolveGstackCheckout, progress = null, silent = false }) {
+export async function setupGstack({ target, dryRun = false, planTuneHooks = false, upgrade = false, resolveCheckout = resolveGstackCheckout, progress = null, silent = false }) {
   const checkout = gstackCheckoutPath(target);
   const statePath = gstackStatePath(target);
   let checkoutLease = null;
@@ -594,17 +639,23 @@ export async function setupGstack({ target, dryRun = false, planTuneHooks = fals
   try {
     if (!dryRun) ensureBun();
     const install = async () => {
-      const resolved = await resolveCheckout({ target, dryRun, progress, silent });
+      const previousWrappers = upgrade && !dryRun ? await expectedGstackWrappers(target, checkout, statePath) : [];
+      const previousAssets = upgrade && !dryRun ? await expectedGstackAssets(target, checkout, statePath) : [];
+      const previousSidecars = upgrade && !dryRun ? await expectedGstackSidecars(checkout) : [];
+      const resolved = await resolveCheckout({ target, dryRun, upgrade, progress, silent });
       checkoutLease = resolved;
       if (!dryRun) {
         const wrappers = await expectedGstackWrappers(target, checkout, statePath);
+        await assertGstackSafety({ checkout, wrappers, statePath });
         const assets = await expectedGstackAssets(target, checkout, statePath);
         const sidecars = await expectedGstackSidecars(checkout);
         transaction = await snapshotGstackArtifacts(target, wrappers, assets, sidecars, statePath);
       }
-      await bootstrapGstack({ target, checkout, statePath, dryRun, progress, silent });
+      await bootstrapGstack({ target, checkout, statePath, previousWrappers, previousAssets, previousSidecars, dryRun, progress, silent });
       await writePlanTuneHooks({ target, planTuneHooks, dryRun, progress, silent });
       if (!dryRun) {
+        const validation = await validateProjectGstack(target);
+        if (![validation.checkoutValid, validation.stateValid, validation.wrappersValid, validation.assetsValid, validation.sidecarsValid].every(Boolean)) throw new Error(`gstack ${upgrade ? "upgrade" : "setup"} validation failed.`);
         await checkoutLease.commit();
         try {
           await transaction.remove();
@@ -627,11 +678,13 @@ export async function setupGstack({ target, dryRun = false, planTuneHooks = fals
         rollbackErrors.push(`gstack artifact rollback failed: ${rollbackError.message}`);
         if (!silent) console.warn(`WARN: ${rollbackErrors.at(-1)}`);
       }
-      try {
-        await transaction.remove();
-      } catch (rollbackError) {
-        rollbackErrors.push(`gstack rollback snapshot cleanup failed: ${rollbackError.message}`);
-        if (!silent) console.warn(`WARN: ${rollbackErrors.at(-1)}`);
+      if (rollbackErrors.length === 0) {
+        try {
+          await transaction.remove();
+        } catch (rollbackError) {
+          rollbackErrors.push(`gstack rollback snapshot cleanup failed: ${rollbackError.message}`);
+          if (!silent) console.warn(`WARN: ${rollbackErrors.at(-1)}`);
+        }
       }
     }
     if (checkoutLease) {
@@ -651,7 +704,7 @@ export async function setupGstack({ target, dryRun = false, planTuneHooks = fals
       path: checkout,
       statePath,
       error: redactedGstackDiagnostic(error),
-      ...(rollbackErrors.length > 0 ? { rollbackErrors } : {})
+      ...(rollbackErrors.length > 0 ? { rollbackErrors, ...(transaction && rollbackErrors.some((message) => message.startsWith("gstack artifact rollback failed:")) ? { recoverySnapshot: transaction.snapshotRoot } : {}) } : {})
     };
   }
 }
@@ -716,6 +769,7 @@ export async function validateProjectGstack(target) {
         expectedGstackAssets(target, checkout, statePath),
         expectedGstackSidecars(checkout)
       ]);
+      await assertGstackSafety({ checkout, wrappers: expectedWrappers, statePath });
     } catch {
       stateValid = false;
     }
