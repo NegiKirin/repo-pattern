@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.1] - 2026-10-04
+
+### Fixed
+
+- Remove standalone generated Claude Code attribution even when the robot prefix is absent, while preserving inline text and configured attribution modes.
+
 ## [1.2.0] - 2026-10-03
 
 ### Added
