@@ -17,6 +17,7 @@ import { needsLocalSettingsPrompt, setupProject, setupRetryOptions } from "../li
 import { applyEccRules, buildAgentManifest, clearEccRules, formatEccCloneError, hasGitUpstream, validateAgentManifest } from "../lib/rules.mjs";
 import { applyOptionalSkills, applyPluginSkillSettings, expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills, OPTIONAL_SKILLS } from "../lib/skills.mjs";
 import { runGstackRollbackChecks } from "./gstack-rollback.mjs";
+import { installGstackSafetyFixture } from "./fixtures.mjs";
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.dirname(path.dirname(cliDir));
 const cliPath = path.join(cliDir, "..", "repo-pattern.mjs");
@@ -214,6 +215,7 @@ try {
   const globalMigrationCheckout = path.join(migrationHome, ".claude", "skills", "gstack");
   await fs.mkdir(path.join(globalMigrationCheckout, "review"), { recursive: true });
   await fs.writeFile(path.join(globalMigrationCheckout, "setup"), "#!/bin/sh\n", { mode: 0o755 });
+  await installGstackSafetyFixture(globalMigrationCheckout);
   await fs.writeFile(path.join(globalMigrationCheckout, "SKILL.md"), "Project-local gstack", "utf8");
   await fs.writeFile(path.join(globalMigrationCheckout, "review", "SKILL.md"), "Review", "utf8");
   for (const sidecar of GSTACK_REVIEW_SIDECARS) {
@@ -273,6 +275,7 @@ try {
   const checkout = gstackCheckoutPath(wrapperTarget);
   await fs.mkdir(path.join(checkout, "review"), { recursive: true });
   await fs.writeFile(path.join(checkout, "setup"), "#!/bin/sh\n", { mode: 0o755 });
+  await installGstackSafetyFixture(checkout);
   await fs.writeFile(path.join(checkout, "SKILL.md"), "Root ~/.claude/skills/gstack $HOME/.gstack gstack-config", "utf8");
   await fs.writeFile(path.join(checkout, "review", "SKILL.md"), "Review ~/.claude/skills/gstack $HOME/.claude.json $HOME/.claude/plans ~/.codex/plans ${HOME}/.gstack/projects", "utf8");
   for (const sidecar of GSTACK_REVIEW_SIDECARS) {
@@ -331,12 +334,7 @@ try {
   assert.equal(mismatchedCheckoutState.stateValid, false);
   assert.equal(mismatchedCheckoutState.wrappersValid, false);
   assert.equal(mismatchedCheckoutState.sidecarsValid, false);
-  await fs.writeFile(stateFile, JSON.stringify({
-    checkout: path.relative(wrapperTarget, checkout),
-    wrappers: state.wrappers,
-    sidecars: state.sidecars,
-    bootstrappedAt: new Date().toISOString()
-  }), "utf8");
+  await fs.writeFile(stateFile, JSON.stringify({ ...state, bootstrappedAt: new Date().toISOString() }), "utf8");
   const checklist = path.join(wrapperTarget, ".claude", "skills", "review", "checklist.md");
   const expectedChecklist = await fs.readFile(checklist, "utf8");
   await fs.writeFile(checklist, "drifted", "utf8");

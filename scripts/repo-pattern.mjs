@@ -6,6 +6,8 @@ import { auditProject, printAudit } from "./lib/audit.mjs";
 import { cleanupProject } from "./lib/cleanup.mjs";
 import { generateMcp, listAvailableMcpServers, readGeneratedMcpValues } from "./lib/mcp.mjs";
 import { doctorProject } from "./lib/doctor.mjs";
+import { setupGstack, validateProjectGstack } from "./lib/gstack.mjs";
+import { readJson } from "./lib/fs-utils.mjs";
 import { applyEccRules } from "./lib/rules.mjs";
 import { setupProject } from "./lib/setup.mjs";
 import { invalidOptionalSkills, OPTIONAL_SKILLS } from "./lib/skills.mjs";
@@ -126,6 +128,7 @@ Advanced:
   repo-pattern rules
   repo-pattern audit
   repo-pattern doctor
+  repo-pattern upgrade-gstack
   repo-pattern cleanup
 
 Options:
@@ -173,6 +176,15 @@ async function main() {
       case "setup":
         await setupProject({ sourceRoot, ...options });
         break;
+      case "upgrade-gstack": {
+        const current = await validateProjectGstack(options.target);
+        if (!current.checkoutValid || !current.stateValid) throw new Error("A repo-pattern-managed gstack installation is required before upgrading.");
+        const settings = await readJson(path.join(options.target, ".claude", "settings.json"), {});
+        const planTuneHooks = Object.values(settings.hooks || {}).some((entries) => entries.some((entry) => entry._gstack_source === "repo-pattern-plan-tune"));
+        const result = await setupGstack({ target: options.target, upgrade: true, dryRun: options.dryRun, planTuneHooks });
+        if (result.status === "failed") throw new Error([result.error, ...(result.rollbackErrors || []), ...(result.recoverySnapshot ? [`Recovery snapshot retained at: ${result.recoverySnapshot}`] : [])].join("\n"));
+        break;
+      }
       case "cleanup":
         await cleanupProject({ sourceRoot, ...options });
         break;

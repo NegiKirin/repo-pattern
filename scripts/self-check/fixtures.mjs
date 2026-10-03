@@ -1,6 +1,20 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const gstackSafetyFixture = path.join(repoRoot, "self-check", "fixtures", "gstack-safety");
+
+export async function installGstackSafetyFixture(checkout) {
+  for (const entry of ["careful", "freeze", "guard", "bin/gstack-paths"]) {
+    const source = path.join(gstackSafetyFixture, entry);
+    const destination = path.join(checkout, entry);
+    await fs.mkdir(path.dirname(destination), { recursive: true });
+    await fs.cp(source, destination, { recursive: true });
+  }
+  await fs.chmod(path.join(checkout, "bin", "gstack-paths"), 0o755);
+}
 
 export async function writeEccGitFixture(target, { origin = "https://github.com/affaan-m/ECC.git", withAgents = true } = {}) {
   const cache = path.join(target, ".repo-pattern", "cache", "ECC");

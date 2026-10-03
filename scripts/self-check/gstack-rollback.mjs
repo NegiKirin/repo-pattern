@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { bootstrapGstack, GSTACK_REVIEW_SIDECARS, gstackCheckoutPath, gstackStatePath, setupGstack, validateProjectGstack } from "../lib/gstack.mjs";
+import { installGstackSafetyFixture } from "./fixtures.mjs";
 
 export async function runGstackRollbackChecks() {
   const hookSymlinkTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-hook-symlink-"));
@@ -14,6 +15,7 @@ export async function runGstackRollbackChecks() {
     await fs.mkdir(outsideHooks, { recursive: true });
     await fs.mkdir(checkout, { recursive: true });
     await fs.writeFile(path.join(checkout, "setup"), "#!/bin/sh\n", { mode: 0o755 });
+    await installGstackSafetyFixture(checkout);
     await fs.writeFile(path.join(checkout, "SKILL.md"), "Project-local gstack", "utf8");
     await fs.mkdir(path.join(checkout, "review"), { recursive: true });
     await fs.writeFile(path.join(checkout, "review", "SKILL.md"), "Review", "utf8");
@@ -45,6 +47,7 @@ export async function runGstackRollbackChecks() {
     await fs.mkdir(path.join(checkout, "ship", "sections"), { recursive: true });
     await fs.mkdir(path.join(checkout, "plan-eng-review", "sections"), { recursive: true });
     await fs.mkdir(path.join(checkout, "open-gstack-browser"), { recursive: true });
+    await installGstackSafetyFixture(checkout);
     await fs.writeFile(path.join(checkout, "ship", "SKILL.md"), "Ship ~/.claude/skills/gstack/ship/sections/tests.md", "utf8");
     await fs.writeFile(path.join(checkout, "ship", "sections", "tests.md"), "Ship section $HOME/.gstack", "utf8");
     await fs.writeFile(path.join(checkout, "plan-eng-review", "SKILL.md"), "Review", "utf8");
@@ -120,6 +123,7 @@ export async function runGstackRollbackChecks() {
     await fs.writeFile(path.join(previousCheckout, "source"), "previous invalid checkout", "utf8");
     await fs.mkdir(globalCheckout, { recursive: true });
     await fs.writeFile(path.join(globalCheckout, "setup"), "#!/bin/sh\n", { mode: 0o755 });
+    await installGstackSafetyFixture(globalCheckout);
     await fs.writeFile(path.join(globalCheckout, "SKILL.md"), "Project-local gstack", "utf8");
     await fs.mkdir(path.dirname(globalHooks), { recursive: true });
     await fs.symlink(checkoutRollbackOutside, globalHooks, "dir");
@@ -145,8 +149,10 @@ export async function runGstackRollbackChecks() {
     const wrapper = path.join(rollbackTarget, ".claude", "skills", "_gstack-command");
     const review = path.join(rollbackTarget, ".claude", "skills", "review");
     const stateFile = path.join(gstackStatePath(rollbackTarget), "state.json");
+    const checklist = path.join(review, "checklist.md");
     await fs.mkdir(path.join(checkout, "review"), { recursive: true });
     await fs.writeFile(path.join(checkout, "setup"), "#!/bin/sh\n", { mode: 0o755 });
+    await installGstackSafetyFixture(checkout);
     await fs.writeFile(path.join(checkout, "SKILL.md"), "Project-local gstack", "utf8");
     await fs.writeFile(path.join(checkout, "review", "SKILL.md"), "Review", "utf8");
     for (const sidecar of GSTACK_REVIEW_SIDECARS) {
@@ -154,23 +160,63 @@ export async function runGstackRollbackChecks() {
       await fs.writeFile(path.join(checkout, sidecar), `Fixture ${sidecar}`, "utf8");
     }
     spawnSync("git", ["init"], { cwd: checkout, stdio: "ignore" });
-    await fs.mkdir(wrapper, { recursive: true });
-    await fs.writeFile(path.join(wrapper, "SKILL.md"), "existing wrapper", "utf8");
-    await fs.mkdir(review, { recursive: true });
-    await fs.writeFile(path.join(review, "SKILL.md"), "existing review wrapper", "utf8");
-    await fs.writeFile(path.join(review, "checklist.md"), "existing checklist", "utf8");
-    await fs.mkdir(path.dirname(stateFile), { recursive: true });
-    await fs.writeFile(stateFile, "existing state", "utf8");
+    await bootstrapGstack({ target: rollbackTarget });
+    const priorWrapper = await fs.readFile(path.join(wrapper, "SKILL.md"), "utf8");
+    const priorReview = await fs.readFile(path.join(review, "SKILL.md"), "utf8");
+    const priorChecklist = await fs.readFile(checklist, "utf8");
+    const priorState = await fs.readFile(stateFile, "utf8");
     await fs.writeFile(path.join(rollbackTarget, ".claude", "settings.json"), "{", "utf8");
     const result = await setupGstack({ target: rollbackTarget });
     assert.equal(result.status, "failed");
-    assert.equal(await fs.readFile(path.join(wrapper, "SKILL.md"), "utf8"), "existing wrapper");
-    assert.equal(await fs.readFile(path.join(review, "SKILL.md"), "utf8"), "existing review wrapper");
-    assert.equal(await fs.readFile(path.join(review, "checklist.md"), "utf8"), "existing checklist");
-    assert.equal(await fs.readFile(stateFile, "utf8"), "existing state");
+    assert.equal(await fs.readFile(path.join(wrapper, "SKILL.md"), "utf8"), priorWrapper);
+    assert.equal(await fs.readFile(path.join(review, "SKILL.md"), "utf8"), priorReview);
+    assert.equal(await fs.readFile(checklist, "utf8"), priorChecklist);
+    assert.equal(await fs.readFile(stateFile, "utf8"), priorState);
     assert.equal(await fs.readFile(path.join(rollbackTarget, ".claude", "settings.json"), "utf8"), "{");
   } finally {
     await fs.rm(rollbackTarget, { recursive: true, force: true });
+  }
+
+  const artifactRollbackTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-artifact-rollback-"));
+  const artifactRollbackOutside = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-artifact-rollback-outside-"));
+  try {
+    const checkout = gstackCheckoutPath(artifactRollbackTarget);
+    await fs.mkdir(path.join(checkout, "review"), { recursive: true });
+    await fs.writeFile(path.join(checkout, "setup"), "#!/bin/sh\n", { mode: 0o755 });
+    await installGstackSafetyFixture(checkout);
+    await fs.writeFile(path.join(checkout, "SKILL.md"), "Project-local gstack", "utf8");
+    await fs.writeFile(path.join(checkout, "review", "SKILL.md"), "Review", "utf8");
+    for (const sidecar of GSTACK_REVIEW_SIDECARS) {
+      await fs.mkdir(path.dirname(path.join(checkout, sidecar)), { recursive: true });
+      await fs.writeFile(path.join(checkout, sidecar), `Fixture ${sidecar}`, "utf8");
+    }
+    spawnSync("git", ["init"], { cwd: checkout, stdio: "ignore" });
+    await bootstrapGstack({ target: artifactRollbackTarget });
+    const priorWrapper = await fs.readFile(path.join(artifactRollbackTarget, ".claude", "skills", "_gstack-command", "SKILL.md"), "utf8");
+    const settingsFile = path.join(artifactRollbackTarget, ".claude", "settings.json");
+    const outsideSettings = path.join(artifactRollbackOutside, "settings.json");
+    await fs.writeFile(outsideSettings, "outside", "utf8");
+    let injected = false;
+    const progress = { beginOperation(spec) {
+      return {
+        update: async () => {
+          if (spec.id === "gstack-bootstrap" && !injected) {
+            injected = true;
+            await fs.symlink(outsideSettings, settingsFile);
+          }
+        },
+        complete() {},
+        fail() {}
+      };
+    } };
+    const result = await setupGstack({ target: artifactRollbackTarget, progress, silent: true });
+    assert.equal(result.status, "failed");
+    assert.deepEqual(result.rollbackErrors, ["gstack artifact rollback failed: gstack target path contains a symlink: " + settingsFile]);
+    assert.equal(await fs.readFile(path.join(result.recoverySnapshot, "0"), "utf8"), priorWrapper);
+    assert.equal(await fs.readFile(outsideSettings, "utf8"), "outside");
+  } finally {
+    await fs.rm(artifactRollbackTarget, { recursive: true, force: true });
+    await fs.rm(artifactRollbackOutside, { recursive: true, force: true });
   }
 
   const rollbackFailureTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-rollback-failure-"));
