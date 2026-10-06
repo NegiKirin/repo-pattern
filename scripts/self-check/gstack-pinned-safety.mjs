@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { installGstackRuntimeFixture } from "./fixtures.mjs";
 import { GSTACK_REVIEW_SIDECARS, gstackCheckoutPath, gstackStatePath, setupGstack } from "../lib/gstack.mjs";
 
 const hashes = {
@@ -36,6 +37,8 @@ export async function runGstackPinnedSafetyChecks() {
       await fs.mkdir(path.dirname(path.join(checkout, sidecar)), { recursive: true });
       await fs.writeFile(path.join(checkout, sidecar), `Fixture ${sidecar}`);
     }
+    await installGstackRuntimeFixture(checkout);
+    await fs.writeFile(path.join(checkout, ".gitignore"), "node_modules/\n.repo-pattern-runtime/\n*/dist/\nbun.lock\n");
     assert.equal(spawnSync("git", ["init", "--quiet"], { cwd: checkout }).status, 0);
     assert.equal(spawnSync("git", ["add", "."], { cwd: checkout }).status, 0);
     assert.equal(spawnSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "Pinned fixture baseline"], { cwd: checkout }).status, 0);

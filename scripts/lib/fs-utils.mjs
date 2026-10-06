@@ -287,7 +287,7 @@ export async function backupPaths(targetRoot, relativePaths, {
   progressWeight = 1,
   silent = false
 } = {}) {
-  const backupRoot = path.join(targetRoot, ".repo-pattern", "backups", timestamp());
+  const backupPrefix = path.join(targetRoot, ".repo-pattern", "backups", `${timestamp()}-`);
   const sources = relativePaths.map((rel) => ({ rel, src: path.join(targetRoot, rel) })).filter(({ src }) => exists(src));
   if (sources.length === 0) {
     if (dryRun) {
@@ -297,6 +297,8 @@ export async function backupPaths(targetRoot, relativePaths, {
     return null;
   }
 
+  if (!dryRun) await fs.mkdir(path.dirname(backupPrefix), { recursive: true });
+  const backupRoot = dryRun ? backupPrefix : await fs.mkdtemp(backupPrefix);
   const trees = dryRun ? [] : await Promise.all(sources.map(async ({ rel, src }) => ({ rel, src, tree: await scanCopyTree(src) })));
   const totalFiles = trees.reduce((total, { tree }) => total + tree.files, 0);
   const totalBytes = trees.reduce((total, { tree }) => total + tree.bytes, 0);

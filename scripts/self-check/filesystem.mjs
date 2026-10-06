@@ -64,6 +64,13 @@ try {
   await backupPaths(copyProgressRoot, ["source"], { progress, progressId: "fixture-backup" });
   assert.equal(backupEvents[0].id, "fixture-backup");
   assert.equal(backupEvents.at(-1).type, "complete");
+  await fs.symlink("one.txt", path.join(source, "dependency-link"));
+  const [firstBackup, secondBackup] = await Promise.all([
+    backupPaths(copyProgressRoot, ["source"], { silent: true }),
+    backupPaths(copyProgressRoot, ["source"], { silent: true })
+  ]);
+  assert.notEqual(firstBackup, secondBackup);
+  for (const backup of [firstBackup, secondBackup]) assert.equal(await fs.readlink(path.join(backup, "source", "dependency-link")), "one.txt");
   let skipped = false;
   await backupPaths(copyProgressRoot, ["missing"], { progress: { skipOperation: () => { skipped = true; } } });
   assert.equal(skipped, true);

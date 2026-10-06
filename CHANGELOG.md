@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.2] - 2026-10-05
+
+### Fixed
+
+- Complete project-local gstack setup with executable browse, design and PDF runtimes, project-managed Chromium, and readiness checks in `repo-pattern doctor`.
+- Preserve browser-skip settings across sessions and enable Chromium by rerunning setup without `GSTACK_SKIP_PLAYWRIGHT=1`.
+- Resolve generated skill sections and safety hooks correctly, including project paths with spaces and apostrophes.
+- Preserve existing installations and project files when runtime preparation fails, and keep concurrent backup operations separate.
+
 ## [1.2.1] - 2026-10-04
 
 ### Fixed

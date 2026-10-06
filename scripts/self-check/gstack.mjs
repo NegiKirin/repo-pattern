@@ -17,6 +17,7 @@ import { needsLocalSettingsPrompt, setupProject, setupRetryOptions } from "../li
 import { applyEccRules, buildAgentManifest, clearEccRules, formatEccCloneError, hasGitUpstream, validateAgentManifest } from "../lib/rules.mjs";
 import { applyOptionalSkills, applyPluginSkillSettings, expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills, OPTIONAL_SKILLS } from "../lib/skills.mjs";
 import { runGstackRollbackChecks } from "./gstack-rollback.mjs";
+import { runGstackSetupStatusChecks } from "./gstack-setup-status.mjs";
 import { installGstackSafetyFixture } from "./fixtures.mjs";
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.dirname(path.dirname(cliDir));
@@ -54,7 +55,6 @@ assert.deepEqual(gstackSummaryRows("/tmp/project", true), [
   ["Plan-tune hooks", "installed in .claude/settings.json"],
   ["Status", "ready"]
 ]);
-
 assert.equal(gstackStatePath("/tmp/project"), "/tmp/project/.repo-pattern/gstack");
 assert.equal(ensureBun({ run: () => "1.2.0\n" }), "bun");
 assert.throws(() => ensureBun({ run: () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); } }), /Install Bun manually/);
@@ -229,6 +229,8 @@ try {
     const result = await setupGstack({ target: migrationTarget });
     assert.equal(result.status, "installed");
     assert.equal(result.source, "global-migration");
+    await (await import("./gstack-doctor.mjs")).runGstackDoctorChecks(migrationTarget, repoRoot);
+    await runGstackSetupStatusChecks(migrationTarget);
   } finally {
     process.env.HOME = originalHome;
   }

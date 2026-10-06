@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { installGstackRuntimeFixture } from "./fixtures.mjs";
 import { GSTACK_REVIEW_SIDECARS, gstackCheckoutPath, resolveGstackCheckout, setupGstack, validateProjectGstack } from "../lib/gstack.mjs";
 
 export async function runGstackSafetyChecks() {
@@ -12,7 +13,13 @@ export async function runGstackSafetyChecks() {
     const home = path.join(root, "home");
     await fs.mkdir(home);
     process.env.HOME = home;
-    for (const name of ["project", "project with spaces", "project's checkout"]) {
+    const invalidTarget = path.join(root, "invalid");
+    const invalidCheckout = gstackCheckoutPath(invalidTarget);
+    await fs.mkdir(invalidCheckout, { recursive: true });
+    await fs.writeFile(path.join(invalidCheckout, "user-note"), "preserve");
+    await assert.rejects(resolveGstackCheckout({ target: invalidTarget, silent: true }), /Existing gstack checkout is invalid/);
+    assert.equal(await fs.readFile(path.join(invalidCheckout, "user-note"), "utf8"), "preserve");
+    for (const name of ["project", "project with spaces", "project's checkout", "upstream single quoted"]) {
       const target = path.join(root, name);
       const checkout = gstackCheckoutPath(target);
       await fs.mkdir(checkout, { recursive: true });
@@ -35,17 +42,29 @@ export async function runGstackSafetyChecks() {
         const declarations = tools.map((tool) => {
           const hook = tool === "Bash" ? "careful" : "freeze";
           const command = name === "project" ? `~/.claude/skills/gstack/scripts/check-${hook}.sh` : `bash $HOME/.claude/skills/gstack/${hook}/bin/check-${hook}.sh`;
-          return `    - matcher: "${tool}"\n      hooks:\n        - type: command\n          command: "${command}"`;
+          const declaration = name === "upstream single quoted"
+            ? String.raw`'bash -c "exec bash \"$HOME/.claude/skills/gstack/${hook}/bin/check-${hook}.sh\""'`
+            : `"${command}"`;
+          return `    - matcher: "${tool}"\n      hooks:\n        - type: command\n          command: ${declaration}`;
         }).join("\n");
         await fs.writeFile(path.join(checkout, skill, "SKILL.md"), `---\nname: ${skill}\nhooks:\n  PreToolUse:\n${declarations}\n---\nFixture skill body\n`);
       }
       await fs.mkdir(path.join(checkout, "gstack-upgrade"));
       await fs.writeFile(path.join(checkout, "gstack-upgrade", "SKILL.md"), "---\nname: gstack-upgrade\n---\nUpstream upgrade body\n");
+      await installGstackRuntimeFixture(checkout);
+      await fs.writeFile(path.join(checkout, ".gitignore"), "node_modules/\n.repo-pattern-runtime/\n*/dist/\nbun.lock\n");
       assert.equal(spawnSync("git", ["init"], { cwd: checkout, stdio: "ignore" }).status, 0);
       assert.equal(spawnSync("git", ["add", "."], { cwd: checkout, stdio: "ignore" }).status, 0);
       assert.equal(spawnSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "Fixture baseline"], { cwd: checkout, stdio: "ignore" }).status, 0);
+      const projectManifest = JSON.stringify({ private: true, workspaces: [".claude/skills/**"], dependencies: { "must-not-install": "file:missing" } });
+      await fs.writeFile(path.join(target, "package.json"), projectManifest);
+      await fs.writeFile(path.join(target, "bun.lock"), "preserve project lockfile\n");
       const result = await setupGstack({ target, silent: true });
       assert.equal(result.status, "installed", result.error);
+      assert.equal(await fs.readFile(path.join(target, "package.json"), "utf8"), projectManifest);
+      assert.equal(await fs.readFile(path.join(target, "bun.lock"), "utf8"), "preserve project lockfile\n");
+      await assert.rejects(fs.lstat(path.join(target, "node_modules")), { code: "ENOENT" });
+      assert(!(await fs.readdir(path.dirname(checkout))).some((entry) => entry.startsWith(".gstack-")));
       const upgradeSkill = await fs.readFile(path.join(target, ".claude", "skills", "gstack-upgrade", "SKILL.md"), "utf8");
       assert.match(upgradeSkill, /repo-pattern upgrade-gstack --target/);
       assert.doesNotMatch(upgradeSkill, /Upstream upgrade body/);
@@ -67,6 +86,26 @@ export async function runGstackSafetyChecks() {
         }
       }
       assert.equal(count, 6);
+      const repairSkill = path.join(checkout, "repair");
+      await fs.appendFile(path.join(checkout, ".gitignore"), "repair/\n");
+      assert.equal(spawnSync("git", ["add", ".gitignore"], { cwd: checkout }).status, 0);
+      assert.equal(spawnSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "Ignore repair fixture"], { cwd: checkout }).status, 0);
+      await fs.mkdir(path.join(repairSkill, "sections"), { recursive: true });
+      await fs.writeFile(path.join(repairSkill, "SKILL.md"), "```bash\ncat ~/.claude/skills/gstack/repair/sections/check.md\n```\n");
+      await fs.writeFile(path.join(repairSkill, "sections", "check.md"), "```bash\ncat ~/.claude/skills/gstack/repair/sections/check.md\n```\n");
+      assert.equal((await setupGstack({ target, silent: true })).status, "installed");
+      for (const relative of ["repair/SKILL.md", "repair/sections/check.md"]) {
+        const installedFile = path.join(target, ".claude", "skills", relative);
+        await fs.writeFile(installedFile, `\`\`\`bash\ncat ${path.join(checkout, "repair/sections/check.md")}\n\`\`\`\n`);
+      }
+      assert.equal((await setupGstack({ target, silent: true })).status, "installed");
+      assert.match(await fs.readFile(path.join(target, ".claude", "skills", "repair", "SKILL.md"), "utf8"), /export PLAYWRIGHT_BROWSERS_PATH=/);
+      const rootSource = path.join(checkout, "SKILL.md");
+      await fs.appendFile(rootSource, "User source edit\n");
+      const dirtyResult = await setupGstack({ target, silent: true });
+      assert.equal(dirtyResult.status, "failed");
+      assert.match(await fs.readFile(rootSource, "utf8"), /User source edit/);
+      await fs.writeFile(rootSource, "Project-local gstack\n");
       const removedSkills = path.join(root, `removed-skills-${name}`);
       await fs.mkdir(removedSkills);
       for (const skill of ["careful", "guard", "freeze"]) await fs.rename(path.join(checkout, skill), path.join(removedSkills, skill));
