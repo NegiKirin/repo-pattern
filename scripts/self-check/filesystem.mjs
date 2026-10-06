@@ -61,6 +61,13 @@ try {
       fail: (values) => backupEvents.push({ type: "fail", ...values })
     };
   } };
+  // Value: protects=backup dry-run with existing source does not create backup directories or alter source; fails_when=mkdir or mkdtemp escapes dry-run guard; why_new=missing-source skip never exercises preview with sources; seam=none
+  const previewEntries = await fs.readdir(copyProgressRoot);
+  const preview = await backupPaths(copyProgressRoot, ["source"], { dryRun: true, silent: true });
+  assert.equal(preview, null);
+  assert.deepEqual(await fs.readdir(copyProgressRoot), previewEntries);
+  await assert.rejects(fs.access(path.join(copyProgressRoot, ".repo-pattern")), { code: "ENOENT" });
+  assert.equal(await fs.readFile(path.join(source, "one.txt"), "utf8"), "one");
   await backupPaths(copyProgressRoot, ["source"], { progress, progressId: "fixture-backup" });
   assert.equal(backupEvents[0].id, "fixture-backup");
   assert.equal(backupEvents.at(-1).type, "complete");

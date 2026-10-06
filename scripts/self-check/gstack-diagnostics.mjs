@@ -59,6 +59,13 @@ export async function runGstackDiagnosticChecks() {
     const originalPath = process.env.PATH;
     const originalEvents = process.env.CLONE_EVENTS;
     const originalFailure = process.env.CLONE_FAIL;
+    const originalSetTimeout = globalThis.setTimeout;
+    const cloneDeadlines = [];
+    // Value: protects=default clone arms its ten-minute deadline; fails_when=clone timeout omitted or changed; why_new=clone arguments do not prove timer configuration; seam=none
+    globalThis.setTimeout = (callback, delay, ...args) => {
+      cloneDeadlines.push(delay);
+      return originalSetTimeout(callback, delay, ...args);
+    };
     try {
       process.env.PATH = `${bin}${path.delimiter}${originalPath}`;
       process.env.CLONE_EVENTS = events;
@@ -79,7 +86,9 @@ export async function runGstackDiagnosticChecks() {
         const entries = await fs.readdir(path.join(cloneTarget, ".claude", "skills"));
         assert.deepEqual(entries, failure ? [] : ["gstack"]);
       }
+      assert.deepEqual(cloneDeadlines, [600000, 600000]);
     } finally {
+      globalThis.setTimeout = originalSetTimeout;
       process.env.PATH = originalPath;
       for (const [name, value] of [["CLONE_EVENTS", originalEvents], ["CLONE_FAIL", originalFailure]]) {
         if (value === undefined) delete process.env[name];

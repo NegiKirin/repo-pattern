@@ -16,6 +16,12 @@ export async function runGstackSetupStatusChecks(target) {
     assert.equal(setup.browserStatus, "skipped");
     const persisted = JSON.parse(await fs.readFile(stateFile, "utf8"));
     assert.equal(persisted.browserSkipped, true);
+    // Value: protects=rerunning setup without opt-out enables browser and replaces persisted skip; fails_when=old skip survives setup; why_new=doctor state edits do not exercise the setup transition; seam=none
+    delete process.env.GSTACK_SKIP_PLAYWRIGHT;
+    const enabled = await setupGstack({ target, silent: true });
+    assert.equal(enabled.browserSkipped, false);
+    assert.equal(enabled.browserStatus, "ready");
+    assert.equal(JSON.parse(await fs.readFile(stateFile, "utf8")).browserSkipped, false);
   } finally {
     if (originalSkip === undefined) delete process.env.GSTACK_SKIP_PLAYWRIGHT;
     else process.env.GSTACK_SKIP_PLAYWRIGHT = originalSkip;

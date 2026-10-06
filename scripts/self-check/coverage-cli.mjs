@@ -73,7 +73,7 @@ export async function runCoverageCliChecks() {
     await fs.mkdir(path.join(runnerRoot, "scripts"));
     await fs.copyFile(runnerSource, path.join(runnerRoot, "scripts", "test-coverage.mjs"));
     const events = path.join(runnerRoot, "events.jsonl");
-    await fs.writeFile(path.join(runnerRoot, "scripts", "lane.mjs"), `import fs from 'node:fs/promises'; import path from 'node:path'; const event={lane:path.basename(process.argv[1]), coverage:process.env.NODE_V8_COVERAGE}; await fs.appendFile(process.env.RUNNER_EVENTS, JSON.stringify(event)+'\\n'); if(event.lane===process.env.RUNNER_FAIL_ON) process.exit(7);`);
+    await fs.writeFile(path.join(runnerRoot, "scripts", "lane.mjs"), `import fs from 'node:fs/promises'; import path from 'node:path'; const event={lane:path.basename(process.argv[1]), coverage:process.env.NODE_V8_COVERAGE, args:process.argv.slice(2)}; await fs.appendFile(process.env.RUNNER_EVENTS, JSON.stringify(event)+'\\n'); if(event.lane===process.env.RUNNER_FAIL_ON) process.exit(7);`);
     const laneNames = ["self-check.mjs", "check-ecc-coverage.mjs", "check-diff-coverage.mjs"];
     for (const name of laneNames) await fs.writeFile(path.join(runnerRoot, "scripts", name), "import './lane.mjs';\n");
     const runLanes = (failure) => run(node, ["scripts/test-coverage.mjs", "HEAD"], runnerRoot, { ...process.env, RUNNER_EVENTS: events, RUNNER_FAIL_ON: failure });
@@ -89,6 +89,15 @@ export async function runCoverageCliChecks() {
     // Value: protects=runner executes lanes in order and removes generated coverage after success; fails_when=order wrong or directory remains; why_new=suite pass did not independently assert orchestration; seam=none
     const success = runLanes("");
     await assertCleanup(events, laneNames, success);
+    await fs.writeFile(events, "");
+    // Value: protects=runner forwards explicit base and defaults to HEAD only when absent; fails_when=branch coverage silently compares HEAD; why_new=lane order assertions omit argument forwarding; seam=none
+    for (const args of [[], ["fixture-base"]]) {
+      await fs.writeFile(events, "");
+      const forwarded = run(node, ["scripts/test-coverage.mjs", ...args], runnerRoot, { ...process.env, RUNNER_EVENTS: events, RUNNER_FAIL_ON: "" });
+      await assertCleanup(events, laneNames, forwarded);
+      const recorded = (await fs.readFile(events, "utf8")).trim().split("\n").map(JSON.parse);
+      assert.deepEqual(recorded.map(({ args: laneArgs }) => laneArgs), [[], [], [args[0] || "HEAD"]]);
+    }
     await fs.writeFile(events, "");
     // Value: protects=runner stops on first failed lane and cleans coverage; fails_when=later lane runs or temp directory remains; why_new=no failure-path runner cleanup assertion existed; seam=none
     const failed = runLanes("check-ecc-coverage.mjs");
