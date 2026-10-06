@@ -15,6 +15,7 @@ const coverageDirectory = await mkdtemp(path.join(os.tmpdir(), "repo-pattern-v8-
 try {
   await run(process.execPath, ["scripts/self-check.mjs"], { ...process.env, NODE_V8_COVERAGE: coverageDirectory });
   await run(process.execPath, ["scripts/check-ecc-coverage.mjs"], { ...process.env, NODE_V8_COVERAGE: coverageDirectory });
+  await run(process.execPath, ["scripts/check-diff-coverage.mjs", process.argv[2] || "HEAD"], { ...process.env, NODE_V8_COVERAGE: coverageDirectory });
 } finally {
   await rm(coverageDirectory, { recursive: true, force: true });
 }

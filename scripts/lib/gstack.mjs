@@ -4,8 +4,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { appendGitignoreLine, copyRecursiveWithProgress, ensureDir, exists, isTracked, readJson, removePath, writeJson, writePrivateJson } from "./fs-utils.mjs";
-import { runGitWithProgress } from "./git-progress.mjs";
 import { assertGstackSafety } from "./gstack-safety.mjs";
+import { prepareGstackRuntime, validateGstackRuntime, runRuntimeCommand } from "./gstack-runtime.mjs";
 import { printSummary } from "./prompt.mjs";
 
 const GSTACK_REPOSITORY = "https://github.com/garrytan/gstack.git";
@@ -40,7 +40,7 @@ function parseBunVersion(output) {
 
 export function ensureBun({ run: runCommand = run } = {}) {
   try {
-    const version = runCommand("bun", ["--version"], { stdio: ["ignore", "pipe", "pipe"] });
+    const version = runCommand("bun", ["--version"], { stdio: ["ignore", "pipe", "pipe"], timeout: 30000 });
     parseBunVersion(version);
     return "bun";
   } catch (error) {
@@ -109,8 +109,8 @@ export async function isValidGstackCheckout(checkout, { run: runCommand = run } 
     const stat = await fs.lstat(checkout);
     if (!stat.isDirectory() || stat.isSymbolicLink()) return false;
     await fs.access(path.join(checkout, "setup"), constants.X_OK);
-    const insideWorkTree = runCommand("git", ["-C", checkout, "rev-parse", "--is-inside-work-tree"], { stdio: ["ignore", "pipe", "pipe"] });
-    const workTreeRoot = runCommand("git", ["-C", checkout, "rev-parse", "--show-toplevel"], { stdio: ["ignore", "pipe", "pipe"] });
+    const insideWorkTree = runCommand("git", ["-C", checkout, "rev-parse", "--is-inside-work-tree"], { stdio: ["ignore", "pipe", "pipe"], timeout: 30000 });
+    const workTreeRoot = runCommand("git", ["-C", checkout, "rev-parse", "--show-toplevel"], { stdio: ["ignore", "pipe", "pipe"], timeout: 30000 });
     return String(insideWorkTree).trim() === "true" &&
       path.resolve(String(workTreeRoot).trim()) === path.resolve(checkout);
   } catch {
@@ -124,7 +124,10 @@ function redactedGstackDiagnostic(error) {
     .join("\n");
   const diagnostics = [
     "gstack output: [redacted].",
+    ...(typeof error.gstackStage === "string" && /^(?:dependency install|runtime build|Chromium install|Chromium launch|dependencies|(?:browse\/dist\/(?:browse|find-browse)|design\/dist\/design|make-pdf\/dist\/pdf) execution)$/.test(error.gstackStage) ? [`Failed stage: ${error.gstackStage}. Rerun repo-pattern setup to repair.`] : []),
+    ...(/Missing Linux system libraries/.test(error.message || "") ? ["Missing Linux system libraries. Ask your administrator to install Playwright Chromium prerequisites; no OS packages were installed."] : []),
     ...(/^gstack safety skill ownership conflict: \.claude\/skills\//.test(error.message || "") ? ["gstack safety skill ownership conflict. Preserve the foreign skill; resolve ownership before rerunning setup."] : []),
+    ...(process.env.REPO_PATTERN_DEBUG_GSTACK === "1" && error.gstackOutput ? [`Debug output: ${String(error.gstackOutput).slice(-4000)}`] : []),
     ...(Number.isInteger(error.status) ? [`Exit code: ${error.status}.`] : []),
     ...(/\b(?:bun)\b/i.test(output) ? ["Bun prerequisite failed."] : []),
     ...(/\b(?:git|clone|checkout)\b/i.test(output) ? ["Git checkout operation failed."] : []),
@@ -138,13 +141,17 @@ function redactedGstackDiagnostic(error) {
 
 function replaceGstackPaths(source, checkout, statePath, safetyRewrite = true) {
   const converted = safetyRewrite ? source
+    .replace(/^([\t ]*command:[\t ]*)'bash -c "exec bash \\"\$HOME\/\.claude\/skills\/gstack\/((?:careful|freeze)\/bin\/check-(?:careful|freeze)\.sh)\\""'[\t ]*$/gm,
+      (_, prefix, script) => `${prefix}${JSON.stringify(`GSTACK_HOME=${shellQuote(statePath)} bash ${shellQuote(path.join(checkout, script))}`)}`)
     .replace(/^([\t ]*command:[\t ]*)"(bash )?(?:~|\$HOME)\/\.claude\/skills\/gstack\/((?:scripts|(?:careful|freeze)\/bin)\/check-(?:careful|freeze)\.sh)"[\t ]*$/gm,
       (_, prefix, interpreter, script) => `${prefix}${JSON.stringify(`GSTACK_HOME=${shellQuote(statePath)} ${interpreter || ""}${shellQuote(path.join(checkout, script))}`)}`)
     .replace(/(?:~|\$HOME)\/\.claude\/skills\/gstack\/bin\/gstack-paths(?=[)\s])/g,
       `GSTACK_HOME=${shellQuote(statePath)} ${shellQuote(path.join(checkout, "bin", "gstack-paths"))}`) : source;
   return converted
+    .replace(/^(```(?:bash|sh|shell)\r?\n)/gm, `$1export PLAYWRIGHT_BROWSERS_PATH=${shellQuote(path.join(checkout, ".repo-pattern-runtime", "chromium"))}\n`)
     .replaceAll("~/.claude/skills/gstack", checkout)
     .replaceAll("$HOME/.claude/skills/gstack", checkout)
+    .replaceAll("${HOME}/.claude/skills/gstack", checkout)
     .replaceAll("${GSTACK_HOME:-$HOME/.gstack}", statePath)
     .replaceAll("${HOME}/.gstack", statePath)
     .replaceAll("$HOME/.gstack", statePath)
@@ -215,7 +222,8 @@ async function skillDirectories(checkout) {
 }
 
 function rewrittenGstackContent(source, checkout, statePath) {
-  const rewritten = replaceGstackPaths(source, checkout, statePath);
+  const rewritten = replaceGstackPaths(source, checkout, statePath)
+    .replace(new RegExp(`${checkout.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/([^/\\s\x60\"']+)/sections/`, "g"), `${path.dirname(checkout)}/$1/sections/`);
   if (FORBIDDEN_HOME_PATH.test(rewritten)) {
     throw new Error(`gstack skill references forbidden home-scoped state: ${rewritten.match(FORBIDDEN_HOME_PATH)?.[0]}`);
   }
@@ -298,14 +306,6 @@ async function expectedGstackWrappers(target, checkout, statePath) {
 
 async function skillAssets(checkout, statePath, sourceDir, relative) {
   const assets = [];
-  const sections = path.join(sourceDir, "sections");
-  try {
-    const stat = await fs.lstat(sections);
-    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`gstack skill sections are invalid: ${sections}`);
-  } catch (error) {
-    if (error.code === "ENOENT") return assets;
-    throw error;
-  }
   async function walk(directory) {
     const entries = await fs.readdir(directory, { withFileTypes: true });
     for (const entry of entries) {
@@ -318,7 +318,17 @@ async function skillAssets(checkout, statePath, sourceDir, relative) {
       }
     }
   }
-  await walk(sections);
+  for (const root of ["sections", "templates", "references"]) {
+    const directory = path.join(sourceDir, root);
+    try {
+      const stat = await fs.lstat(directory);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`gstack skill ${root} are invalid: ${directory}`);
+    } catch (error) {
+      if (error.code === "ENOENT") continue;
+      throw error;
+    }
+    await walk(directory);
+  }
   return assets;
 }
 
@@ -357,9 +367,10 @@ export async function bootstrapGstack({ target, checkout = gstackCheckoutPath(ta
     try {
       const actual = await fs.readFile(file, "utf8");
       const upstream = await fs.readFile(path.join(checkout, skill === "_gstack-command" ? "" : skill, "SKILL.md"), "utf8");
-      const legacy = replaceGstackPaths(upstream, checkout, statePath, false);
+      const legacy = replaceGstackPaths(upstream, checkout, statePath, false).replace(/^export PLAYWRIGHT_BROWSERS_PATH=.*\r?\n/gm, "");
+      const previousGeneration = replaceGstackPaths(upstream, checkout, statePath).replace(/^export PLAYWRIGHT_BROWSERS_PATH=.*\r?\n/gm, "");
       const previous = previousWrappers.find((entry) => entry.wrapper === wrapper)?.content;
-      if (actual !== content && actual !== upstream && actual !== legacy && actual !== previous) throw new Error(`gstack safety skill ownership conflict: ${wrapper}`);
+      if (actual !== content && actual !== upstream && actual !== legacy && actual !== previousGeneration && actual !== previous) throw new Error(`gstack safety skill ownership conflict: ${wrapper}`);
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
@@ -381,7 +392,10 @@ export async function bootstrapGstack({ target, checkout = gstackCheckoutPath(ta
       const previous = item.kind === "asset"
         ? previousAssets.find(({ asset }) => path.join(target, ".claude", "skills", asset) === item.destination)?.content
         : previousSidecars.find(({ sidecar }) => path.join(target, ".claude", "skills", sidecar) === item.destination)?.content;
-      if (actual !== item.content && actual !== previous) throw new Error(`gstack safety skill ownership conflict: ${path.relative(target, item.destination)}`);
+      const previousGeneration = item.kind === "asset"
+        ? replaceGstackPaths(await fs.readFile(path.join(checkout, path.relative(path.join(target, ".claude", "skills"), item.destination)), "utf8"), checkout, statePath).replace(/^export PLAYWRIGHT_BROWSERS_PATH=.*\r?\n/gm, "")
+        : item.content;
+      if (actual !== item.content && actual !== previous && actual !== previousGeneration) throw new Error(`gstack safety skill ownership conflict: ${path.relative(target, item.destination)}`);
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
@@ -498,13 +512,15 @@ export async function resolveGstackCheckout({
   run: runCommand = run,
   copy = copyRecursiveWithProgress,
   clone = null,
+  prepare = null,
   upgrade = false,
   progress = null,
   silent = false
 }) {
   const localCheckout = gstackCheckoutPath(target);
   await assertNoSymlinkPath(target, path.relative(target, localCheckout));
-  if (!upgrade && await isValidGstackCheckout(localCheckout, { run: runCommand })) {
+  const localValid = !upgrade && await isValidGstackCheckout(localCheckout, { run: runCommand });
+  if (localValid && !prepare) {
     const operation = progress?.beginOperation?.({ id: "gstack-checkout", label: "Using gstack checkout", totalUnits: 1, weight: 2 });
     operation?.complete({ detail: "local checkout ready" });
     return {
@@ -514,9 +530,10 @@ export async function resolveGstackCheckout({
       async rollback() {}
     };
   }
-  if (upgrade && await exists(localCheckout)) {
-    const changes = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: localCheckout, encoding: "utf8" });
-    if (changes.trim()) throw new Error("gstack checkout has local changes. Preserve and resolve them before upgrading.");
+  if (await exists(localCheckout) && !await isValidGstackCheckout(localCheckout, { run: runCommand })) throw new Error("Existing gstack checkout is invalid. Preserve its contents and resolve ownership before setup.");
+  if ((upgrade || prepare) && await exists(localCheckout)) {
+    const changes = execFileSync("git", ["status", "--porcelain", upgrade ? "--untracked-files=all" : "--untracked-files=no"], { cwd: localCheckout, encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }, timeout: 30000 });
+    if (changes.trim()) throw new Error("gstack safety skill ownership conflict: .claude/skills/gstack checkout has local changes. Preserve and resolve them before setup or upgrading.");
   }
   const globalValid = !upgrade && await isValidGstackCheckout(globalCheckout, { run: runCommand });
   if (dryRun) {
@@ -525,7 +542,7 @@ export async function resolveGstackCheckout({
     operation?.complete({ detail: "preview" });
     return {
       checkout: localCheckout,
-      source: globalValid ? "global-migration" : "clone",
+      source: localValid ? "local" : globalValid ? "global-migration" : "clone",
       async commit() {},
       async rollback() {}
     };
@@ -533,12 +550,16 @@ export async function resolveGstackCheckout({
 
   const parent = path.dirname(localCheckout);
   await ensureDir(parent, { silent });
-  const temporary = await fs.mkdtemp(path.join(parent, ".gstack-"));
+  const stagingRoot = await fs.mkdtemp(path.join(parent, ".gstack-"));
+  // Stop Bun's workspace discovery before it reaches the target project's package.json.
+  await fs.writeFile(path.join(stagingRoot, "package.json"), JSON.stringify({ private: true, workspaces: [] }));
+  const temporary = path.join(stagingRoot, "checkout");
+  await fs.mkdir(temporary);
   try {
-    if (globalValid) {
+    if (globalValid || localValid) {
       const operation = progress?.beginOperation?.({ id: "gstack-checkout", label: "Copying gstack checkout", totalUnits: 0, unitLabel: "files", weight: 2 });
       try {
-        await copy(globalCheckout, temporary, {
+        await copy(localValid ? localCheckout : globalCheckout, temporary, {
           recursive: true,
           force: true,
           silent,
@@ -558,10 +579,7 @@ export async function resolveGstackCheckout({
       const operation = progress?.beginOperation?.({ id: "gstack-checkout", label: "Downloading gstack", totalUnits: 100, weight: 3 });
       try {
         if (clone) await clone(temporary);
-        else await runGitWithProgress(["clone", "--progress", "--single-branch", "--depth", "1", GSTACK_REPOSITORY, temporary], {
-          cwd: target,
-          onProgress: ({ percent, detail }) => operation?.update({ completedUnits: percent, totalUnits: 100, detail })
-        });
+        else await runRuntimeCommand("git", ["clone", "--progress", "--single-branch", "--depth", "1", GSTACK_REPOSITORY, temporary], { cwd: target, timeout: 600000, stage: "checkout clone" });
         operation?.complete({ detail: "completed" });
       } catch (error) {
         operation?.fail({ detail: "failed" });
@@ -576,6 +594,7 @@ export async function resolveGstackCheckout({
     if (!await isValidGstackCheckout(temporary, { run: runCommand })) {
       throw new Error("Resolved gstack checkout is invalid.");
     }
+    if (prepare) await prepare(temporary);
     const backup = await fs.mkdtemp(path.join(parent, ".gstack-backup-"));
     await fs.rmdir(backup);
     try {
@@ -598,7 +617,7 @@ export async function resolveGstackCheckout({
     }
     return {
       checkout: localCheckout,
-      source: globalValid ? "global-migration" : "clone",
+      source: localValid ? "local" : globalValid ? "global-migration" : "clone",
       async commit() {
         await removeLocalPath(backup);
       },
@@ -615,14 +634,16 @@ export async function resolveGstackCheckout({
   } catch (error) {
     await removePath(temporary);
     throw error;
+  } finally {
+    await removePath(stagingRoot);
   }
 }
 
-export function gstackSummaryRows(target, planTuneHooks = false) {
+export function gstackSummaryRows(target, planTuneHooks = false, browserStatus = "ready") {
   return [
     ["Scope", "project-local .claude/skills/gstack"],
     ["Plan-tune hooks", planTuneHooks ? "installed in .claude/settings.json" : "not installed"],
-    ["Status", "ready"]
+    ["Status", browserStatus === "skipped" ? "runtime ready; browser skipped" : browserStatus]
   ];
 }
 
@@ -639,10 +660,12 @@ export async function setupGstack({ target, dryRun = false, planTuneHooks = fals
   try {
     if (!dryRun) ensureBun();
     const install = async () => {
-      const previousWrappers = upgrade && !dryRun ? await expectedGstackWrappers(target, checkout, statePath) : [];
-      const previousAssets = upgrade && !dryRun ? await expectedGstackAssets(target, checkout, statePath) : [];
-      const previousSidecars = upgrade && !dryRun ? await expectedGstackSidecars(checkout) : [];
-      const resolved = await resolveCheckout({ target, dryRun, upgrade, progress, silent });
+      const previousValid = !dryRun && await exists(path.join(statePath, "state.json")) && await isValidGstackCheckout(checkout);
+      const previousWrappers = previousValid ? await expectedGstackWrappers(target, checkout, statePath) : [];
+      const previousAssets = previousValid ? await expectedGstackAssets(target, checkout, statePath) : [];
+      const previousSidecars = previousValid ? await expectedGstackSidecars(checkout) : [];
+      const browserSkipped = process.env.GSTACK_SKIP_PLAYWRIGHT === "1";
+      const resolved = await resolveCheckout({ target, dryRun, upgrade, progress, silent, prepare: (staged) => prepareGstackRuntime(staged, { browserSkipped }) });
       checkoutLease = resolved;
       if (!dryRun) {
         const wrappers = await expectedGstackWrappers(target, checkout, statePath);
@@ -654,8 +677,10 @@ export async function setupGstack({ target, dryRun = false, planTuneHooks = fals
       await bootstrapGstack({ target, checkout, statePath, previousWrappers, previousAssets, previousSidecars, dryRun, progress, silent });
       await writePlanTuneHooks({ target, planTuneHooks, dryRun, progress, silent });
       if (!dryRun) {
+        const stateFile = path.join(statePath, "state.json");
+        await writeJson(stateFile, { ...await readJson(stateFile, {}), browserSkipped }, { silent });
         const validation = await validateProjectGstack(target);
-        if (![validation.checkoutValid, validation.stateValid, validation.wrappersValid, validation.assetsValid, validation.sidecarsValid].every(Boolean)) throw new Error(`gstack ${upgrade ? "upgrade" : "setup"} validation failed.`);
+        if (![validation.checkoutValid, validation.stateValid, validation.wrappersValid, validation.assetsValid, validation.sidecarsValid, validation.runtimeValid, ["ready", "skipped"].includes(validation.browserStatus)].every(Boolean)) throw new Error(`gstack ${upgrade ? "upgrade" : "setup"} validation failed.`);
         await checkoutLease.commit();
         try {
           await transaction.remove();
@@ -664,10 +689,10 @@ export async function setupGstack({ target, dryRun = false, planTuneHooks = fals
         }
         transaction = null;
       }
-      return { status: dryRun ? "dry-run" : "installed", source: resolved.source, path: checkout, statePath };
+      return { status: dryRun ? "dry-run" : "installed", source: resolved.source, path: checkout, statePath, browserSkipped, browserStatus: dryRun ? "not-run" : browserSkipped ? "skipped" : "ready" };
     };
     const result = await install();
-    if (!dryRun && !silent) printSummary("gstack", gstackSummaryRows(target, planTuneHooks), { progress });
+    if (!dryRun && !silent) printSummary("gstack", gstackSummaryRows(target, planTuneHooks, result.browserStatus), { progress });
     return result;
   } catch (error) {
     const rollbackErrors = [];
@@ -810,5 +835,6 @@ export async function validateProjectGstack(target) {
     }
   }));
   const sidecarsValid = checkoutValid && stateValid && sidecarsMatch && sidecarChecks.every(Boolean);
-  return { checkout, statePath, checkoutValid, stateValid, wrappers, wrappersValid, assets, assetsValid, sidecars, sidecarsValid };
+  const runtime = checkoutValid ? await validateGstackRuntime(checkout, { browserSkipped: wrapperState.browserSkipped === true }) : { runtimeValid: false, browserStatus: "missing", runtimeChecks: [] };
+  return { checkout, statePath, checkoutValid, stateValid, wrappers, wrappersValid, assets, assetsValid, sidecars, sidecarsValid, ...runtime };
 }

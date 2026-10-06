@@ -130,6 +130,10 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
     check(gstack.wrappersValid, "gstack wrappers match local checkout state");
     check(gstack.assetsValid, "gstack workflow assets match local checkout state");
     check(gstack.sidecarsValid, "gstack review sidecars match local checkout state");
+    for (const runtime of gstack.runtimeChecks) check(runtime.ok, `gstack ${runtime.stage}${runtime.ok ? " executable" : `: ${runtime.error}`}`);
+    check(gstack.runtimeValid, "gstack browse/design/PDF runtimes ready; rerun repo-pattern setup to repair failures");
+    if (gstack.browserStatus === "skipped") infoRows.push("gstack browser skipped by persisted GSTACK_SKIP_PLAYWRIGHT=1; rerun setup without the flag to enable Chromium");
+    else check(gstack.browserStatus === "ready", `gstack Chromium ${gstack.browserStatus}; rerun repo-pattern setup to repair`);
     check(
       !lock.gstack?.planTuneHooks || await Promise.all(["question-log-hook", "question-preference-hook"].map(async (hookName) => {
         const hook = path.join(checkout, "hosts", "claude", "hooks", hookName);

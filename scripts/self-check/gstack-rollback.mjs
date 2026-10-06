@@ -50,6 +50,7 @@ export async function runGstackRollbackChecks() {
     await installGstackSafetyFixture(checkout);
     await fs.writeFile(path.join(checkout, "ship", "SKILL.md"), "Ship ~/.claude/skills/gstack/ship/sections/tests.md", "utf8");
     await fs.writeFile(path.join(checkout, "ship", "sections", "tests.md"), "Ship section $HOME/.gstack", "utf8");
+    await fs.writeFile(path.join(checkout, "ship", "sections", "review-army.md"), "Read ~/.claude/skills/gstack/review/checklist.md and $HOME/.claude/skills/gstack/plan-eng-review/sections/review-sections.md; dispatch ${HOME}/.claude/skills/gstack/document-release/SKILL.md and ${HOME}/.claude/skills/gstack/document-release/sections/audit-scope.md", "utf8");
     await fs.writeFile(path.join(checkout, "plan-eng-review", "SKILL.md"), "Review", "utf8");
     await fs.writeFile(path.join(checkout, "plan-eng-review", "sections", "review-sections.md"), "Review section", "utf8");
     await fs.writeFile(path.join(checkout, "open-gstack-browser", "SKILL.md"), "Browser", "utf8");
@@ -62,20 +63,87 @@ export async function runGstackRollbackChecks() {
     }
 
     await bootstrapGstack({ target: ancillaryTarget });
+    const shipWrapper = await fs.readFile(path.join(ancillaryTarget, ".claude", "skills", "ship", "SKILL.md"), "utf8");
+    assert.equal(shipWrapper, `Ship ${path.join(ancillaryTarget, ".claude", "skills", "ship", "sections", "tests.md")}`);
     const shipSection = path.join(ancillaryTarget, ".claude", "skills", "ship", "sections", "tests.md");
     assert.equal(await fs.readFile(shipSection, "utf8"), `Ship section ${gstackStatePath(ancillaryTarget)}`);
+    const reviewSection = await fs.readFile(path.join(ancillaryTarget, ".claude", "skills", "ship", "sections", "review-army.md"), "utf8");
+    assert.equal(reviewSection, `Read ${path.join(checkout, "review", "checklist.md")} and ${path.join(ancillaryTarget, ".claude", "skills", "plan-eng-review", "sections", "review-sections.md")}; dispatch ${path.join(checkout, "document-release", "SKILL.md")} and ${path.join(ancillaryTarget, ".claude", "skills", "document-release", "sections", "audit-scope.md")}`);
+    assert.equal(await fs.readFile(path.join(checkout, "ship", "SKILL.md"), "utf8"), "Ship ~/.claude/skills/gstack/ship/sections/tests.md");
     assert.equal(await fs.readFile(path.join(ancillaryTarget, ".claude", "skills", "plan-eng-review", "sections", "review-sections.md"), "utf8"), "Review section");
     const aliasWrapper = path.join(ancillaryTarget, ".claude", "skills", "connect-chrome", "SKILL.md");
     assert.equal(await fs.readFile(aliasWrapper, "utf8").then(() => true, () => false), true);
     assert.equal((await fs.lstat(path.dirname(aliasWrapper))).isSymbolicLink(), false);
     let validation = await validateProjectGstack(ancillaryTarget);
-    assert.deepEqual(validation.assets, ["plan-eng-review/sections/review-sections.md", "ship/sections/tests.md"]);
+    assert.deepEqual(validation.assets, ["plan-eng-review/sections/review-sections.md", "ship/sections/review-army.md", "ship/sections/tests.md"]);
     assert.equal(validation.assetsValid, true);
+    assert.equal(validation.runtimeValid, false, "instruction-only checkout must not report runtime ready");
+    assert.equal(validation.browserStatus, "missing", "no persisted opt-out must not report browser skipped");
     await fs.writeFile(shipSection, "drifted", "utf8");
     validation = await validateProjectGstack(ancillaryTarget);
     assert.equal(validation.assetsValid, false);
   } finally {
     await fs.rm(ancillaryTarget, { recursive: true, force: true });
+  }
+
+  const templateOnlyTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-template-only-"));
+  const templateOnlyOutside = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-template-only-outside-"));
+  try {
+    const checkout = gstackCheckoutPath(templateOnlyTarget);
+    const skill = path.join(checkout, "template-skill");
+    await fs.mkdir(path.join(skill, "templates"), { recursive: true });
+    await fs.mkdir(path.join(skill, "references"), { recursive: true });
+    await fs.mkdir(path.join(templateOnlyOutside, "templates"), { recursive: true });
+    await installGstackSafetyFixture(checkout);
+    await fs.writeFile(path.join(checkout, "setup"), "#!/bin/sh\n", { mode: 0o755 });
+    await fs.writeFile(path.join(checkout, "SKILL.md"), "Project-local gstack", "utf8");
+    await fs.writeFile(path.join(skill, "SKILL.md"), "Template skill", "utf8");
+    await fs.writeFile(path.join(skill, "templates", "qa.md"), "QA template", "utf8");
+    await fs.writeFile(path.join(skill, "references", "guide.md"), "Reference guide", "utf8");
+    await fs.writeFile(path.join(templateOnlyOutside, "templates", "qa.md"), "Foreign template", "utf8");
+    spawnSync("git", ["init"], { cwd: checkout, stdio: "ignore" });
+    for (const sidecar of GSTACK_REVIEW_SIDECARS) {
+      await fs.mkdir(path.dirname(path.join(checkout, sidecar)), { recursive: true });
+      await fs.writeFile(path.join(checkout, sidecar), `Fixture ${sidecar}`, "utf8");
+    }
+
+    const template = path.join(templateOnlyTarget, ".claude", "skills", "template-skill", "templates", "qa.md");
+    const reference = path.join(templateOnlyTarget, ".claude", "skills", "template-skill", "references", "guide.md");
+    await bootstrapGstack({ target: templateOnlyTarget });
+    assert.equal(await fs.readFile(template, "utf8"), "QA template");
+    assert.equal(await fs.readFile(reference, "utf8"), "Reference guide");
+    assert.deepEqual((await validateProjectGstack(templateOnlyTarget)).assets, ["template-skill/references/guide.md", "template-skill/templates/qa.md"]);
+    // Value: protects=regular-file ancillary roots reject before overwriting installed artifacts; fails_when=file root accepted or prior state changes; why_new=ancillary checks cover absent and symlink roots only; seam=none
+    const priorState = await fs.readFile(path.join(gstackStatePath(templateOnlyTarget), "state.json"), "utf8");
+    for (const root of ["sections", "templates", "references"]) {
+      const source = path.join(skill, root);
+      const saved = path.join(templateOnlyOutside, `saved-${root}`);
+      const existed = await fs.lstat(source).then(() => true, () => false);
+      if (existed) await fs.rename(source, saved);
+      await fs.writeFile(source, "not a directory");
+      await assert.rejects(() => bootstrapGstack({ target: templateOnlyTarget }), new RegExp(`skill ${root} are invalid`));
+      assert.equal(await fs.readFile(template, "utf8"), "QA template");
+      assert.equal(await fs.readFile(reference, "utf8"), "Reference guide");
+      assert.equal(await fs.readFile(path.join(gstackStatePath(templateOnlyTarget), "state.json"), "utf8"), priorState);
+      await fs.rm(source);
+      if (existed) await fs.rename(saved, source);
+    }
+    await fs.rm(path.join(skill, "templates"), { recursive: true });
+    await bootstrapGstack({ target: templateOnlyTarget });
+    assert.equal((await validateProjectGstack(templateOnlyTarget)).assetsValid, true);
+    await fs.symlink(path.join(templateOnlyOutside, "templates"), path.join(skill, "templates"), "dir");
+    await assert.rejects(() => bootstrapGstack({ target: templateOnlyTarget }), /symlink/);
+    await fs.rm(path.join(skill, "templates"), { force: true });
+    const foreignTemplate = path.join(templateOnlyTarget, ".claude", "skills", "template-skill", "templates", "qa.md");
+    await fs.mkdir(path.join(skill, "templates"), { recursive: true });
+    await fs.writeFile(path.join(skill, "templates", "qa.md"), "QA template", "utf8");
+    await fs.mkdir(path.dirname(foreignTemplate), { recursive: true });
+    await fs.writeFile(foreignTemplate, "Foreign template", "utf8");
+    await assert.rejects(() => bootstrapGstack({ target: templateOnlyTarget }), /gstack safety skill ownership conflict/);
+    assert.equal(await fs.readFile(foreignTemplate, "utf8"), "Foreign template");
+  } finally {
+    await fs.rm(templateOnlyTarget, { recursive: true, force: true });
+    await fs.rm(templateOnlyOutside, { recursive: true, force: true });
   }
 
   const escapingAliasTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-escaping-alias-"));
