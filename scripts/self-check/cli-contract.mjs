@@ -22,10 +22,8 @@ const repoRoot = path.dirname(path.dirname(cliDir));
 const cliPath = path.join(cliDir, "..", "repo-pattern.mjs");
 const secretSentinel = "do-not-persist-anthropic-token";
 
-const originalLog = console.log;
-
 export async function runCliContractChecks() {
-const cloneError = formatEccCloneError({ stderr: "fatal: unable to access: Failed to connect to github.com port 443" });
+  const cloneError = formatEccCloneError({ stderr: "fatal: unable to access: Failed to connect to github.com port 443" });
 assert.match(cloneError, /https:\/\/github\.com\/affaan-m\/ECC\.git/);
 assert.match(cloneError, /github\.com:443|HTTPS/);
 assert.match(cloneError, /proxy|firewall/);
@@ -98,6 +96,7 @@ result = runCli(["help"]);
 assert.equal(result.status, 0);
 assert.match(result.stdout, /repo-pattern help/);
 assert.match(result.stdout, /repo-pattern version/);
+assert.match(result.stdout, /doctor \[--target <path>\] \[--verbose\]/);
 assert.doesNotMatch(result.stdout, /repo-pattern ecc/);
 
 result = runCli(["ecc"]);

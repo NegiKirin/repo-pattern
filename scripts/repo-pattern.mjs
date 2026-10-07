@@ -48,7 +48,8 @@ async function parseArgs(argv) {
     migrate: false,
     applyRules: false,
     optionalSkills: [],
-    yes: false
+    yes: false,
+    verbose: false
   };
 
   for (let i = 0; i < rest.length; i++) {
@@ -64,11 +65,17 @@ async function parseArgs(argv) {
     else if (arg === "--with-skill") options.optionalSkills.push(requiredOptionValue(rest, i++, arg));
     else if (arg === "--with-skills") options.optionalSkills.push(...requiredOptionValue(rest, i++, arg).split(",").map((value) => value.trim()).filter(Boolean));
     else if (arg === "--yes") options.yes = true;
+    else if (arg === "--verbose") options.verbose = true;
     else if (arg === "-h" || arg === "--help") options.command = "help";
     else {
       console.error(`Unknown argument: ${arg}`);
       process.exit(2);
     }
+  }
+
+  if (options.verbose && options.command !== "doctor") {
+    console.error("--verbose is only supported by doctor.");
+    process.exit(2);
   }
 
   if (options.force && options.migrate) {
@@ -127,7 +134,7 @@ Advanced:
   repo-pattern mcp --mcp context7 --mcp tavily
   repo-pattern rules
   repo-pattern audit
-  repo-pattern doctor
+  repo-pattern doctor [--target <path>] [--verbose]
   repo-pattern upgrade-gstack
   repo-pattern cleanup
 
@@ -146,6 +153,7 @@ Options:
 
 Setup UI:
   setup uses ↑/↓ to move, Space to toggle MCP/rules choices, Enter to confirm, Esc/Ctrl+C to cancel
+  --verbose                     Show successful doctor checks
   --dry-run      Print actions without writing
   --migrate      Take over legacy/local Claude runtime surfaces
   --force        Reapply setup over repo-pattern-managed state
@@ -195,7 +203,7 @@ async function main() {
         await applyEccRules({ target: options.target, dryRun: options.dryRun });
         break;
       case "doctor":
-        await doctorProject(options.target);
+        await doctorProject(options.target, { verbose: options.verbose });
         break;
       default:
         console.error(`Unknown command: ${options.command}`);

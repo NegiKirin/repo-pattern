@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.3] - 2026-10-07
+
+### Added
+
+- Group `repo-pattern doctor` results by workspace area and show actionable repair guidance, with `--verbose` available for successful checks.
+
+### Changed
+
+- Use the existing Ink and React terminal UI for interactive doctor output while keeping concise plain-text output for CI and non-TTY environments.
+
 ## [1.2.2] - 2026-10-05
 
 ### Fixed

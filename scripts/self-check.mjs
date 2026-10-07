@@ -30,6 +30,7 @@ await runCliContractChecks();
 await runGstackChecks();
 await (await import("./self-check/gstack-runtime.mjs")).runGstackRuntimeChecks();
 await (await import("./self-check/gstack-diagnostics.mjs")).runGstackDiagnosticChecks();
+await (await import("./self-check/doctor-output.mjs")).runDoctorOutputChecks();
 await (await import("./self-check/coverage-cli.mjs")).runCoverageCliChecks();
 await runGstackSafetyChecks();
 await runGstackPinnedSafetyChecks();
