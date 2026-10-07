@@ -12,7 +12,7 @@ export async function runGstackDoctorChecks(target, sourceRoot) {
   console.log = (...args) => output.push(args.join(" "));
   try {
     // Value: protects=doctor reports ready Chromium; fails_when=ready browser reported as skipped or failed; why_new=runtime checks do not verify public doctor output; seam=none
-    await doctorProject(target);
+    await doctorProject(target, { verbose: true });
     assert.match(output.join("\n"), /gstack Chromium ready/);
     assert.doesNotMatch(output.join("\n"), /browser skipped/);
     const stateFile = path.join(gstackStatePath(target), "state.json");

@@ -51,7 +51,7 @@ repo-pattern doctor
 | `repo-pattern setup` | Initialize or migrate a Claude Code setup. |
 | `repo-pattern mcp --mcp <name>` | Regenerate `.mcp.json` from explicitly selected servers. |
 | `repo-pattern audit` | Inspect current Claude Code/ECC state. |
-| `repo-pattern doctor` | Validate the generated setup. |
+| `repo-pattern doctor` | Validate the generated setup and report grouped status and repair guidance. Use `repo-pattern doctor --target <path> --verbose` to include successful checks. |
 | `repo-pattern rules` | Apply or refresh project-local ECC rules. |
 | `repo-pattern cleanup` | Archive old local Claude runtime surfaces. |
 
