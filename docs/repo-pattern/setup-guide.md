@@ -42,7 +42,7 @@ Available setup pipelines:
 - `both`: ECC plus project-local gstack.
 - `none`: base project metadata only.
 
-`gstack` requires Git and Bun v1.0+ on `PATH`. repo-pattern never downloads Bun or runs upstream `gstack/setup`. Setup installs checkout dependencies, builds runtime binaries, installs project-local Playwright Chromium, and probes a local HTML page before promoting the staged checkout. Dependency installation, runtime builds, and Chromium downloads have ten-minute deadlines; runtime probes have thirty-second deadlines.
+`gstack` requires Git and Bun v1.4.2+ on `PATH`. repo-pattern never downloads Bun or runs upstream `gstack/setup`. Setup installs checkout dependencies, builds runtime binaries, installs project-local Playwright Chromium, and probes a local HTML page before promoting the staged checkout. Dependency installation, runtime builds, and Chromium downloads have ten-minute deadlines; runtime probes have thirty-second deadlines.
 
 Use `GSTACK_SKIP_PLAYWRIGHT=1` for an explicit browser-install opt-out. The skipped status is persisted and reported by `doctor`; it does not mean browser workflows are ready. Rerun the same setup command without this environment variable to install and verify Chromium or repair missing dependencies and binaries. Chromium is stored under `.claude/skills/gstack/.repo-pattern-runtime/chromium`, not in a global browser cache.
 

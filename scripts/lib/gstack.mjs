@@ -33,8 +33,10 @@ function run(command, args, options = {}) {
 
 function parseBunVersion(output) {
   const match = String(output).trim().match(/^(\d+)\.(\d+)\.(\d+)/);
-  if (!match || Number(match[1]) < 1) {
-    throw new Error(`Bun v1.0+ is required; found ${String(output).trim() || "an invalid version"}. Install Bun manually and rerun setup.`);
+  const version = match?.slice(1).map(Number);
+  const belowMinimum = !version || version[0] < 1 || (version[0] === 1 && (version[1] < 4 || (version[1] === 4 && version[2] < 2)));
+  if (belowMinimum) {
+    throw new Error(`Bun v1.4.2+ is required; found ${String(output).trim() || "an invalid version"}. Install Bun manually and rerun setup.`);
   }
 }
 
@@ -45,7 +47,7 @@ export function ensureBun({ run: runCommand = run } = {}) {
     return "bun";
   } catch (error) {
     if (error.code === "ENOENT") {
-      throw new Error("Bun v1.0+ is required. Install Bun manually from https://bun.sh/docs/installation and rerun setup.");
+      throw new Error("Bun v1.4.2+ is required. Install Bun manually from https://bun.sh/docs/installation and rerun setup.");
     }
     throw new Error(`Bun validation failed: ${error.message}`);
   }
@@ -118,23 +120,32 @@ export async function isValidGstackCheckout(checkout, { run: runCommand = run } 
   }
 }
 
+const GSTACK_SAFE_STAGES = new Set(["Bun validation", "checkout resolution", "checkout preparation", "gstack safety checks", "gstack bootstrap", "plan-tune hooks", "final validation"]);
+
 function redactedGstackDiagnostic(error) {
   const output = [error.stderr, error.stdout, error.message]
     .map((value) => String(value || "").slice(-65536))
     .join("\n");
   const diagnostics = [
     "gstack output: [redacted].",
-    ...(typeof error.gstackStage === "string" && /^(?:dependency install|runtime build|Chromium install|Chromium launch|dependencies|(?:browse\/dist\/(?:browse|find-browse)|design\/dist\/design|make-pdf\/dist\/pdf) execution)$/.test(error.gstackStage) ? [`Failed stage: ${error.gstackStage}. Rerun repo-pattern setup to repair.`] : []),
+    ...(typeof error.gstackStage === "string" && (GSTACK_SAFE_STAGES.has(error.gstackStage) || /^(?:dependency install|runtime build|Chromium install|Chromium launch|dependencies|(?:browse\/dist\/(?:browse|find-browse)|design\/dist\/design|make-pdf\/dist\/pdf) execution)$/.test(error.gstackStage)) ? [`Failed stage: ${error.gstackStage}. Rerun repo-pattern setup to repair.`] : []),
     ...(/Missing Linux system libraries/.test(error.message || "") ? ["Missing Linux system libraries. Ask your administrator to install Playwright Chromium prerequisites; no OS packages were installed."] : []),
     ...(/^gstack safety skill ownership conflict: \.claude\/skills\//.test(error.message || "") ? ["gstack safety skill ownership conflict. Preserve the foreign skill; resolve ownership before rerunning setup."] : []),
+    ...(/^gstack safety skills are missing:/.test(error.message || "") ? ["gstack safety skills are incomplete. Install careful, guard, and freeze together, then rerun setup."] : []),
+    ...(/^gstack safety helper is missing required function:/.test(error.message || "") ? ["gstack safety helper is incompatible. Refresh the gstack checkout, then rerun setup."] : []),
+    ...(/^gstack safety (?:frontmatter|hook event|hook structure|hook matchers|hook commands) (?:is invalid|are invalid|are missing):/.test(error.message || "") ? ["gstack safety hook structure is incompatible. Refresh the gstack checkout, then rerun setup."] : []),
+    ...(/^gstack safety hook command is not project-local:/.test(error.message || "") ? ["gstack safety hook command is invalid. Refresh the gstack checkout, then rerun setup."] : []),
+    ...(/^gstack plan-tune hook is missing or not executable:/.test(error.message || "") ? ["gstack plan-tune hook is missing or not executable. Rerun setup to repair local hooks."] : []),
+    ...(/^gstack review sidecar is missing or invalid:/.test(error.message || "") ? ["gstack review sidecar is missing or invalid. Refresh the gstack checkout, then rerun setup."] : []),
     ...(process.env.REPO_PATTERN_DEBUG_GSTACK === "1" && error.gstackOutput ? [`Debug output: ${String(error.gstackOutput).slice(-4000)}`] : []),
     ...(Number.isInteger(error.status) ? [`Exit code: ${error.status}.`] : []),
-    ...(/\b(?:bun)\b/i.test(output) ? ["Bun prerequisite failed."] : []),
-    ...(/\b(?:git|clone|checkout)\b/i.test(output) ? ["Git checkout operation failed."] : []),
-    ...(/\b(?:network|download|fetch|connection|dns|tls|certificate)\b/i.test(output) ? ["Network operation failed."] : []),
-    ...(/\b(?:permission|denied|access)\b/i.test(output) ? ["Permission or access check failed."] : []),
-    ...(/\b(?:missing|required|not found|prerequisite)\b/i.test(output) ? ["A required prerequisite is missing or invalid."] : []),
-    ...(/\b(?:error|fatal|fail(?:ed|ure)?)\b/i.test(output) ? ["gstack bootstrap failed."] : [])
+    ...(error.gstackCloneFailure ? ["gstack clone failed. Check Git access and network connectivity, then rerun setup."] : []),
+    ...(!error.gstackCloneFailure && /\b(?:bun)\b/i.test(output) ? ["Bun prerequisite failed."] : []),
+    ...(!error.gstackCloneFailure && /\b(?:git|checkout)\b/i.test(output) ? ["Git checkout operation failed."] : []),
+    ...(!error.gstackCloneFailure && /\b(?:network|download|fetch|connection|dns|tls|certificate)\b/i.test(output) ? ["Network operation failed."] : []),
+    ...(!error.gstackCloneFailure && /\b(?:permission|denied|access)\b/i.test(output) ? ["Permission or access check failed."] : []),
+    ...(!error.gstackStage && !error.gstackCloneFailure && /\b(?:missing|required|not found|prerequisite)\b/i.test(output) ? ["A required prerequisite is missing or invalid."] : []),
+    ...(!error.gstackStage && !error.gstackCloneFailure && /\b(?:error|fatal|fail(?:ed|ure)?)\b/i.test(output) ? ["gstack bootstrap failed."] : [])
   ];
   return diagnostics.join("\n").slice(0, GSTACK_DIAGNOSTIC_MAX_CHARS);
 }
@@ -657,28 +668,38 @@ export async function setupGstack({ target, dryRun = false, planTuneHooks = fals
   const statePath = gstackStatePath(target);
   let checkoutLease = null;
   let transaction = null;
+  let currentStage = "Bun validation";
   try {
     if (!dryRun) ensureBun();
     const install = async () => {
+      currentStage = "checkout resolution";
       const previousValid = !dryRun && await exists(path.join(statePath, "state.json")) && await isValidGstackCheckout(checkout);
       const previousWrappers = previousValid ? await expectedGstackWrappers(target, checkout, statePath) : [];
       const previousAssets = previousValid ? await expectedGstackAssets(target, checkout, statePath) : [];
       const previousSidecars = previousValid ? await expectedGstackSidecars(checkout) : [];
       const browserSkipped = process.env.GSTACK_SKIP_PLAYWRIGHT === "1";
-      const resolved = await resolveCheckout({ target, dryRun, upgrade, progress, silent, prepare: (staged) => prepareGstackRuntime(staged, { browserSkipped }) });
+      currentStage = "checkout resolution";
+      const resolved = await resolveCheckout({ target, dryRun, upgrade, progress, silent, prepare: async (staged) => {
+        currentStage = "checkout preparation";
+        await prepareGstackRuntime(staged, { browserSkipped });
+      } });
       checkoutLease = resolved;
       if (!dryRun) {
+        currentStage = "gstack safety checks";
         const wrappers = await expectedGstackWrappers(target, checkout, statePath);
         await assertGstackSafety({ checkout, wrappers, statePath });
         const assets = await expectedGstackAssets(target, checkout, statePath);
         const sidecars = await expectedGstackSidecars(checkout);
         transaction = await snapshotGstackArtifacts(target, wrappers, assets, sidecars, statePath);
       }
+      currentStage = "gstack bootstrap";
       await bootstrapGstack({ target, checkout, statePath, previousWrappers, previousAssets, previousSidecars, dryRun, progress, silent });
+      currentStage = "plan-tune hooks";
       await writePlanTuneHooks({ target, planTuneHooks, dryRun, progress, silent });
       if (!dryRun) {
         const stateFile = path.join(statePath, "state.json");
         await writeJson(stateFile, { ...await readJson(stateFile, {}), browserSkipped }, { silent });
+        currentStage = "final validation";
         const validation = await validateProjectGstack(target);
         if (![validation.checkoutValid, validation.stateValid, validation.wrappersValid, validation.assetsValid, validation.sidecarsValid, validation.runtimeValid, ["ready", "skipped"].includes(validation.browserStatus)].every(Boolean)) throw new Error(`gstack ${upgrade ? "upgrade" : "setup"} validation failed.`);
         await checkoutLease.commit();
@@ -695,6 +716,7 @@ export async function setupGstack({ target, dryRun = false, planTuneHooks = fals
     if (!dryRun && !silent) printSummary("gstack", gstackSummaryRows(target, planTuneHooks, result.browserStatus), { progress });
     return result;
   } catch (error) {
+    if (!error.gstackStage && GSTACK_SAFE_STAGES.has(currentStage)) error.gstackStage = currentStage;
     const rollbackErrors = [];
     if (transaction) {
       try {

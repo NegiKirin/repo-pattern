@@ -369,7 +369,7 @@ async function writeLocalSettings({ sourceRoot, target, localSettingsEnv = {}, e
   await appendGitignoreLine(target, ".claude/", { dryRun, silent });
 }
 
-export async function provisionProject({ sourceRoot, target, setupPipeline = "ecc", planTuneHooks = false, mcpServers = [], mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, effortLevel = "medium", attributionConfig = { mode: "off" }, permissionConfig = { bypass: "deny" }, ruleMode = "auto", rules = null, applyRules = null, optionalSkills = [], interactiveSetup = false, renderProgress = null, onBeforeSuccessSummary = null }) {
+export async function provisionProject({ sourceRoot, target, setupPipeline = "ecc", planTuneHooks = false, mcpServers = [], mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, effortLevel = "medium", attributionConfig = { mode: "off" }, permissionConfig = { bypass: "deny" }, ruleMode = "auto", rules = null, applyRules = null, optionalSkills = [], interactiveSetup = false, renderProgress = null, onBeforeSuccessSummary = null, resolveGstackCheckout }) {
   if (!SETUP_PIPELINES.includes(setupPipeline)) throw new Error(`Unknown setup pipeline: ${setupPipeline}. Available: ${SETUP_PIPELINES.join(", ")}`);
   const shouldApplyRules = applyRules ?? usesEcc(setupPipeline);
   if (planTuneHooks && !usesGstack(setupPipeline)) throw new Error("--with-plan-tune-hooks requires --setup-pipeline gstack or both.");
@@ -520,14 +520,18 @@ export async function provisionProject({ sourceRoot, target, setupPipeline = "ec
     }
   }
 
-  if (usesGstack(setupPipeline)) gstackStatus = await setupGstack({ target, dryRun, planTuneHooks, progress, silent: interactiveSetup });
+  if (usesGstack(setupPipeline)) gstackStatus = await setupGstack({ target, dryRun, planTuneHooks, progress, silent: interactiveSetup, ...(resolveGstackCheckout ? { resolveCheckout: resolveGstackCheckout } : {}) });
   const gstackFailed = gstackStatus?.status === "failed";
   if (gstackFailed) {
-    progress?.failGroup?.("components", "Downloading gstack");
+    progress?.failGroup?.("components", "gstack setup");
     progress?.fail({ detail: "gstack setup failed" });
     progress?.flush?.();
     const gstackError = `gstack setup failed: ${gstackStatus.error}`;
-    const recovery = `Recovery: install Bun v1.0+ or fix gstack, then rerun repo-pattern setup --target ${shellQuote(target)} --setup-pipeline ${setupPipeline} --yes`;
+    const recovery = gstackStatus.error.includes("gstack clone failed")
+      ? `Recovery: verify Git access and network connectivity, then rerun repo-pattern setup --target ${shellQuote(target)} --setup-pipeline ${setupPipeline} --yes`
+      : gstackStatus.error.includes("Failed stage: Bun validation")
+        ? `Recovery: install Bun v1.4.2+ or rerun repo-pattern setup --target ${shellQuote(target)} --setup-pipeline ${setupPipeline} --yes`
+        : `Recovery: rerun repo-pattern setup --target ${shellQuote(target)} --setup-pipeline ${setupPipeline} --yes and review the safe gstack diagnostic above`;
     const currentLock = await readPrivateJson(lockPath, {}, {
       label: ".repo-pattern/.repo-pattern.lock.json",
       parentLabel: ".repo-pattern"

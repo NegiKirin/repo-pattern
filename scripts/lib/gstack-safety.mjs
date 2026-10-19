@@ -3,10 +3,12 @@ import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const SAFETY_TOOLS = { careful: ["Bash"], guard: ["Bash", "Edit", "Write"], freeze: ["Edit", "Write"] };
+const LEGACY_SAFETY_TOOLS = { careful: ["Bash"], guard: ["Bash", "Edit", "Write"], freeze: ["Edit", "Write"] };
+const MODERN_SAFETY_TOOLS = { careful: ["Bash", "PowerShell"], guard: ["Bash", "PowerShell", "Edit", "Write", "NotebookEdit"], freeze: ["Edit", "Write", "NotebookEdit"] };
+const SAFETY_MATCHERS = new Set(["Bash", "PowerShell", "Edit", "Write", "NotebookEdit"]);
 
 export async function assertGstackSafety({ checkout, wrappers, statePath }) {
-  const safety = wrappers.filter(({ wrapper }) => Object.hasOwn(SAFETY_TOOLS, path.basename(wrapper)));
+  const safety = wrappers.filter(({ wrapper }) => Object.hasOwn(LEGACY_SAFETY_TOOLS, path.basename(wrapper)));
   if (safety.length !== 3) throw new Error("gstack safety skills are missing: careful, guard and freeze must be installed together");
   execFileSync("bash", ["--version"], { stdio: "ignore" });
   try {
@@ -23,15 +25,16 @@ export async function assertGstackSafety({ checkout, wrappers, statePath }) {
     if (!frontmatter) throw new Error(`gstack safety frontmatter is invalid: ${skill}`);
     const hookBlock = frontmatter.match(/^hooks:\r?\n  PreToolUse:\r?\n((?:[\t ]+[^\r\n]*\r?\n?)*)$/m)?.[1];
     if (!hookBlock) throw new Error(`gstack safety hook event is invalid: ${skill}`);
-    const declarations = [...hookBlock.matchAll(/^    - matcher: "(Bash|Edit|Write)"\r?\n      hooks:\r?\n        - type: command\r?\n          command: (.+)\r?$/gm)];
-    if (declarations.length !== SAFETY_TOOLS[skill].length) throw new Error(`gstack safety hook structure is invalid: ${skill}`);
-    const tools = [...frontmatter.matchAll(/^[\t ]*- matcher: "(Bash|Edit|Write)"[\t ]*$/gm)].map((match) => match[1]);
-    if (JSON.stringify(tools) !== JSON.stringify(SAFETY_TOOLS[skill])) throw new Error(`gstack safety hook matchers are invalid: ${skill}`);
+    const declarations = [...hookBlock.matchAll(/^    - matcher: "([^"]+)"\r?\n      hooks:\r?\n        - type: command\r?\n          command: (.+)\r?$/gm)];
+    const tools = [...frontmatter.matchAll(/^[\t ]*- matcher: "([^"]+)"[\t ]*$/gm)].map((match) => match[1]);
+    if (tools.some((tool) => !SAFETY_MATCHERS.has(tool))) throw new Error(`gstack safety hook matchers are invalid: ${skill}`);
+    const expectedTools = [LEGACY_SAFETY_TOOLS, MODERN_SAFETY_TOOLS].find((layout) => JSON.stringify(tools) === JSON.stringify(layout[skill]));
+    if (!expectedTools || declarations.length !== tools.length) throw new Error(`gstack safety hook matchers are invalid: ${skill}`);
     const commands = [...frontmatter.matchAll(/^[\t ]*command: (.+)$/gm)];
     if (commands.length !== tools.length) throw new Error(`gstack safety hook commands are missing: ${skill}`);
     for (let i = 0; i < commands.length; i++) {
       const command = JSON.parse(commands[i][1]);
-      const hook = tools[i] === "Bash" ? "careful" : "freeze";
+      const hook = ["Bash", "PowerShell"].includes(tools[i]) ? "careful" : "freeze";
       const candidates = [`${hook}/bin/check-${hook}.sh`, `scripts/check-${hook}.sh`];
       const script = candidates.find((relative) => ["", "bash "].some((interpreter) =>
         command === `GSTACK_HOME=${quote(statePath)} ${interpreter}${quote(path.join(checkout, relative))}`));
