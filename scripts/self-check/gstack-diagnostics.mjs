@@ -4,6 +4,7 @@ import { syncBuiltinESMExports } from "node:module";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { ensureBun, isValidGstackCheckout, resolveGstackCheckout, gstackCheckoutPath, setupGstack } from "../lib/gstack.mjs";
 
 export async function runGstackDiagnosticChecks() {
@@ -16,6 +17,8 @@ export async function runGstackDiagnosticChecks() {
   assert.equal(ensureBun({ run: () => "1.4.2\n" }), "bun");
   const target = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-diagnostics-"));
   const originalDebug = process.env.REPO_PATTERN_DEBUG_GSTACK;
+  const originalPath = process.env.PATH;
+  const originalRun = childProcess.execFileSync;
   try {
     await fs.writeFile(path.join(target, "setup"), "#!/bin/sh\n", { mode: 0o755 });
     // Value: protects=checkout Git probes have deadlines and reject timeout; fails_when=deadline absent or timeout accepted; why_new=real Git checks do not simulate a hung probe; seam=none
@@ -32,19 +35,30 @@ export async function runGstackDiagnosticChecks() {
     await fs.mkdir(local, { recursive: true });
     await fs.writeFile(path.join(local, "setup"), "#!/bin/sh\n", { mode: 0o755 });
     const originalExec = childProcess.execFileSync;
+    originalExec("git", ["init", "--quiet", local]);
+    await fs.writeFile(path.join(local, "setup.md"), "fixture\n");
+    await fs.mkdir(path.join(target, ".repo-pattern", "gstack"), { recursive: true });
+    const digest = createHash("sha256").update("fixture\n").digest("hex");
+    await fs.writeFile(path.join(target, ".repo-pattern", "gstack", "documents.json"), JSON.stringify({ version: 1, files: [{ path: "setup.md", upstreamSha256: digest, normalizedSha256: digest }] }));
+    originalExec("git", ["-C", local, "add", "setup.md"]);
+    originalExec("git", ["-C", local, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture"]);
+    let stagedCheckout;
     try {
       for (const upgrade of [false, true]) {
         let observed = false;
         childProcess.execFileSync = (command, args, options) => {
           assert.equal(command, "git");
-          assert.deepEqual(args, ["status", "--porcelain", upgrade ? "--untracked-files=all" : "--untracked-files=no"]);
-          assert.equal(options.timeout, 30000);
-          assert.equal(options.env.GIT_OPTIONAL_LOCKS, "0");
-          observed = true;
-          throw Object.assign(new Error("status timed out"), { code: "ETIMEDOUT" });
+          if (args[2] === "status") {
+            assert.deepEqual(args, ["-C", local, "status", "--porcelain", "-z", "--untracked-files=all"]);
+            assert.equal(options.timeout, 30000);
+            assert.equal(options.env.GIT_OPTIONAL_LOCKS, "0");
+            observed = true;
+            throw Object.assign(new Error("status timed out"), { code: "ETIMEDOUT" });
+          }
+          return originalExec(command, args, options);
         };
         syncBuiltinESMExports();
-        await assert.rejects(resolveGstackCheckout({ target, upgrade, prepare: async () => {}, run: (_command, args) => args.at(-1) === "--is-inside-work-tree" ? "true" : local, silent: true }), /status timed out/);
+        await assert.rejects(resolveGstackCheckout({ target, upgrade, prepare: async () => {}, run: (_command, args) => args.at(-1) === "--is-inside-work-tree" ? "true" : args.at(-1) === "--show-toplevel" ? (args[1] === local ? local : stagedCheckout) : local, copy: async (source, destination) => { await fs.cp(source, destination, { recursive: true }); stagedCheckout = destination; await originalExec("git", ["init", "--quiet", destination]); }, silent: true }), /status timed out/);
         assert.equal(observed, true);
         assert.equal(await fs.readFile(path.join(local, "setup"), "utf8"), "#!/bin/sh\n");
       }
@@ -99,6 +113,12 @@ export async function runGstackDiagnosticChecks() {
     }
     // Value: protects=setup diagnostics redact output unless debug explicitly enabled; fails_when=sentinel leaks or stage untrusted; why_new=clone check omits runtime diagnostics and debug; seam=none
     const diagnosticOutput = "synthetic-private-output" + "x".repeat(5000) + "diagnostic-tail";
+    const bunExecutable = path.join(target, "bun");
+    await fs.writeFile(bunExecutable, "#!/bin/sh\nprintf '1.4.2\\n'\n", { mode: 0o755 });
+    childProcess.execFileSync = (command, args, options) => command === "bun" ? "1.4.2\\n" : originalRun(command, args, options);
+    syncBuiltinESMExports();
+    const versionCheck = ensureBun();
+    assert.equal(versionCheck, "bun");
     const failedSetup = (stage) => setupGstack({ target, silent: true, resolveCheckout: async () => {
       throw Object.assign(new Error("Missing Linux system libraries"), { gstackStage: stage, gstackOutput: diagnosticOutput });
     } });
@@ -136,6 +156,9 @@ export async function runGstackDiagnosticChecks() {
   } finally {
     if (originalDebug === undefined) delete process.env.REPO_PATTERN_DEBUG_GSTACK;
     else process.env.REPO_PATTERN_DEBUG_GSTACK = originalDebug;
+    childProcess.execFileSync = originalRun;
+    syncBuiltinESMExports();
+    process.env.PATH = originalPath;
     await fs.rm(target, { recursive: true, force: true });
   }
 }

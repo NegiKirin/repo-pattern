@@ -47,6 +47,7 @@ try {
     await fs.writeFile(path.join(gstackCheckout, sidecar), `Fixture ${sidecar}`, "utf8");
   }
   spawnSync("git", ["init"], { cwd: gstackCheckout, stdio: "ignore" });
+  (await import("./fixtures.mjs")).commitGstackFixture(gstackCheckout);
   await fs.mkdir(path.join(gstackProvisionTarget, ".repo-pattern"), { recursive: true });
   await fs.writeFile(path.join(gstackProvisionTarget, ".repo-pattern", ".repo-pattern.json"), JSON.stringify({
     workflow: "gstack",
@@ -87,6 +88,7 @@ try {
   assert.equal((await auditProject(gstackProvisionTarget)).state, "GSTACK_MINIMAL");
   await doctorProject(gstackProvisionTarget);
 
+  await fs.writeFile(path.join(gstackCheckout, "user-added.md"), "Preserve local document.\n");
   await provisionProject({
     sourceRoot: repoRoot,
     target: gstackProvisionTarget,

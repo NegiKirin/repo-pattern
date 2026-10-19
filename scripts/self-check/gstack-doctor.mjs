@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { doctorProject } from "../lib/doctor.mjs";
-import { provisionProject } from "../lib/provision.mjs";
 import { gstackCheckoutPath, gstackStatePath, validateProjectGstack } from "../lib/gstack.mjs";
+import { provisionProject } from "../lib/provision.mjs";
 
 export async function runGstackDoctorChecks(target, sourceRoot) {
-  await provisionProject({ sourceRoot, target, setupPipeline: "gstack", migrate: true, applyRules: false });
+  if (sourceRoot) await provisionProject({ sourceRoot, target, setupPipeline: "gstack", migrate: true, applyRules: false });
   const output = [];
   const previousLog = console.log;
   console.log = (...args) => output.push(args.join(" "));
