@@ -137,6 +137,9 @@ async function addGstackChecks(check, infoRows, target, lock, settings, setupPip
   check(gstack.wrappersValid, "gstack wrappers match local checkout state");
   check(gstack.assetsValid, "gstack workflow assets match local checkout state");
   check(gstack.sidecarsValid, "gstack review sidecars match local checkout state");
+  check(gstack.documentsValid, "gstack checkout document paths and manifest valid; rerun repo-pattern setup to repair", { group: "gstack" });
+  for (const error of gstack.documentErrors) check(false, error, { group: "gstack" });
+  for (const warning of gstack.documentWarnings) infoRows.push(`gstack documents: ${warning}; not traversed`);
   for (const runtime of gstack.runtimeChecks) check(runtime.ok, `gstack ${runtime.stage}${runtime.ok ? " executable" : `: ${runtime.error}`}`);
   check(gstack.runtimeValid, "gstack browse/design/PDF runtimes ready; rerun repo-pattern setup to repair failures");
   if (gstack.browserStatus === "skipped") infoRows.push("gstack browser skipped by persisted GSTACK_SKIP_PLAYWRIGHT=1; rerun setup without the flag to enable Chromium");

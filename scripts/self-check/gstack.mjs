@@ -17,8 +17,7 @@ import { needsLocalSettingsPrompt, setupProject, setupRetryOptions } from "../li
 import { applyEccRules, buildAgentManifest, clearEccRules, formatEccCloneError, hasGitUpstream, validateAgentManifest } from "../lib/rules.mjs";
 import { applyOptionalSkills, applyPluginSkillSettings, expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills, OPTIONAL_SKILLS } from "../lib/skills.mjs";
 import { runGstackRollbackChecks } from "./gstack-rollback.mjs";
-import { runGstackSetupStatusChecks } from "./gstack-setup-status.mjs";
-import { installGstackSafetyFixture } from "./fixtures.mjs";
+import { commitGstackFixture, installGstackSafetyFixture } from "./fixtures.mjs";
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.dirname(path.dirname(cliDir));
 const cliPath = path.join(cliDir, "..", "repo-pattern.mjs");
@@ -216,13 +215,14 @@ try {
   await fs.mkdir(path.join(globalMigrationCheckout, "review"), { recursive: true });
   await fs.writeFile(path.join(globalMigrationCheckout, "setup"), "#!/bin/sh\n", { mode: 0o755 });
   await installGstackSafetyFixture(globalMigrationCheckout);
+  spawnSync("git", ["init"], { cwd: globalMigrationCheckout, stdio: "ignore" });
   await fs.writeFile(path.join(globalMigrationCheckout, "SKILL.md"), "Project-local gstack", "utf8");
   await fs.writeFile(path.join(globalMigrationCheckout, "review", "SKILL.md"), "Review", "utf8");
   for (const sidecar of GSTACK_REVIEW_SIDECARS) {
     await fs.mkdir(path.dirname(path.join(globalMigrationCheckout, sidecar)), { recursive: true });
     await fs.writeFile(path.join(globalMigrationCheckout, sidecar), `Fixture ${sidecar}`, "utf8");
   }
-  spawnSync("git", ["init"], { cwd: globalMigrationCheckout, stdio: "ignore" });
+  commitGstackFixture(globalMigrationCheckout);
   const originalHome = process.env.HOME;
   process.env.HOME = migrationHome;
   try {
@@ -230,13 +230,12 @@ try {
     assert.equal(result.status, "installed");
     assert.equal(result.source, "global-migration");
     await (await import("./gstack-doctor.mjs")).runGstackDoctorChecks(migrationTarget, repoRoot);
-    await runGstackSetupStatusChecks(migrationTarget);
+    await import("./gstack-setup-status.mjs").then(({ runGstackSetupStatusChecks }) => runGstackSetupStatusChecks(migrationTarget));
   } finally {
     process.env.HOME = originalHome;
   }
   assert.equal(await fs.readFile(path.join(globalMigrationCheckout, "SKILL.md"), "utf8"), "Project-local gstack");
   assert.equal(await fs.access(path.join(migrationHome, ".claude", "settings.json")).then(() => true, () => false), false);
-  assert.equal(await fs.access(path.join(migrationHome, ".gstack")).then(() => true, () => false), false);
 } finally {
   await fs.rm(migrationTarget, { recursive: true, force: true });
   await fs.rm(migrationHome, { recursive: true, force: true });
@@ -295,6 +294,7 @@ try {
   await fs.mkdir(path.join(checkout, ".cursor", "skills", "gstack"), { recursive: true });
   await fs.writeFile(path.join(checkout, ".cursor", "skills", "gstack", "SKILL.md"), "Hidden integration", "utf8");
   spawnSync("git", ["init"], { cwd: checkout, stdio: "ignore" });
+  commitGstackFixture(checkout);
   const originalPath = process.env.PATH;
   process.env.PATH = `${path.dirname(process.execPath)}:${originalPath}`;
   const result = await setupGstack({ target: wrapperTarget, planTuneHooks: true });

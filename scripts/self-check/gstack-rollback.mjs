@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { bootstrapGstack, GSTACK_REVIEW_SIDECARS, gstackCheckoutPath, gstackStatePath, setupGstack, validateProjectGstack } from "../lib/gstack.mjs";
-import { installGstackSafetyFixture } from "./fixtures.mjs";
+import { commitGstackFixture, installGstackSafetyFixture } from "./fixtures.mjs";
 
 export async function runGstackRollbackChecks() {
   const hookSymlinkTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-hook-symlink-"));
@@ -228,6 +228,7 @@ export async function runGstackRollbackChecks() {
       await fs.writeFile(path.join(checkout, sidecar), `Fixture ${sidecar}`, "utf8");
     }
     spawnSync("git", ["init"], { cwd: checkout, stdio: "ignore" });
+    commitGstackFixture(checkout);
     await bootstrapGstack({ target: rollbackTarget });
     const priorWrapper = await fs.readFile(path.join(wrapper, "SKILL.md"), "utf8");
     const priorReview = await fs.readFile(path.join(review, "SKILL.md"), "utf8");
@@ -259,6 +260,7 @@ export async function runGstackRollbackChecks() {
       await fs.writeFile(path.join(checkout, sidecar), `Fixture ${sidecar}`, "utf8");
     }
     spawnSync("git", ["init"], { cwd: checkout, stdio: "ignore" });
+    commitGstackFixture(checkout);
     await bootstrapGstack({ target: artifactRollbackTarget });
     const priorWrapper = await fs.readFile(path.join(artifactRollbackTarget, ".claude", "skills", "_gstack-command", "SKILL.md"), "utf8");
     const settingsFile = path.join(artifactRollbackTarget, ".claude", "settings.json");

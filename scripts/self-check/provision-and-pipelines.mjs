@@ -271,6 +271,7 @@ try {
     await fs.writeFile(path.join(gstackCheckout, "hosts", "claude", "hooks", hook), "#!/bin/sh\n", { mode: 0o755 });
   }
   spawnSync("git", ["init"], { cwd: gstackCheckout, stdio: "ignore" });
+  (await import("./fixtures.mjs")).commitGstackFixture(gstackCheckout);
   await fs.mkdir(path.join(bothProvisionTarget, ".repo-pattern"), { recursive: true });
   await fs.writeFile(path.join(bothProvisionTarget, ".repo-pattern", ".repo-pattern.json"), JSON.stringify({
     workflow: "gstack",

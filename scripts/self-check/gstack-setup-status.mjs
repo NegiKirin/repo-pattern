@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { gstackStatePath, gstackSummaryRows, setupGstack } from "../lib/gstack.mjs";
 
-export async function runGstackSetupStatusChecks(target) {
+export async function runGstackSetupStatusChecks(target, resolveCheckout) {
   // Value: protects=setup returns and persists explicit browser opt-out; fails_when=setup reports ready or omits persisted flag; why_new=runtime skipped state previously had no setup persistence assertion; seam=none
   assert.deepEqual(gstackSummaryRows(target, false, "skipped")[2], ["Status", "runtime ready; browser skipped"]);
   const stateFile = path.join(gstackStatePath(target), "state.json");
@@ -11,14 +11,14 @@ export async function runGstackSetupStatusChecks(target) {
   const originalSkip = process.env.GSTACK_SKIP_PLAYWRIGHT;
   process.env.GSTACK_SKIP_PLAYWRIGHT = "1";
   try {
-    const setup = await setupGstack({ target, silent: true });
+    const setup = await setupGstack({ target, silent: true, ...(resolveCheckout ? { resolveCheckout } : {}) });
     assert.equal(setup.browserSkipped, true);
     assert.equal(setup.browserStatus, "skipped");
     const persisted = JSON.parse(await fs.readFile(stateFile, "utf8"));
     assert.equal(persisted.browserSkipped, true);
     // Value: protects=rerunning setup without opt-out enables browser and replaces persisted skip; fails_when=old skip survives setup; why_new=doctor state edits do not exercise the setup transition; seam=none
     delete process.env.GSTACK_SKIP_PLAYWRIGHT;
-    const enabled = await setupGstack({ target, silent: true });
+    const enabled = await setupGstack({ target, silent: true, ...(resolveCheckout ? { resolveCheckout } : {}) });
     assert.equal(enabled.browserSkipped, false);
     assert.equal(enabled.browserStatus, "ready");
     assert.equal(JSON.parse(await fs.readFile(stateFile, "utf8")).browserSkipped, false);

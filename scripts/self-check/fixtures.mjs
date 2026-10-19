@@ -22,6 +22,13 @@ export async function installGstackRuntimeFixture(checkout) {
   await fs.writeFile(path.join(checkout, "fixture-build.mjs"), `import fs from 'node:fs/promises'; import path from 'node:path'; for(const file of ['browse/dist/browse','browse/dist/find-browse','design/dist/design','make-pdf/dist/pdf']) { await fs.mkdir(path.dirname(file),{recursive:true}); await fs.writeFile(file,'#!/bin/sh\\nexit 0\\n',{mode:0o755}); } await fs.mkdir('node_modules/playwright',{recursive:true}); await fs.writeFile('node_modules/playwright/package.json',JSON.stringify({type:'module',exports:'./index.mjs'})); await fs.writeFile('node_modules/playwright/index.mjs',"export const chromium={launch:async()=>({newPage:async()=>({goto:async()=>{},textContent:async()=> 'repo-pattern-ready'}),close:async()=>{}})}"); await fs.writeFile('node_modules/playwright/cli.js','');`);
 }
 
+export function commitGstackFixture(checkout) {
+  for (const args of [["add", "."], ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "Fixture upstream"]]) {
+    const result = spawnSync("git", args, { cwd: checkout, encoding: "utf8" });
+    if (result.status !== 0) throw new Error(result.stderr || "Cannot commit gstack fixture");
+  }
+}
+
 export async function writeEccGitFixture(target, { origin = "https://github.com/affaan-m/ECC.git", withAgents = true } = {}) {
   const cache = path.join(target, ".repo-pattern", "cache", "ECC");
   await fs.mkdir(path.join(cache, "rules", "common"), { recursive: true });

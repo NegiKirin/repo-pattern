@@ -28,6 +28,8 @@ await runEffortPickerChecks();
 await runEccSourceAndTransactionChecks();
 await runCliContractChecks();
 await runGstackChecks();
+await import("./self-check/gstack-documents.mjs");
+await import("./self-check/gstack-document-lifecycle.mjs");
 await (await import("./self-check/gstack-runtime.mjs")).runGstackRuntimeChecks();
 await (await import("./self-check/gstack-diagnostics.mjs")).runGstackDiagnosticChecks();
 await (await import("./self-check/doctor-output.mjs")).runDoctorOutputChecks();
