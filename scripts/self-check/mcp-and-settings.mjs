@@ -30,6 +30,9 @@ assert.equal(localSettingsTemplate.effortLevel, "medium");
 assert.equal("effortLevel" in localSettingsTemplate.env, false);
 assert.deepEqual(Object.fromEntries(["CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS", "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH", "CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY"].map((name) => [name, localSettingsTemplate.env[name]])), { CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS: "4", CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH: "1", CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: "5" });
 assert.equal("workflowSizeGuideline" in localSettingsTemplate.env, false);
+assert.equal(localSettingsTemplate.env.API_TIMEOUT_MS, "60000");
+assert.equal(localSettingsTemplate.env.BASH_DEFAULT_TIMEOUT_MS, "60000");
+assert.equal(localSettingsTemplate.env.MCP_TOOL_TIMEOUT, "120000");
 assert.equal(interactiveSetupPipeline(null), "none");
 assert.equal(interactiveSetupPipeline({ setupPipeline: "gstack" }), "gstack");
 
