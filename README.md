@@ -118,7 +118,7 @@ target-project/
 - Basic OS/IDE noise is added to `.gitignore` during setup.
 - ECC rule application atomically replaces only repo-pattern-managed `.claude/rules/ecc/` and `.claude/agents/`.
 - Optional external skills are opt-in through `--with-skill`, `--with-skills`, or interactive setup.
-- gstack requires Git and Bun v1.0+ on `PATH`; repo-pattern never downloads Bun or runs upstream `gstack/setup`.
+- gstack requires Git and Bun v1.4.2+ on `PATH`; repo-pattern never downloads Bun or runs upstream `gstack/setup`.
 
 ## Learn more
 

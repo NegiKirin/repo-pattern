@@ -56,7 +56,7 @@ assert.deepEqual(gstackSummaryRows("/tmp/project", true), [
   ["Status", "ready"]
 ]);
 assert.equal(gstackStatePath("/tmp/project"), "/tmp/project/.repo-pattern/gstack");
-assert.equal(ensureBun({ run: () => "1.2.0\n" }), "bun");
+assert.equal(ensureBun({ run: () => "1.4.2\n" }), "bun");
 assert.throws(() => ensureBun({ run: () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); } }), /Install Bun manually/);
 assert.throws(() => ensureBun({ run: () => "0.9.9\n" }), /Bun validation failed/);
 

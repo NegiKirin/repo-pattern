@@ -219,7 +219,7 @@ export async function runInteractiveProvisionChecks(repoRoot) {
             assert.match(error.message, /Bun prerequisite failed/);
             assert.match(error.message, /Rollback: completed\./);
             assert.match(error.message, /Backup: /);
-            assert.match(error.message, /Recovery: install Bun v1\.0\+ or fix gstack, then rerun repo-pattern setup/);
+            assert.match(error.message, /Recovery: install Bun v1\.4\.2\+ or rerun repo-pattern setup/);
             return true;
           }
         );
@@ -227,13 +227,37 @@ export async function runInteractiveProvisionChecks(repoRoot) {
         process.env.PATH = originalPath;
       }
       const rendered = output.join("");
-      assert.match(rendered, /ECC & gstack Downloading gstack failed/);
+      assert.match(rendered, /ECC & gstack gstack setup failed/);
       assert.match(rendered, /Setup failed/);
       assert.ok(rendered.indexOf("Setup failed") < rendered.indexOf("\nERROR: gstack setup failed"));
       assert.doesNotMatch(rendered, /Setup complete/);
     });
   } finally {
     await fs.rm(gstackFailureTarget, { recursive: true, force: true });
+  }
+
+  const cloneFailureTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-interactive-clone-failure-"));
+  try {
+    await assert.rejects(
+      () => provisionProject({
+        sourceRoot: repoRoot,
+        target: cloneFailureTarget,
+        mcpServers: ["context7", "tavily", "gitnexus"],
+        setupPipeline: "gstack",
+        mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
+        resolveGstackCheckout: async () => {
+          throw Object.assign(new Error("clone failed"), { gstackCloneFailure: true, stderr: "fatal: network unavailable" });
+        }
+      }),
+      (error) => {
+        assert.match(error.message, /gstack setup failed/);
+        assert.match(error.message, /Recovery: verify Git access and network connectivity/);
+        assert.doesNotMatch(error.message, /install Bun/);
+        return true;
+      }
+    );
+  } finally {
+    await fs.rm(cloneFailureTarget, { recursive: true, force: true });
   }
 
   const failureTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-interactive-failure-"));

@@ -19,7 +19,7 @@ export async function runGstackSafetyChecks() {
     await fs.writeFile(path.join(invalidCheckout, "user-note"), "preserve");
     await assert.rejects(resolveGstackCheckout({ target: invalidTarget, silent: true }), /Existing gstack checkout is invalid/);
     assert.equal(await fs.readFile(path.join(invalidCheckout, "user-note"), "utf8"), "preserve");
-    for (const name of ["project", "project with spaces", "project's checkout", "upstream single quoted"]) {
+    for (const name of ["project", "project with spaces", "project's checkout", "upstream single quoted", "upstream safety layout"]) {
       const target = path.join(root, name);
       const checkout = gstackCheckoutPath(target);
       await fs.mkdir(checkout, { recursive: true });
@@ -37,12 +37,15 @@ export async function runGstackSafetyChecks() {
         }
       }
       await fs.writeFile(path.join(checkout, "careful", "bin", "hook-extract.sh"), "#!/bin/bash\ngstack_hook_extract_field() { :; }\ngstack_hook_decision() { :; }\ngstack_hook_json_string() { :; }\ngstack_hook_state_root() { :; }\ngstack_hook_log_fire() { :; }\n");
-      for (const [skill, tools] of [["careful", ["Bash"]], ["guard", ["Bash", "Edit", "Write"]], ["freeze", ["Edit", "Write"]]]) {
+      const layout = name === "upstream safety layout"
+        ? { careful: ["Bash", "PowerShell"], guard: ["Bash", "PowerShell", "Edit", "Write", "NotebookEdit"], freeze: ["Edit", "Write", "NotebookEdit"] }
+        : { careful: ["Bash"], guard: ["Bash", "Edit", "Write"], freeze: ["Edit", "Write"] };
+      for (const [skill, tools] of Object.entries(layout)) {
         await fs.mkdir(path.join(checkout, skill), { recursive: true });
         const declarations = tools.map((tool) => {
-          const hook = tool === "Bash" ? "careful" : "freeze";
+          const hook = ["Bash", "PowerShell"].includes(tool) ? "careful" : "freeze";
           const command = name === "project" ? `~/.claude/skills/gstack/scripts/check-${hook}.sh` : `bash $HOME/.claude/skills/gstack/${hook}/bin/check-${hook}.sh`;
-          const declaration = name === "upstream single quoted"
+          const declaration = ["upstream single quoted", "upstream safety layout"].includes(name)
             ? String.raw`'bash -c "exec bash \"$HOME/.claude/skills/gstack/${hook}/bin/check-${hook}.sh\""'`
             : `"${command}"`;
           return `    - matcher: "${tool}"\n      hooks:\n        - type: command\n          command: ${declaration}`;
@@ -85,7 +88,7 @@ export async function runGstackSafetyChecks() {
           count++;
         }
       }
-      assert.equal(count, 6);
+      assert.equal(count, Object.values(layout).reduce((total, tools) => total + tools.length, 0));
       const repairSkill = path.join(checkout, "repair");
       await fs.appendFile(path.join(checkout, ".gitignore"), "repair/\n");
       assert.equal(spawnSync("git", ["add", ".gitignore"], { cwd: checkout }).status, 0);
@@ -113,7 +116,13 @@ export async function runGstackSafetyChecks() {
       for (const skill of ["careful", "guard", "freeze"]) await fs.rename(path.join(removedSkills, skill), path.join(checkout, skill));
       const sourceSkill = path.join(checkout, "careful", "SKILL.md");
       const validSource = await fs.readFile(sourceSkill, "utf8");
-      for (const invalidSource of [validSource.replace("PreToolUse:", "PostToolUse:"), validSource.replace("type: command", "type: prompt")]) {
+      for (const invalidSource of [
+        validSource.replace("PreToolUse:", "PostToolUse:"),
+        validSource.replace("type: command", "type: prompt"),
+        validSource.replace('matcher: "Bash"', 'matcher: "UnknownTool"'),
+        validSource.replace('    - matcher: "Bash"', '    - matcher: "Bash"\n    - matcher: "Bash"'),
+        validSource.replace('check-careful.sh', 'check-unsafe.sh')
+      ]) {
         await fs.writeFile(sourceSkill, invalidSource);
         assert.equal((await setupGstack({ target, silent: true })).status, "failed");
       }

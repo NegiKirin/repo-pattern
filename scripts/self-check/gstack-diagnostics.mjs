@@ -12,6 +12,8 @@ export async function runGstackDiagnosticChecks() {
     assert.equal(options.timeout, 30000);
     throw Object.assign(new Error("probe timed out"), { code: "ETIMEDOUT" });
   } }), /Bun validation failed: probe timed out/);
+  assert.throws(() => ensureBun({ run: () => "1.4.1\n" }), /Bun v1.4.2\+ is required/);
+  assert.equal(ensureBun({ run: () => "1.4.2\n" }), "bun");
   const target = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-diagnostics-"));
   const originalDebug = process.env.REPO_PATTERN_DEBUG_GSTACK;
   try {
@@ -116,7 +118,21 @@ export async function runGstackDiagnosticChecks() {
     assert.doesNotMatch(debug.error, /synthetic-private-output/);
     assert(debug.error.length <= 4000);
     delete process.env.REPO_PATTERN_DEBUG_GSTACK;
+    const untagged = await setupGstack({ target, silent: true, resolveCheckout: async () => {
+      throw new Error("Missing Linux system libraries");
+    } });
+    assert.match(untagged.error, /Failed stage: checkout resolution/);
+    assert.doesNotMatch(untagged.error, /install Bun|A required prerequisite is missing or invalid/);
     assert.doesNotMatch((await failedSetup("untrusted-stage")).error, /untrusted-stage|Failed stage:/);
+    const cloneFailed = await setupGstack({ target, silent: true, resolveCheckout: async () => {
+      throw Object.assign(new Error("clone failed: network connection refused"), {
+        gstackCloneFailure: true,
+        stderr: "fatal: bun prerequisite required; unable to access https://github.com/garrytan/gstack.git: network connection refused"
+      });
+    } });
+    assert.match(cloneFailed.error, /gstack clone failed/);
+    assert.doesNotMatch(cloneFailed.error, /Bun prerequisite failed|gstack bootstrap failed|A required prerequisite is missing or invalid/);
+    assert.doesNotMatch(cloneFailed.error, /network connection refused|garrytan/);
   } finally {
     if (originalDebug === undefined) delete process.env.REPO_PATTERN_DEBUG_GSTACK;
     else process.env.REPO_PATTERN_DEBUG_GSTACK = originalDebug;
