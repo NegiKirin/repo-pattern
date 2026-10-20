@@ -45,6 +45,9 @@ AGENTS.md
 Thumbs.db
 
 .gstack
+!.gstack/
+.gstack/*
+!.gstack/pregate.json
 # OS
 Desktop.ini
 # Environment variables and secrets
@@ -53,7 +56,6 @@ Desktop.ini
 # Coding agents: generated or project-local configuration
 /CLAUDE.md
 .playwright-mcp/
-.gstack/
 .impeccable/
 # Local databases
 *.sqlite
