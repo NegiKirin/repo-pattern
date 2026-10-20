@@ -6,7 +6,8 @@ import { detectProject } from "./project-detect.mjs";
 import { provisionProject, updateClaudeAttribution, updateClaudePermissions } from "./provision.mjs";
 import { doctorProject } from "./doctor.mjs";
 import { collectMcpValues, generateMcp, listAvailableMcpServers, mcpInputFields, persistedMcpValues, readGeneratedMcpValues, readMcpConfig } from "./mcp.mjs";
-import { askPassword, askText, DEFAULT_EFFORT_LEVEL, isInteractive, printBox, selectMany, selectOne } from "./prompt.mjs";
+import { askConfirm, askPassword, askText, DEFAULT_EFFORT_LEVEL, isInteractive, printBox, selectMany, selectOne } from "./prompt.mjs";
+import { claudeVersionSupportsUserScope, setUserBypassPermission } from "./bypass-permissions.mjs";
 import { runSetupWizard } from "./setup-wizard.mjs";
 import { ECC_RULE_PACKS, normalizeEccRules, selectEccRules } from "./ecc-rules.mjs";
 import { ensureRepoPatternGitignore, isTracked, readJson, readPrivateJson, readRepoLock, repoLockPath, writeJson } from "./fs-utils.mjs";
@@ -97,7 +98,9 @@ export function setupOptionsFromLock(lock) {
   return {
     ...options,
     effortLevel: options.effortLevel || DEFAULT_EFFORT_LEVEL,
-    permissionConfig: options.permissionConfig?.bypass === "allow" ? { bypass: "allow" } : { bypass: "deny" }
+    permissionConfig: ["allow", "deny", "user", "preserve"].includes(options.permissionConfig?.bypass)
+      ? { bypass: options.permissionConfig.bypass }
+      : { bypass: "deny" }
   };
 }
 
@@ -218,17 +221,55 @@ export function localSettingsPromptOptions(initialValues = {}, environment = pro
   }));
 }
 
-async function choosePermissionConfig() {
-  return {
-    bypass: await selectOne({
-      message: "Step 5/6 — Allow bypass permissions mode?",
-      options: [
-        { value: "deny", label: "No", description: "disable bypass permissions mode" },
-        { value: "allow", label: "Yes", description: "default to bypassPermissions" }
-      ],
-      initialValue: "deny"
-    })
-  };
+export async function choosePermissionConfig({ claudeCodeVersion, migrationChoice, legacyBypass, selectedBypass, retryChoice, dryRun = false, confirm = askConfirm, setUserBypass = setUserBypassPermission }) {
+  const supported = claudeVersionSupportsUserScope(claudeCodeVersion);
+  if (retryChoice === "retry") {
+    if (["user", "preserve"].includes(selectedBypass)) {
+      return { bypass: selectedBypass === "user" && !supported ? "allow" : selectedBypass };
+    }
+    if (selectedBypass === "deny") return { bypass: "deny" };
+  }
+  if (dryRun && supported && (legacyBypass && migrationChoice === "yes" || selectedBypass === "allow")) {
+    console.warn("WARN: Dry run does not change user settings; bypass permissions remain unchanged.");
+    return { bypass: legacyBypass ? "preserve" : "deny" };
+  }
+  if (supported && legacyBypass && migrationChoice === "yes" && selectedBypass === "allow") {
+    const transfer = await confirm("Enable bypassPermissions in user settings? User scope affects every project. Existing settings will not be overwritten; if a settings file exists, you must add this manually.", false);
+    if (!transfer) {
+      console.warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
+      return { bypass: "preserve" };
+    }
+    const result = await setUserBypass({ accepted: true });
+    console.warn(`WARN: ${result.message}`);
+    if (!result.changed && !result.alreadyEnabled) console.warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
+    return { bypass: result.changed || result.alreadyEnabled ? "user" : "preserve" };
+  }
+  if (!supported && legacyBypass) return { bypass: "allow" };
+  if (supported && legacyBypass && migrationChoice === "no") {
+    console.warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
+    return { bypass: "preserve" };
+  }
+  if (supported && legacyBypass && migrationChoice === "yes" && selectedBypass !== "allow") {
+    console.warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
+    return { bypass: "preserve" };
+  }
+  const bypass = selectedBypass ?? await selectOne({
+    message: supported ? "Allow bypass permissions mode? User scope affects every project. Existing settings will not be overwritten; if a settings file exists, you must add this manually." : "Step 5/6 — Allow bypass permissions mode?",
+    options: [
+      { value: "deny", label: "No", description: "disable bypass permissions mode" },
+      { value: "allow", label: "Yes", description: supported ? "enable in user settings for every project" : "default to bypassPermissions" }
+    ],
+    initialValue: "deny"
+  });
+  if (!supported || bypass !== "allow") return { bypass };
+  if (!await confirm("Enable bypass permissions in ~/.claude/settings.json? This affects every project.", false)) {
+    if (legacyBypass) console.warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
+    return { bypass: legacyBypass ? "preserve" : "deny" };
+  }
+  const result = await setUserBypass({ accepted: true });
+  console.warn(`WARN: ${result.message}`);
+  if (!result.changed && !result.alreadyEnabled && legacyBypass) console.warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
+  return { bypass: result.changed || result.alreadyEnabled ? "user" : legacyBypass ? "preserve" : "deny" };
 }
 
 async function chooseAttributionConfig() {
@@ -286,7 +327,9 @@ async function handleInitialized({ sourceRoot, target, mcpServers, dryRun }) {
     if (!dryRun) await doctorProject(target, { updateLock: true, dryRun });
   }
   if (action === "permissions") {
-    await updateClaudePermissions({ sourceRoot, target, permissionConfig: await choosePermissionConfig(), dryRun });
+    const claudeCodeVersion = await checkClaudeCode();
+    const permissionConfig = await choosePermissionConfig({ claudeCodeVersion });
+    await updateClaudePermissions({ sourceRoot, target, permissionConfig, dryRun });
     if (!dryRun) await doctorProject(target, { updateLock: true, dryRun });
   }
   if (action === "attribution") {
@@ -300,6 +343,7 @@ export async function setupProject({ sourceRoot, target, mcpServers = [], setupP
   if (planTuneHooks && !["gstack", "both"].includes(setupPipeline)) throw new Error("--with-plan-tune-hooks requires --setup-pipeline gstack or both.");
   if (!isInteractive()) {
     if (!yes) throw new Error("setup requires an interactive terminal, or pass --yes for scriptable mode.");
+    console.warn("WARN: --yes disables bypass permissions without editing user settings. Existing project bypass settings are removed during setup; use interactive setup to review them.");
     await previousSetupOptions(target);
     const detection = await detectProject(target);
     const ruleConfig = defaultRuleConfig(setupPipeline, applyRules, detection);
@@ -318,7 +362,8 @@ export async function setupProject({ sourceRoot, target, mcpServers = [], setupP
       rules: ruleConfig.rules,
       applyRules: ruleConfig.applyRules,
       optionalSkills,
-      effortLevel: DEFAULT_EFFORT_LEVEL
+      effortLevel: DEFAULT_EFFORT_LEVEL,
+      permissionConfig: { bypass: "deny" }
     });
     return;
   }
@@ -333,8 +378,16 @@ export async function setupProject({ sourceRoot, target, mcpServers = [], setupP
   }
 
   const action = audit.state === "LEGACY_VENDOR" ? "migrate" : "setup";
-  const shouldMigrate = previousOptions?.migrate || migrate;
+  const requestedMigrate = previousOptions?.migrate || migrate;
 
+  let legacyBypass = false;
+  try {
+    const projectSettings = await readPrivateJson(path.join(target, ".claude", "settings.json"), {}, { label: ".claude/settings.json", parentLabel: ".claude" });
+    legacyBypass = projectSettings.permissions?.defaultMode === "bypassPermissions";
+  } catch (error) {
+    if (error instanceof SyntaxError) console.warn(`WARN: Existing .claude/settings.json is malformed; continuing interactive setup so it can be repaired: ${error.message}`);
+    else throw error;
+  }
   const currentSettingsEnv = await currentLocalSettingsEnv(target);
   const generatedMcpValues = await readGeneratedMcpValues(target);
   const localSettingsTemplate = await readJson(path.join(sourceRoot, ".claude.example", "settings.local.example.json"), {});
@@ -348,7 +401,7 @@ export async function setupProject({ sourceRoot, target, mcpServers = [], setupP
   const mcpDefinitions = Object.fromEntries(await Promise.all(availableMcpServers.map(async (name) => [name, (await readMcpConfig({ sourceRoot, mcpServers: [name] })).mcpServers])));
   const autoRules = selectEccRules(detection);
   const { state: wizardState, controller: wizardController } = await runSetupWizard({
-    migrationChoice: action === "migrate" && !shouldMigrate ? "pending" : "yes",
+    migrationChoice: action === "migrate" && !requestedMigrate ? "pending" : "yes",
     retryChoice: previousOptions ? "pending" : "none",
     setupPipeline: interactiveSetupPipeline(previousOptions),
     planTuneHooks: usesGstack(interactiveSetupPipeline(previousOptions)),
@@ -364,6 +417,7 @@ export async function setupProject({ sourceRoot, target, mcpServers = [], setupP
     attributionConfig: previousOptions?.attributionConfig || { mode: "off" }
   }, {
     claudeCodeVersion,
+    legacyBypass,
     mcpServers: groupedMcpOptions(availableMcpServers.map((name) => ({ value: name, label: name, hint: mcpDefinitions[name]?.[name]?.description }))),
     mcpInputs: (selectedServers) => mcpInputFields(Object.assign({}, ...selectedServers.map((name) => mcpDefinitions[name] || {}))),
     ruleModes: [
@@ -381,6 +435,15 @@ export async function setupProject({ sourceRoot, target, mcpServers = [], setupP
       mask: ask === askPassword
     }))
   });
+  const shouldMigrate = wizardState.migrationChoice === "no" ? false : requestedMigrate || action === "migrate";
+  const permissionConfig = await choosePermissionConfig({
+    claudeCodeVersion,
+    migrationChoice: wizardState.migrationChoice,
+    legacyBypass,
+    selectedBypass: wizardState.permissionConfig.bypass,
+    retryChoice: wizardState.retryChoice,
+    dryRun
+  });
   const selectedSetupPipeline = wizardState.setupPipeline;
   const selectedPlanTuneHooks = wizardState.planTuneHooks;
   const mcpConfig = { mcpServers: wizardState.mcpServers };
@@ -391,7 +454,6 @@ export async function setupProject({ sourceRoot, target, mcpServers = [], setupP
   const mcpValues = wizardState.mcpValues;
   const localSettingsEnv = { ...retryLocalSettingsEnv, ...wizardState.localSettingsEnv };
   const effortLevel = wizardState.effortLevel;
-  const permissionConfig = wizardState.permissionConfig;
   const attributionConfig = wizardState.attributionConfig;
 
   const retryOptions = setupRetryOptions({ action, setupPipeline: selectedSetupPipeline, planTuneHooks: selectedPlanTuneHooks, mcpConfig, mcpValues, ruleConfig, optionalSkills: selectedOptionalSkills, localSettingsEnv, effortLevel, attributionConfig, permissionConfig, dryRun });

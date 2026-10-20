@@ -62,7 +62,13 @@ async function listDirNames(dir) {
 }
 
 export async function auditProject(target) {
-  const settings = await readJson(path.join(target, ".claude", "settings.json"), {});
+  let settings;
+  try {
+    settings = await readJson(path.join(target, ".claude", "settings.json"), {});
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    settings = {};
+  }
   const repoPattern = await readRepoConfig(target, null);
   const lock = await readRepoLock(target, {});
 

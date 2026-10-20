@@ -2,7 +2,7 @@
 
 ## Setup
 
-Run interactive setup when you want to choose workflow, rules, MCP servers, optional skills, provider settings, effort, permissions, and attribution in one terminal wizard:
+Run interactive setup when you want to choose workflow, rules, MCP servers, optional skills, provider settings, effort, permissions, and attribution in one terminal wizard. On Claude Code v2.1.257+, enabling bypass permissions requires explicit confirmation. If `~/.claude/settings.json` does not exist, setup creates it with `permissions.defaultMode=bypassPermissions`; this applies to every project, not only the target. Existing user settings are left untouched to avoid overwriting concurrent changes. Add `permissions.defaultMode=bypassPermissions` manually if you want to enable it globally:
 
 ```bash
 node scripts/repo-pattern.mjs setup --target /path/to/project

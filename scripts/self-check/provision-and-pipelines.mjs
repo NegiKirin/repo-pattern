@@ -19,8 +19,8 @@ const secretSentinel = "do-not-persist-anthropic-token";
 const originalDoctorLog = console.log;
 const originalLog = console.log;
 
-function runCli(args, cwd = repoRoot) {
-  return spawnSync(process.execPath, [cliPath, ...args], { cwd, encoding: "utf8" });
+function runCli(args, cwd = repoRoot, env = process.env) {
+  return spawnSync(process.execPath, [cliPath, ...args], { cwd, encoding: "utf8", env: { ...env, CI: env.CI || "" } });
 }
 
 export async function runProvisionAndPipelineChecks() {
@@ -357,14 +357,26 @@ try {
 }
 
 const setupYesTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-setup-yes-"));
+const setupYesHome = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-setup-yes-home-"));
 try {
-  result = runCli(["setup", "--target", setupYesTarget, "--setup-pipeline", "none", "--yes"]);
+  const userClaudeDir = path.join(setupYesHome, ".claude");
+  await fs.mkdir(userClaudeDir);
+  const userSettingsPath = path.join(userClaudeDir, "settings.json");
+  const userSettings = JSON.stringify({ unrelated: true, permissions: { defaultMode: "acceptEdits" } });
+  await fs.writeFile(userSettingsPath, userSettings);
+  result = runCli(["setup", "--target", setupYesTarget, "--setup-pipeline", "none", "--yes"], repoRoot, { ...process.env, HOME: setupYesHome });
   assert.equal(result.status, 0, result.stderr);
+  const sharedSettings = JSON.parse(await fs.readFile(path.join(setupYesTarget, ".claude", "settings.json"), "utf8"));
   const settings = JSON.parse(await fs.readFile(path.join(setupYesTarget, ".claude", "settings.local.json"), "utf8"));
+  assert.match(result.stderr, /--yes disables bypass permissions without editing user settings/);
+  assert.equal(sharedSettings.permissions.defaultMode, "default");
+  assert.equal(sharedSettings.permissions.disableBypassPermissionsMode, "disable");
+  assert.equal(await fs.readFile(userSettingsPath, "utf8"), userSettings);
   assert.equal(settings.effortLevel, "medium");
   assert.equal("effortLevel" in settings.env, false);
 } finally {
   await fs.rm(setupYesTarget, { recursive: true, force: true });
+  await fs.rm(setupYesHome, { recursive: true, force: true });
 }
 
 for (const setupPipeline of ["none", "gstack"]) {

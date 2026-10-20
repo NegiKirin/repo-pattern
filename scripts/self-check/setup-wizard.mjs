@@ -70,6 +70,7 @@ export async function runSetupWizardChecks() {
 
   const pages = wizardPages(initial, data);
   assert.equal(pages.find((page) => page.id === "permission").note, "Claude Code v2.1.257+ ignores this setting from project config.");
+  assert.match(wizardPages({ ...initial, migrationChoice: "pending" }, { ...data, legacyBypass: true }).find((page) => page.id === "permission").note, /Legacy project bypassPermissions detected/);
   assert.equal(pages.some((page) => page.id === "planTuneHooks"), false);
   assert.equal(pruneWizardState(initial, data).planTuneHooks, true);
   assert.ok(pages.some((page) => page.id === "mcpServers"));
@@ -86,6 +87,13 @@ export async function runSetupWizardChecks() {
   assert.equal(wizardPages(noEcc, data).some((page) => page.id === "rules"), false);
   assert.deepEqual(noEcc.rules, []);
   assert.deepEqual(wizardPages({ ...initial, retryChoice: "retry" }, data).map((page) => page.id), ["confirm"]);
+  assert.deepEqual(wizardPages({ ...initial, permissionConfig: { bypass: "user" }, retryChoice: "retry" }, data).map((page) => page.id), ["confirm"]);
+  assert.deepEqual(wizardPages({ ...initial, permissionConfig: { bypass: "preserve" }, retryChoice: "edit" }, data).find((page) => page.id === "permission").options.map((option) => option.value), ["deny", "allow"]);
+  assert.deepEqual(pruneWizardState({ ...initial, permissionConfig: { bypass: "user" }, retryChoice: "edit" }, data).permissionConfig, { bypass: "deny" });
+  assert.deepEqual(pruneWizardState({ ...initial, permissionConfig: { bypass: "preserve" }, retryChoice: "edit" }, data).permissionConfig, { bypass: "deny" });
+  assert.deepEqual(pruneWizardState({ ...initial, permissionConfig: { bypass: "allow" }, retryChoice: "edit" }, data).permissionConfig, { bypass: "allow" });
+  assert.deepEqual(pruneWizardState({ ...initial, permissionConfig: { bypass: "deny" }, retryChoice: "edit" }, data).permissionConfig, { bypass: "deny" });
+  assert.deepEqual(pruneWizardState({ ...initial, permissionConfig: { bypass: "user" }, retryChoice: "retry" }, data).permissionConfig, { bypass: "user" });
 
   const serverWizard = render(React.createElement(SetupWizard, {
     initialState: { ...initial, setupPipeline: "none", applyRules: false, optionalSkills: [] },
@@ -103,6 +111,31 @@ export async function runSetupWizardChecks() {
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.match(serverWizard.lastFrame(), /Optional external skills/);
   serverWizard.unmount();
+
+  const retryWizard = render(React.createElement(SetupWizard, {
+    initialState: { ...initial, permissionConfig: { bypass: "user" }, retryChoice: "pending" },
+    data,
+    initialPageId: "retryChoice",
+    done: () => {}
+  }));
+  retryWizard.stdin.write("\r");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(retryWizard.lastFrame(), /Run setup now\?/);
+  retryWizard.unmount();
+
+  const editWizard = render(React.createElement(SetupWizard, {
+    initialState: { ...initial, permissionConfig: { bypass: "preserve" }, retryChoice: "pending" },
+    data,
+    initialPageId: "retryChoice",
+    done: () => {}
+  }));
+  editWizard.stdin.write("\u001b[B");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  editWizard.stdin.write("\r");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(editWizard.lastFrame(), /Choose ECC rule detection mode/);
+  assert.deepEqual(pruneWizardState({ ...initial, permissionConfig: { bypass: "preserve" }, retryChoice: "edit" }, data).permissionConfig, { bypass: "deny" });
+  editWizard.unmount();
 
   const skillsWizard = render(React.createElement(SetupWizard, {
     initialState: { ...initial, setupPipeline: "none", applyRules: false, mcpServers: [], optionalSkills: [] },
