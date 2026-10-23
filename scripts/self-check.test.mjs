@@ -1,0 +1,1 @@
+import "./self-check.mjs";

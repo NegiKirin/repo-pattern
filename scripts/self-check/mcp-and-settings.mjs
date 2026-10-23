@@ -35,6 +35,8 @@ assert.equal(localSettingsTemplate.env.BASH_DEFAULT_TIMEOUT_MS, "60000");
 assert.equal(localSettingsTemplate.env.MCP_TOOL_TIMEOUT, "120000");
 assert.equal(interactiveSetupPipeline(null), "none");
 assert.equal(interactiveSetupPipeline({ setupPipeline: "gstack" }), "gstack");
+assert.deepEqual(applyPermissionSettings({ permissions: { defaultMode: "default", disableBypassPermissionsMode: "disable", deny: ["Bash(rm *)"] } }, { bypass: "user" }).permissions, { deny: ["Bash(rm *)"] });
+assert.deepEqual(applyPermissionSettings({ permissions: { defaultMode: "bypassPermissions", disableBypassPermissionsMode: "disable", deny: ["Bash(rm *)"] } }, { bypass: "preserve" }).permissions, { defaultMode: "bypassPermissions", disableBypassPermissionsMode: "disable", deny: ["Bash(rm *)"] });
 
 const mcpServers = {
   context7: {

@@ -63,6 +63,9 @@ function options(values) {
 
 export function pruneWizardState(state, data) {
   const next = { ...state, rules: [...state.rules], mcpValues: { ...state.mcpValues }, attributionConfig: { ...state.attributionConfig } };
+  if (next.retryChoice === "edit" && !["allow", "deny"].includes(next.permissionConfig.bypass)) {
+    next.permissionConfig = { bypass: "deny" };
+  }
   next.planTuneHooks = usesGstack(next.setupPipeline);
   if (usesEcc(next.setupPipeline)) next.applyRules = true;
   if (!next.applyRules) {
@@ -92,7 +95,7 @@ export function wizardPages(state, data) {
     ...(data.localSettings.some((field) => MODEL_SETTING_NAMES.has(field.name)) ? [{ id: "modelSettings", title: "Configure third-party provider & models", kind: "modelSettings", fields: data.localSettings.filter((field) => MODEL_SETTING_NAMES.has(field.name)) }] : []),
     ...data.localSettings.filter((field) => !MODEL_SETTING_NAMES.has(field.name)).map((field) => ({ id: `local:${field.name}`, name: field.name, title: field.name, kind: "text", mask: field.mask, initial: field.initial, placeholder: field.placeholder, validate: field.validate })),
     { id: "effort", title: "Choose effort level", kind: "one", options: EFFORT_LEVELS.map((value) => ({ value, label: value })) },
-    { id: "permission", title: "Allow bypass permissions mode?", note: "Claude Code v2.1.257+ ignores this setting from project config.", kind: "one", options: [{ value: "deny", label: "No" }, { value: "allow", label: "Yes" }] },
+    { id: "permission", title: "Allow bypass permissions mode?", note: data.legacyBypass ? "Legacy project bypassPermissions detected; Claude Code v2.1.257+ requires explicit transfer to user settings." : "Claude Code v2.1.257+ ignores this setting from project config.", kind: "one", options: [{ value: "deny", label: "No" }, { value: "allow", label: "Yes" }] },
     { id: "attribution", title: "Commit attribution?", kind: "one", options: [{ value: "off", label: "off" }, { value: "on", label: "on" }, { value: "custom", label: "custom" }] },
     ...(state.attributionConfig.mode === "custom" ? [{ id: "attributionCommit", title: "Custom commit attribution", kind: "text", initial: "Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>", validate: (value) => String(value || "").trim() ? true : "Required" }] : [])
   ];

@@ -72,9 +72,22 @@ export async function runMcpServerChecks() {
 
   const setupTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-default-setup-"));
   try {
-    await setupProject({ sourceRoot: repoRoot, target: setupTarget, setupPipeline: "none", yes: true });
+    await fs.mkdir(path.join(setupTarget, ".claude"), { recursive: true });
+    await fs.writeFile(path.join(setupTarget, ".claude", "settings.json"), JSON.stringify({ permissions: { defaultMode: "bypassPermissions" } }));
+    const originalWarn = console.warn;
+    const warnings = [];
+    console.warn = (message) => warnings.push(String(message));
+    try {
+      await setupProject({ sourceRoot: repoRoot, target: setupTarget, setupPipeline: "none", yes: true });
+    } finally {
+      console.warn = originalWarn;
+    }
     const generated = JSON.parse(await fs.readFile(path.join(setupTarget, ".mcp.json"), "utf8"));
+    const settings = JSON.parse(await fs.readFile(path.join(setupTarget, ".claude", "settings.json"), "utf8"));
     assert.deepEqual(Object.keys(generated.mcpServers), DEFAULT_MCP_SERVERS);
+    assert.equal(settings.permissions.defaultMode, "default");
+    assert.equal(settings.permissions.disableBypassPermissionsMode, "disable");
+    assert.match(warnings.join("\n"), /Existing project bypass settings are removed during setup; use interactive setup to review them/);
   } finally {
     await fs.rm(setupTarget, { recursive: true, force: true });
   }
