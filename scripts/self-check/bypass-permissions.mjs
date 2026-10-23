@@ -3,102 +3,15 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { runInteractiveSetupCase } from "./bypass-permissions-interactive.mjs";
 import { claudeVersionSupportsUserScope, setUserBypassPermission } from "../lib/bypass-permissions.mjs";
 import { auditProject } from "../lib/audit.mjs";
 import { doctorProject } from "../lib/doctor.mjs";
 import { provisionProject } from "../lib/provision.mjs";
 import { choosePermissionConfig, localSettingsPromptOptions, setupOptionsFromLock, setupRetryOptions } from "../lib/setup.mjs";
 
-async function runInteractiveSetupCase({ root, name, settings, choice, expectedProjectBypass, expectedUserBypass, expectUserSettings = false, home = path.join(root, `${name}-home`) }) {
-  const target = path.join(root, name);
-  const bin = path.join(home, "bin");
-  await fs.mkdir(bin, { recursive: true });
-  await fs.mkdir(path.join(target, ".claude"), { recursive: true });
-  await fs.writeFile(path.join(bin, "claude"), "#!/bin/sh\nprintf '2.1.257\\n'\n", { mode: 0o755 });
-  if (settings !== undefined) await fs.writeFile(path.join(target, ".claude", "settings.json"), settings);
-  await fs.writeFile(path.join(target, ".claude", "settings.local.json"), JSON.stringify({ env: {
-    ANTHROPIC_BASE_URL: "https://provider.example/v1",
-    ANTHROPIC_AUTH_TOKEN: "test-token",
-    ANTHROPIC_DEFAULT_OPUS_MODEL: "test-opus",
-    ANTHROPIC_DEFAULT_SONNET_MODEL: "test-sonnet",
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: "test-haiku"
-  } }));
-  const driver = `
-    import fs from "node:fs/promises";
-    import { PassThrough } from "node:stream";
-    import { pathToFileURL } from "node:url";
-    const [repo, target, home, choice] = process.argv.slice(1);
-    const input = new PassThrough();
-    input.isTTY = true; input.setRawMode = () => {}; input.ref = () => {}; input.unref = () => {};
-    const output = process.stdout;
-    const nativeWrite = output.write.bind(output);
-    output.isTTY = true; output.columns = 100; output.rows = 40;
-    Object.defineProperty(process, "stdin", { value: input });
-    process.env.HOME = home; process.env.PATH = home + "/bin:" + process.env.PATH;
-    delete process.env.CI; delete process.env.CONTINUOUS_INTEGRATION;
-    for (const key of Object.keys(process.env)) if (key.startsWith("CI_")) delete process.env[key];
-    const { setupProject } = await import(pathToFileURL(repo + "/scripts/lib/setup.mjs"));
-    let display = "";
-    output.write = (chunk, ...args) => { display = (display + chunk.toString()).slice(-12000); return nativeWrite(chunk, ...args); };
-    const handled = new Set();
-    const keys = ["Run migrate?", "Choose setup workflow", "Install project-local ECC rules & agents?", "Choose ECC rule detection mode", "Choose MCP servers", "MCP secret", "Optional external skills", "Configure third-party provider & models", "Choose effort level", "Allow bypass permissions mode?", "Commit attribution?", "Run setup now?", "Enable bypassPermissions in user settings?"];
-    let previousStep = "";
-    const timer = setInterval(() => {
-      const visible = display.replace(/\\u001b\\[[0-?]*[ -/]*[@-~]/g, "").replace(/\\u001b\\][^\\u0007]*(?:\\u0007|\\u001b\\\\)/g, "");
-      const start = visible.lastIndexOf("Step ");
-      const consentStart = visible.lastIndexOf("Enable bypassPermissions in user settings?");
-      const lines = consentStart > start ? visible.slice(consentStart - 100, consentStart + 500).split("\\n") : start >= 0 ? visible.slice(start).split("\\n") : visible.split("\\n").slice(-12);
-      const step = lines[0];
-      if (consentStart <= start && step && step === previousStep) return;
-      if (step) previousStep = step;
-      const title = keys.find((item) => lines.slice(0, 12).some((line) => line.includes(item)) && !handled.has(item));
-      if (!title) return;
-      handled.add(title);
-      if (title === "Choose setup workflow") {
-        setTimeout(() => input.write("\\r"), 200);
-      } else if (title === "Install project-local ECC rules & agents?" || title === "Choose ECC rule detection mode") {
-        setTimeout(() => input.write("\\r"), 50);
-      } else if (title === "Choose MCP servers") {
-        for (const [delay, key] of [[0, "\\u001b[B"], [200, " "], [400, "\\u001b[B"], [600, " "], [800, "\\r"]]) setTimeout(() => input.write(key), delay);
-      } else if (title === "MCP secret") {
-        for (const [delay, key] of [[0, "t"], [50, "e"], [100, "s"], [150, "t"], [200, "-"], [250, "k"], [300, "e"], [350, "y"], [500, "\\r"]]) setTimeout(() => input.write(key), delay);
-      } else if (title === "Configure third-party provider & models") {
-        for (const [delay, key] of [[0, "h"], [50, "t"], [100, "t"], [150, "p"], [200, "s"], [250, ":"], [300, "/"], [350, "/"], [400, "p"], [450, "r"], [500, "o"], [550, "v"], [600, "i"], [650, "d"], [700, "e"], [750, "r"], [800, "."], [850, "e"], [900, "x"], [950, "a"], [1000, "m"], [1050, "p"], [1100, "l"], [1150, "e"], [1200, "/"], [1250, "v"], [1300, "1"], [1400, "\\r"], [1650, "\\r"], [1900, "\\r"], [2150, "\\r"], [2400, "\\r"]]) setTimeout(() => input.write(key), delay);
-      } else {
-        if (title.includes("Enable bypassPermissions")) {
-          setTimeout(() => input.write(choice === "decline" ? "n" : "y"), 100);
-        } else if (title === "Allow bypass permissions mode?" && choice !== "deny") {
-          setTimeout(() => input.write("\\u001b[B"), 0);
-        }
-        setTimeout(() => input.write("\\r"), 200);
-      }
-    }, 100);
-    const timeout = setTimeout(() => { console.error("Interactive setup test timed out", display.slice(-2500)); process.exit(124); }, 15000);
-    try { await setupProject({ sourceRoot: repo, target, setupPipeline: "ecc" }); }
-    catch (error) { console.error(error.stack || error); process.exitCode = 1; }
-    finally { clearInterval(timer); clearTimeout(timeout); process.exit(); }
-  `;
-  const result = spawnSync(process.execPath, ["--input-type=module", "-e", driver, path.resolve("."), target, home, choice], {
-    encoding: "utf8", timeout: 20000,
-    env: { ...process.env, ...(process.env.NODE_V8_COVERAGE ? { NODE_V8_COVERAGE: process.env.NODE_V8_COVERAGE } : {}) }
-  });
-  assert.equal(result.status, 0, `${name}: ${result.error || ""}\\n${result.stderr}`);
-  assert.match(result.stdout, /Claude Code · 2\.1\.257/);
-  const project = JSON.parse(await fs.readFile(path.join(target, ".claude", "settings.json"), "utf8"));
-  assert.equal(project.permissions.defaultMode, expectedProjectBypass);
-  if (expectUserSettings) {
-    const user = JSON.parse(await fs.readFile(path.join(home, ".claude", "settings.json"), "utf8"));
-    assert.equal(user.permissions.defaultMode, expectedUserBypass);
-  } else await assert.rejects(fs.access(path.join(home, ".claude", "settings.json")));
-  if (expectedUserBypass !== undefined && !expectUserSettings) {
-    const user = JSON.parse(await fs.readFile(path.join(home, ".claude", "settings.json"), "utf8"));
-    assert.equal(user.permissions.defaultMode, expectedUserBypass);
-  }
-}
-
 export async function runBypassPermissionChecks() {
-  // Value: protects=version threshold, setup consent decisions, user settings safeguards, and doctor warning; fails_when=an unsafe write or ineffective project bypass is accepted; why_new=isolates setup permission decisions from real settings writes; seam=direct helper injection simulates confirmation and filesystem results; no_claim=physical TTY behavior and real home settings are not exercised.
-  // Value: protects=real interactive legacy bypass transfer acceptance, decline, and malformed-settings recovery; fails_when=setup writes bypass to the wrong scope, loses legacy intent on decline, or fails to repair malformed settings; why_new=direct helper checks cannot cover actual setup/wizard routing; seam=none; no_claim=physical TTY behavior and real operator HOME are not exercised.
+  // Value: protects=simulated-TTY setup routing for new-install and legacy bypass acceptance, decline, and malformed-settings rejection; fails_when=setup writes bypass to the wrong scope, loses legacy intent on decline, or overwrites malformed settings; why_new=direct helper checks cannot cover actual setup/wizard routing; seam=none; no_claim=physical TTY behavior and real operator HOME are not exercised.
   assert.equal(claudeVersionSupportsUserScope("2.1.256"), false);
   assert.equal(claudeVersionSupportsUserScope("2.1.257"), true);
   assert.equal(claudeVersionSupportsUserScope("unknown"), false);
@@ -126,12 +39,22 @@ export async function runBypassPermissionChecks() {
   console.warn = (message) => warnings.push(String(message));
   const confirm = async () => true;
   try {
+    let declinedMigrationConfirmations = 0;
+    let declinedMigrationWrites = 0;
+    const declinedMigration = await choosePermissionConfig({
+      claudeCodeVersion: "2.1.257", migrationChoice: "no", legacyBypass: true, selectedBypass: "deny",
+      confirm: async () => { declinedMigrationConfirmations++; return true; },
+      setUserBypass: async () => { declinedMigrationWrites++; return { changed: true }; }
+    });
+    assert.deepEqual(declinedMigration, { bypass: "preserve" });
+    assert.equal(declinedMigrationConfirmations, 0);
+    assert.equal(declinedMigrationWrites, 0);
     const consent = async () => true;
     const writeSuccess = async () => ({ changed: true, message: "enabled" });
     const writeExisting = async () => ({ changed: false, alreadyEnabled: true, message: "already enabled" });
     const writeFailure = async () => ({ changed: false, message: "not written" });
     const choices = [
-      [{ claudeCodeVersion: "2.1.256", legacyBypass: true, selectedBypass: "deny" }, { bypass: "allow" }],
+      [{ claudeCodeVersion: "2.1.256", legacyBypass: true, selectedBypass: "deny" }, { bypass: "deny" }],
       [{ claudeCodeVersion: "2.1.257", migrationChoice: "yes", legacyBypass: true, selectedBypass: "deny" }, { bypass: "preserve" }],
       [{ claudeCodeVersion: "2.1.257", selectedBypass: "allow", confirm: async () => true, setUserBypass: writeFailure }, { bypass: "deny" }],
       [{ claudeCodeVersion: "2.1.257", migrationChoice: "yes", legacyBypass: true, selectedBypass: "allow", confirm: async () => false }, { bypass: "preserve" }],
@@ -196,6 +119,105 @@ export async function runBypassPermissionChecks() {
     assert.match(promptCheck.stdout, version === "2.1.257" ? /User scope affects every project/ : /Step 5\/6/);
   }
 
+  for (const legacyBypass of [false, true]) {
+    const promptDryRunCheck = spawnSync(process.execPath, ["--input-type=module", "-e", `
+      import assert from "node:assert/strict";
+      import { choosePermissionConfig } from ${JSON.stringify(new URL("../lib/setup.mjs", import.meta.url).href)};
+      import { PassThrough } from "node:stream";
+      const terminal = new PassThrough();
+      terminal.isTTY = true;
+      terminal.setRawMode = () => {};
+      terminal.ref = () => {};
+      terminal.unref = () => {};
+      Object.defineProperty(process, "stdin", { value: terminal });
+      let confirmCalls = 0;
+      let writeCalls = 0;
+      let output = "";
+      const nativeWrite = process.stdout.write.bind(process.stdout);
+      let promptSeen = false;
+      let selectionSent = false;
+      let input;
+      process.stdout.write = (chunk, ...args) => {
+        output += chunk.toString();
+        if (!promptSeen && /Allow bypass permissions mode\\?/.test(output)) {
+          promptSeen = true;
+          output = "";
+          input = setTimeout(() => terminal.write("\\u001b[B"), 50);
+        } else if (promptSeen && !selectionSent && /›\\s+Yes — enable in user settings for every project/.test(output)) {
+          selectionSent = true;
+          input = setTimeout(() => terminal.write("\\r"), 50);
+        }
+        return nativeWrite(chunk, ...args);
+      };
+      try {
+        const result = await choosePermissionConfig({
+          claudeCodeVersion: "2.1.257", dryRun: true, legacyBypass: ${JSON.stringify(legacyBypass)},
+          confirm: async () => { confirmCalls++; return true; },
+          setUserBypass: async () => { writeCalls++; return { changed: true }; }
+        });
+        assert.deepEqual(result, { bypass: ${JSON.stringify(legacyBypass ? "preserve" : "deny")} });
+        assert.equal(confirmCalls, 0, "dry run must not request global settings confirmation");
+        assert.equal(writeCalls, 0, "dry run must not write user settings");
+        assert.equal(promptSeen, true, "dry run allow choice must reach the prompt");
+        assert.equal(selectionSent, true, "dry run allow choice must send the selection input");
+      } finally {
+        clearTimeout(input);
+        process.stdout.write = nativeWrite;
+        process.stdin.pause();
+      }
+      process.exit(0);
+    `], { encoding: "utf8", timeout: 10000 });
+    assert.equal(promptDryRunCheck.status, 0, `${promptDryRunCheck.error || ""}\\n${promptDryRunCheck.stderr}`);
+  }
+
+  const promptLiveCheck = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import assert from "node:assert/strict";
+    import { choosePermissionConfig } from ${JSON.stringify(new URL("../lib/setup.mjs", import.meta.url).href)};
+    import { PassThrough } from "node:stream";
+    const terminal = new PassThrough();
+    terminal.isTTY = true;
+    terminal.setRawMode = () => {};
+    terminal.ref = () => {};
+    terminal.unref = () => {};
+    Object.defineProperty(process, "stdin", { value: terminal });
+    let confirmCalls = 0;
+    let writeCalls = 0;
+    let output = "";
+    const nativeWrite = process.stdout.write.bind(process.stdout);
+    let promptSeen = false;
+    let selected = false;
+    let input;
+    process.stdout.write = (chunk, ...args) => {
+      output += chunk.toString();
+      if (!promptSeen && /Allow bypass permissions mode\\?/.test(output)) {
+        promptSeen = true;
+        output = "";
+        input = setTimeout(() => terminal.write("\\u001b[B"), 50);
+      } else if (promptSeen && !selected && /›\\s+Yes — enable in user settings for every project/.test(output)) {
+        selected = true;
+        input = setTimeout(() => terminal.write("\\r"), 50);
+      }
+      return nativeWrite(chunk, ...args);
+    };
+    try {
+      assert.deepEqual(await choosePermissionConfig({
+        claudeCodeVersion: "2.1.257",
+        confirm: async () => { confirmCalls++; return true; },
+        setUserBypass: async () => { writeCalls++; return { changed: true }; }
+      }), { bypass: "user" });
+      assert.equal(confirmCalls, 1);
+      assert.equal(writeCalls, 1);
+      assert.equal(promptSeen, true, "live selection must reach the prompt");
+      assert.equal(selected, true, "live selection must send the selected input");
+    } finally {
+      clearTimeout(input);
+      process.stdout.write = nativeWrite;
+      process.stdin.pause();
+    }
+    process.exit(0);
+  `], { encoding: "utf8", timeout: 10000 });
+  assert.equal(promptLiveCheck.status, 0, `${promptLiveCheck.error || ""}\\n${promptLiveCheck.stderr}`);
+
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-user-permissions-"));
   const settingsPath = path.join(root, "settings.json");
   try {
@@ -222,7 +244,24 @@ export async function runBypassPermissionChecks() {
     }
     await fs.writeFile(settingsPath, "{");
 
+    await runInteractiveSetupCase({ root, name: "new-install-allow-accepted", choice: "accept", expectedUserBypass: "bypassPermissions", expectUserSettings: true });
     await runInteractiveSetupCase({ root, name: "legacy-transfer-accepted", settings: JSON.stringify({ permissions: { defaultMode: "bypassPermissions" } }), choice: "accept", expectedProjectBypass: undefined, expectedUserBypass: "bypassPermissions", expectUserSettings: true });
+    const legacyMigrationSettings = JSON.stringify({
+      permissions: { defaultMode: "bypassPermissions" },
+      hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "printf legacy-migration-fixture" }] }] }
+    });
+    const migrationDeclineTarget = path.join(root, "migration-declined");
+    await fs.mkdir(path.join(migrationDeclineTarget, ".claude"), { recursive: true });
+    await fs.writeFile(path.join(migrationDeclineTarget, ".claude", "settings.json"), legacyMigrationSettings);
+    assert.equal((await auditProject(migrationDeclineTarget)).state, "LEGACY_VENDOR");
+    const migrationDeclineLocalSettings = JSON.stringify({ env: { ANTHROPIC_BASE_URL: "https://provider.example/v1" } });
+    await fs.writeFile(path.join(migrationDeclineTarget, ".claude", "settings.local.json"), migrationDeclineLocalSettings);
+    const migrationDeclineHome = path.join(root, "migration-declined-home");
+    await fs.mkdir(path.join(migrationDeclineHome, ".claude"), { recursive: true });
+    const migrationDeclineUserSettings = path.join(migrationDeclineHome, ".claude", "settings.json");
+    await fs.writeFile(migrationDeclineUserSettings, JSON.stringify({ permissions: { defaultMode: "default" }, unrelated: true }));
+    await fs.writeFile(path.join(migrationDeclineHome, ".claude", "settings.local.json"), JSON.stringify({ settings: { source: "fixture" } }));
+    await runInteractiveSetupCase({ root, name: "migration-declined", settings: legacyMigrationSettings, choice: "decline", expectedProjectBypass: "bypassPermissions", expectedUserBypass: "default", expectUserSettings: true, home: migrationDeclineHome, expectMigrationCancellation: true });
     const migrationHome = path.join(root, "legacy-transfer-declined-home");
     await fs.mkdir(path.join(migrationHome, ".claude"), { recursive: true });
     const globalSettingsPath = path.join(migrationHome, ".claude", "settings.json");
@@ -230,7 +269,7 @@ export async function runBypassPermissionChecks() {
     const globalSettingsBeforeDecline = await fs.readFile(globalSettingsPath);
     await runInteractiveSetupCase({ root, name: "legacy-transfer-declined", settings: JSON.stringify({ permissions: { defaultMode: "bypassPermissions" } }), choice: "decline", expectedProjectBypass: "bypassPermissions", expectedUserBypass: "default", expectUserSettings: true, home: migrationHome });
     assert.deepEqual(await fs.readFile(globalSettingsPath), globalSettingsBeforeDecline);
-    await runInteractiveSetupCase({ root, name: "malformed-settings-recovered", settings: "{", choice: "deny", expectedProjectBypass: "default" });
+    await runInteractiveSetupCase({ root, name: "malformed-settings-rejected", settings: "{", choice: "deny", expectedProjectBypass: "default", expectFailure: true });
 
     const missingSettingsPath = path.join(root, "new-user", ".claude", "settings.json");
     assert.equal((await setUserBypassPermission({ accepted: true, settingsPath: missingSettingsPath })).changed, true);

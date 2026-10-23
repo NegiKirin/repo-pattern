@@ -244,7 +244,7 @@ export async function choosePermissionConfig({ claudeCodeVersion, migrationChoic
     if (!result.changed && !result.alreadyEnabled) console.warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
     return { bypass: result.changed || result.alreadyEnabled ? "user" : "preserve" };
   }
-  if (!supported && legacyBypass) return { bypass: "allow" };
+  if (!supported && legacyBypass) return { bypass: selectedBypass === "deny" ? "deny" : "allow" };
   if (supported && legacyBypass && migrationChoice === "no") {
     console.warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
     return { bypass: "preserve" };
@@ -262,6 +262,10 @@ export async function choosePermissionConfig({ claudeCodeVersion, migrationChoic
     initialValue: "deny"
   });
   if (!supported || bypass !== "allow") return { bypass };
+  if (dryRun) {
+    console.warn("WARN: Dry run does not change user settings; bypass permissions remain unchanged.");
+    return { bypass: legacyBypass ? "preserve" : "deny" };
+  }
   if (!await confirm("Enable bypass permissions in ~/.claude/settings.json? This affects every project.", false)) {
     if (legacyBypass) console.warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
     return { bypass: legacyBypass ? "preserve" : "deny" };
@@ -385,7 +389,7 @@ export async function setupProject({ sourceRoot, target, mcpServers = [], setupP
     const projectSettings = await readPrivateJson(path.join(target, ".claude", "settings.json"), {}, { label: ".claude/settings.json", parentLabel: ".claude" });
     legacyBypass = projectSettings.permissions?.defaultMode === "bypassPermissions";
   } catch (error) {
-    if (error instanceof SyntaxError) console.warn(`WARN: Existing .claude/settings.json is malformed; continuing interactive setup so it can be repaired: ${error.message}`);
+    if (error instanceof SyntaxError) console.warn(`WARN: Existing .claude/settings.json is malformed; fix it before running setup: ${error.message}`);
     else throw error;
   }
   const currentSettingsEnv = await currentLocalSettingsEnv(target);

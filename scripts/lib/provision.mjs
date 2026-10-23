@@ -220,16 +220,14 @@ export function applyPermissionSettings(settings, permissionConfig = { bypass: "
   return { ...settings, permissions };
 }
 
-async function writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun, interactiveSetup = false, silent = false }) {
+async function writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun, silent = false }) {
   const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.example.json"), {});
   let current;
   try {
     current = await readPrivateJson(path.join(target, ".claude", "settings.json"), {}, { label: ".claude/settings.json", parentLabel: ".claude" });
   } catch (error) {
     if (!(error instanceof SyntaxError)) throw error;
-    if (!interactiveSetup) throw new Error(".claude/settings.json is malformed. Fix it before running non-interactive setup.");
-    current = {};
-    console.warn("WARN: Replacing malformed .claude/settings.json during interactive setup.");
+    throw new Error(".claude/settings.json is malformed. Fix it before running setup.");
   }
   const settings = applyGeneratedAttributionHook(applyPermissionSettings(applyAttributionSetting({ ...template, ...current, hooks: current.hooks || template.hooks }, attributionConfig), permissionConfig), attributionConfig);
   await writePrivateJson(path.join(target, ".claude", "settings.json"), settings, {
@@ -470,7 +468,7 @@ export async function provisionProject({ sourceRoot, target, setupPipeline = "ec
     );
     advanceWorkspace("Copying workspace template");
 
-    await writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun, interactiveSetup, silent: interactiveSetup });
+    await writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun, silent: interactiveSetup });
     await copyGeneratedAttributionHook(sourceRoot, target, { dryRun, silent: interactiveSetup });
     advanceWorkspace("Writing Claude settings");
     await appendGitignoreLine(target, ".claude/", { dryRun, silent: interactiveSetup });
