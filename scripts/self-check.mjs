@@ -17,6 +17,7 @@ import { runProvisionAndPipelineChecks } from "./self-check/provision-and-pipeli
 import { runProgressChecks } from "./self-check/progress.mjs";
 import { runQualityGateChecks } from "./self-check/quality-gates.mjs";
 import { runSetupWizardChecks } from "./self-check/setup-wizard.mjs";
+import { runBypassPermissionChecks } from "./self-check/bypass-permissions.mjs";
 
 await runGeneratedAttributionHookChecks(new URL("..", import.meta.url).pathname);
 await runMcpAndSettingsChecks();
@@ -44,5 +45,6 @@ await runFilesystemChecks();
 await runCredentialChecks();
 await runQualityGateChecks();
 await runSetupWizardChecks();
+await runBypassPermissionChecks();
 
 console.log("self-check passed");

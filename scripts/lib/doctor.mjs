@@ -1,4 +1,6 @@
+import { execFile } from "node:child_process";
 import { constants } from "node:fs";
+import { promisify } from "node:util";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { auditProject } from "./audit.mjs";
@@ -8,8 +10,18 @@ import { Box, Text, render } from "ink";
 import { printBox } from "./prompt.mjs";
 import { applyPlanTuneHooks, validateProjectGstack } from "./gstack.mjs";
 import { isValidEccAgentProvenance, verifyAgentInventory } from "./rules.mjs";
+import { claudeVersionSupportsUserScope } from "./bypass-permissions.mjs";
 
 const GROUPS = ["Workspace", "Settings & MCP", "ECC", "gstack"];
+const execFileAsync = promisify(execFile);
+
+async function detectClaudeCodeVersion() {
+  try {
+    return (await execFileAsync("claude", ["--version"])).stdout.trim();
+  } catch {
+    return "";
+  }
+}
 
 function groupFor(label) {
   if (/\.repo-pattern\/\.repo-pattern\.lock\.json ecc/.test(label)) return "ECC";
@@ -62,7 +74,7 @@ function renderDoctor(target, setupPipeline, checks, infoRows, verbose) {
     const groupStatus = rows.some((row) => !row.ok) ? "FAIL" : rows.length ? "PASS" : "N/A";
     return { name, rows, status: groupStatus };
   });
-  const warnings = infoRows.filter((row) => /browser skipped|plugin installation is required|^\/plugin /.test(row));
+  const warnings = infoRows.filter((row) => /browser skipped|plugin installation is required|^\/plugin |Project permissions\.defaultMode=bypassPermissions/.test(row));
   const information = infoRows.filter((row) => !warnings.includes(row));
   const lines = [
     `Target  ${target}`,
@@ -239,6 +251,9 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   check(repoPattern.runtime?.localRules === false, ".repo-pattern/.repo-pattern.json runtime.localRules=false");
 
   const settings = await readJson(path.join(target, ".claude", "settings.json"), {});
+  if (settings.permissions?.defaultMode === "bypassPermissions" && claudeVersionSupportsUserScope(await detectClaudeCodeVersion())) {
+    infoRows.push("Project permissions.defaultMode=bypassPermissions is ineffective in Claude Code v2.1.257+; user-scope bypass affects every project. No settings were changed.");
+  }
   const expectedMcpServers = lock.mcp?.enabledServers || [];
   if (expectedMcpServers.length > 0) {
     const actualMcpServers = settings.enabledMcpjsonServers || [];

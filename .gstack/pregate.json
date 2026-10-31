@@ -3,7 +3,7 @@
   "runner": "npm test -- {files}",
   "dependencies": {
     ".gitignore": [],
-    "scripts/lib/**": ["scripts/self-check.mjs"],
-    "scripts/self-check/**": ["scripts/self-check.mjs"]
+    "scripts/lib/**": ["scripts/self-check.test.mjs"],
+    "scripts/self-check/**": ["scripts/self-check.test.mjs"]
   }
 }
