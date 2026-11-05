@@ -166,7 +166,7 @@ export async function runBypassPermissionChecks() {
         process.stdin.pause();
       }
       process.exit(0);
-    `], { encoding: "utf8", timeout: 10000 });
+    `], { encoding: "utf8", timeout: 10000, env: { ...process.env, CI: "0" } });
     assert.equal(promptDryRunCheck.status, 0, `${promptDryRunCheck.error || ""}\\n${promptDryRunCheck.stderr}`);
   }
 
@@ -215,7 +215,7 @@ export async function runBypassPermissionChecks() {
       process.stdin.pause();
     }
     process.exit(0);
-  `], { encoding: "utf8", timeout: 10000 });
+  `], { encoding: "utf8", timeout: 10000, env: { ...process.env, CI: "0" } });
   assert.equal(promptLiveCheck.status, 0, `${promptLiveCheck.error || ""}\\n${promptLiveCheck.stderr}`);
 
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-user-permissions-"));
