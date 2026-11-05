@@ -866,7 +866,7 @@ export async function validateProjectGstack(target) {
     }
   }
   const wrappersMatch = JSON.stringify([...wrappers].sort()) === JSON.stringify(expectedWrappers.map(({ wrapper }) => wrapper));
-  const assetsMatch = JSON.stringify([...assets].sort()) === JSON.stringify(expectedAssets.map(({ asset }) => asset));
+  const assetsMatch = JSON.stringify([...assets].sort()) === JSON.stringify(expectedAssets.map(({ asset }) => asset).sort());
   const sidecarsMatch = JSON.stringify([...sidecars].sort()) === JSON.stringify(expectedSidecars.map(({ sidecar }) => sidecar).sort());
   const wrappersValid = checkoutValid && stateValid && wrappers.length > 0 && wrappersMatch && await Promise.all(expectedWrappers.map(async ({ wrapper, content }) => {
     try {

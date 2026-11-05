@@ -86,6 +86,49 @@ export async function runGstackRollbackChecks() {
     await fs.rm(ancillaryTarget, { recursive: true, force: true });
   }
 
+  const assetSortTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-asset-sort-"));
+  try {
+    const checkout = gstackCheckoutPath(assetSortTarget);
+    const templateDirectory = path.join(checkout, "captain", "templates");
+    await fs.mkdir(templateDirectory, { recursive: true });
+    await installGstackSafetyFixture(checkout);
+    await fs.writeFile(path.join(checkout, "setup"), "#!/bin/sh\n", { mode: 0o755 });
+    await fs.writeFile(path.join(checkout, "SKILL.md"), "Project-local gstack", "utf8");
+    await fs.writeFile(path.join(checkout, "captain", "SKILL.md"), "Captain", "utf8");
+    for (const asset of ["AGENTS.md", "CREW.md", "brief.md"]) {
+      await fs.writeFile(path.join(templateDirectory, asset), asset, "utf8");
+    }
+    spawnSync("git", ["init"], { cwd: checkout, stdio: "ignore" });
+    for (const sidecar of GSTACK_REVIEW_SIDECARS) {
+      await fs.mkdir(path.dirname(path.join(checkout, sidecar)), { recursive: true });
+      await fs.writeFile(path.join(checkout, sidecar), `Fixture ${sidecar}`, "utf8");
+    }
+
+    await bootstrapGstack({ target: assetSortTarget });
+    const validation = await validateProjectGstack(assetSortTarget);
+    assert.deepEqual(validation.assets, [
+      "captain/templates/AGENTS.md",
+      "captain/templates/brief.md",
+      "captain/templates/CREW.md"
+    ]);
+    assert.equal(validation.assetsValid, true);
+
+    const asset = path.join(assetSortTarget, ".claude", "skills", "captain", "templates", "AGENTS.md");
+    const assetStateFile = path.join(gstackStatePath(assetSortTarget), "state.json");
+    const priorState = await fs.readFile(assetStateFile, "utf8");
+    await fs.rm(asset);
+    assert.equal((await validateProjectGstack(assetSortTarget)).assetsValid, false);
+    await fs.writeFile(asset, "AGENTS.md", "utf8");
+    const state = JSON.parse(priorState);
+    await fs.writeFile(assetStateFile, JSON.stringify({ ...state, assets: [...state.assets, "captain/templates/extra.md"] }), "utf8");
+    assert.equal((await validateProjectGstack(assetSortTarget)).assetsValid, false);
+    await fs.writeFile(assetStateFile, priorState, "utf8");
+    await fs.writeFile(asset, "drifted", "utf8");
+    assert.equal((await validateProjectGstack(assetSortTarget)).assetsValid, false);
+  } finally {
+    await fs.rm(assetSortTarget, { recursive: true, force: true });
+  }
+
   const templateOnlyTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-template-only-"));
   const templateOnlyOutside = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-template-only-outside-"));
   try {
