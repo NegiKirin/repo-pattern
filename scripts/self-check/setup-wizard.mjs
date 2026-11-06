@@ -69,8 +69,8 @@ export async function runSetupWizardChecks() {
   ]);
 
   const pages = wizardPages(initial, data);
-  assert.equal(pages.find((page) => page.id === "permission").note, "Claude Code v2.1.257+ ignores this setting from project config.");
-  assert.match(wizardPages({ ...initial, migrationChoice: "pending" }, { ...data, legacyBypass: true }).find((page) => page.id === "permission").note, /Legacy project bypassPermissions detected/);
+  assert.equal(pages.find((page) => page.id === "permission").note, "On Claude Code v2.1.257+, this project setting is ignored. Yes enables bypass permissions in ~/.claude/settings.json, affecting every project. Existing settings are not overwritten; add it manually if needed.");
+  assert.match(wizardPages({ ...initial, migrationChoice: "pending" }, { ...data, legacyBypass: true }).find((page) => page.id === "permission").note, /On Claude Code v2\.1\.257\+, Yes transfers it to ~\/\.claude\/settings\.json, affecting every project/);
   assert.equal(pages.some((page) => page.id === "planTuneHooks"), false);
   assert.equal(pruneWizardState(initial, data).planTuneHooks, true);
   assert.ok(pages.some((page) => page.id === "mcpServers"));

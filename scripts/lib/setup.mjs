@@ -6,7 +6,7 @@ import { detectProject } from "./project-detect.mjs";
 import { provisionProject, updateClaudeAttribution, updateClaudePermissions } from "./provision.mjs";
 import { doctorProject } from "./doctor.mjs";
 import { collectMcpValues, generateMcp, listAvailableMcpServers, mcpInputFields, persistedMcpValues, readGeneratedMcpValues, readMcpConfig } from "./mcp.mjs";
-import { askConfirm, askPassword, askText, DEFAULT_EFFORT_LEVEL, isInteractive, printBox, selectMany, selectOne } from "./prompt.mjs";
+import { askPassword, askText, DEFAULT_EFFORT_LEVEL, isInteractive, printBox, selectMany, selectOne } from "./prompt.mjs";
 import { claudeVersionSupportsUserScope, setUserBypassPermission } from "./bypass-permissions.mjs";
 import { runSetupWizard } from "./setup-wizard.mjs";
 import { ECC_RULE_PACKS, normalizeEccRules, selectEccRules } from "./ecc-rules.mjs";
@@ -221,7 +221,7 @@ export function localSettingsPromptOptions(initialValues = {}, environment = pro
   }));
 }
 
-export async function choosePermissionConfig({ claudeCodeVersion, migrationChoice, legacyBypass, selectedBypass, retryChoice, dryRun = false, confirm = askConfirm, setUserBypass = setUserBypassPermission }) {
+export async function choosePermissionConfig({ claudeCodeVersion, migrationChoice, legacyBypass, selectedBypass, retryChoice, dryRun = false, setUserBypass = setUserBypassPermission }) {
   const supported = claudeVersionSupportsUserScope(claudeCodeVersion);
   if (retryChoice === "retry") {
     if (["user", "preserve"].includes(selectedBypass)) {
@@ -234,13 +234,8 @@ export async function choosePermissionConfig({ claudeCodeVersion, migrationChoic
     return { bypass: legacyBypass ? "preserve" : "deny" };
   }
   if (supported && legacyBypass && migrationChoice === "yes" && selectedBypass === "allow") {
-    const transfer = await confirm("Enable bypassPermissions in user settings? User scope affects every project. Existing settings will not be overwritten; if a settings file exists, you must add this manually.", false);
-    if (!transfer) {
-      console.warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
-      return { bypass: "preserve" };
-    }
     const result = await setUserBypass({ accepted: true });
-    console.warn(`WARN: ${result.message}`);
+    if (!result.alreadyEnabled) console.warn(`WARN: ${result.message}`);
     if (!result.changed && !result.alreadyEnabled) console.warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
     return { bypass: result.changed || result.alreadyEnabled ? "user" : "preserve" };
   }
@@ -254,7 +249,7 @@ export async function choosePermissionConfig({ claudeCodeVersion, migrationChoic
     return { bypass: "preserve" };
   }
   const bypass = selectedBypass ?? await selectOne({
-    message: supported ? "Allow bypass permissions mode? User scope affects every project. Existing settings will not be overwritten; if a settings file exists, you must add this manually." : "Step 5/6 — Allow bypass permissions mode?",
+    message: supported ? "Allow bypass permissions mode? Yes enables bypass permissions in ~/.claude/settings.json and affects every project. Existing settings will not be overwritten; if a settings file exists, you must add this manually." : "Step 5/6 — Allow bypass permissions mode?",
     options: [
       { value: "deny", label: "No", description: "disable bypass permissions mode" },
       { value: "allow", label: "Yes", description: supported ? "enable in user settings for every project" : "default to bypassPermissions" }
@@ -266,12 +261,8 @@ export async function choosePermissionConfig({ claudeCodeVersion, migrationChoic
     console.warn("WARN: Dry run does not change user settings; bypass permissions remain unchanged.");
     return { bypass: legacyBypass ? "preserve" : "deny" };
   }
-  if (!await confirm("Enable bypass permissions in ~/.claude/settings.json? This affects every project.", false)) {
-    if (legacyBypass) console.warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
-    return { bypass: legacyBypass ? "preserve" : "deny" };
-  }
   const result = await setUserBypass({ accepted: true });
-  console.warn(`WARN: ${result.message}`);
+  if (!result.alreadyEnabled) console.warn(`WARN: ${result.message}`);
   if (!result.changed && !result.alreadyEnabled && legacyBypass) console.warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
   return { bypass: result.changed || result.alreadyEnabled ? "user" : legacyBypass ? "preserve" : "deny" };
 }

@@ -49,7 +49,7 @@ export async function runInteractiveSetupCase({ root, name, settings, choice, ex
     output.write = (chunk, ...args) => { display = (display + chunk.toString()).slice(-12000); return nativeWrite(chunk, ...args); };
     const handled = new Set();
     const consentPrompts = ["Enable bypassPermissions in user settings?", "Enable bypass permissions in ~/.claude/settings.json?"];
-    const keys = ["Run migrate?", "Choose setup workflow", "Install project-local ECC rules & agents?", "Choose ECC rule detection mode", "Choose MCP servers", "MCP secret", "Optional external skills", "Configure third-party provider & models", "Choose effort level", "Allow bypass permissions mode?", "Commit attribution?", "Run setup now?", ...consentPrompts];
+    const keys = ["Run migrate?", "Choose setup workflow", "Install project-local ECC rules & agents?", "Choose ECC rule detection mode", "Choose MCP servers", "MCP secret", "Optional external skills", "Configure third-party provider & models", "Choose effort level", "Allow bypass permissions mode?", "Commit attribution?", "Run setup now?"];
     let previousStep = "";
     const timer = setInterval(() => {
       const visible = display.replace(/\\u001b\\[[0-?]*[ -/]*[@-~]/g, "").replace(/\\u001b\\][^\\u0007]*(?:\\u0007|\\u001b\\\\)/g, "");
@@ -73,9 +73,7 @@ export async function runInteractiveSetupCase({ root, name, settings, choice, ex
       } else if (title === "Configure third-party provider & models") {
         for (const [delay, key] of [[0, "h"], [50, "t"], [100, "t"], [150, "p"], [200, "s"], [250, ":"], [300, "/"], [350, "/"], [400, "p"], [450, "r"], [500, "o"], [550, "v"], [600, "i"], [650, "d"], [700, "e"], [750, "r"], [800, "."], [850, "e"], [900, "x"], [950, "a"], [1000, "m"], [1050, "p"], [1100, "l"], [1150, "e"], [1200, "/"], [1250, "v"], [1300, "1"], [1400, "\\r"], [1650, "\\r"], [1900, "\\r"], [2150, "\\r"], [2400, "\\r"]]) setTimeout(() => input.write(key), delay);
       } else {
-        if (consentPrompts.includes(title)) {
-          setTimeout(() => input.write(choice === "decline" ? "n" : "y"), 100);
-        } else if (title === "Allow bypass permissions mode?" && choice !== "deny") {
+        if (title === "Allow bypass permissions mode?" && choice !== "deny") {
           setTimeout(() => input.write("\\u001b[B"), 0);
         }
         setTimeout(() => input.write("\\r"), 200);
@@ -126,7 +124,10 @@ export async function runInteractiveSetupCase({ root, name, settings, choice, ex
   const project = JSON.parse(await fs.readFile(path.join(target, ".claude", "settings.json"), "utf8"));
   assert.equal(project.permissions.defaultMode, expectedProjectBypass);
   if (name === "new-install-allow-accepted") {
-    assert.match(result.stdout, /Enable bypass permissions in ~\/\.claude\/settings\.json\? This affects every project\./);
+    const setupOutput = result.stdout.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\s+/g, " ");
+    assert.match(setupOutput, /~\/\.claude\/settings\.json/);
+    assert.match(setupOutput, /affecting every project/);
+    assert.doesNotMatch(setupOutput, /Enable bypass permissions in ~\/\.claude\/settings\.json\?/);
   }
   if (expectUserSettings) {
     const user = JSON.parse(await fs.readFile(path.join(home, ".claude", "settings.json"), "utf8"));

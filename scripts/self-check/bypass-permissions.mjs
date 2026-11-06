@@ -49,30 +49,29 @@ export async function runBypassPermissionChecks() {
     assert.deepEqual(declinedMigration, { bypass: "preserve" });
     assert.equal(declinedMigrationConfirmations, 0);
     assert.equal(declinedMigrationWrites, 0);
-    const consent = async () => true;
+    const consent = async () => { throw new Error("redundant confirmation"); };
     const writeSuccess = async () => ({ changed: true, message: "enabled" });
     const writeExisting = async () => ({ changed: false, alreadyEnabled: true, message: "already enabled" });
     const writeFailure = async () => ({ changed: false, message: "not written" });
     const choices = [
       [{ claudeCodeVersion: "2.1.256", legacyBypass: true, selectedBypass: "deny" }, { bypass: "deny" }],
       [{ claudeCodeVersion: "2.1.257", migrationChoice: "yes", legacyBypass: true, selectedBypass: "deny" }, { bypass: "preserve" }],
-      [{ claudeCodeVersion: "2.1.257", selectedBypass: "allow", confirm: async () => true, setUserBypass: writeFailure }, { bypass: "deny" }],
-      [{ claudeCodeVersion: "2.1.257", migrationChoice: "yes", legacyBypass: true, selectedBypass: "allow", confirm: async () => false }, { bypass: "preserve" }],
-      [{ claudeCodeVersion: "2.1.257", migrationChoice: "yes", legacyBypass: true, selectedBypass: "allow", confirm, setUserBypass: writeFailure }, { bypass: "preserve" }],
-      [{ claudeCodeVersion: "2.1.257", migrationChoice: "yes", legacyBypass: true, selectedBypass: "allow", confirm, setUserBypass: writeExisting }, { bypass: "user" }],
+      [{ claudeCodeVersion: "2.1.257", selectedBypass: "allow", confirm: consent, setUserBypass: writeFailure }, { bypass: "deny" }],
+      [{ claudeCodeVersion: "2.1.257", migrationChoice: "yes", legacyBypass: true, selectedBypass: "allow", confirm: consent, setUserBypass: writeFailure }, { bypass: "preserve" }],
+      [{ claudeCodeVersion: "2.1.257", migrationChoice: "yes", legacyBypass: true, selectedBypass: "allow", confirm: consent, setUserBypass: writeExisting }, { bypass: "user" }],
       [{ claudeCodeVersion: "2.1.257", migrationChoice: "yes", legacyBypass: true, selectedBypass: "preserve" }, { bypass: "preserve" }],
       [{ claudeCodeVersion: "2.1.257", legacyBypass: true, selectedBypass: "deny" }, { bypass: "deny" }],
-      [{ claudeCodeVersion: "2.1.257", legacyBypass: true, selectedBypass: "allow", confirm: async () => true, setUserBypass: writeSuccess }, { bypass: "user" }],
+      [{ claudeCodeVersion: "2.1.257", legacyBypass: true, selectedBypass: "allow", confirm: consent, setUserBypass: writeSuccess }, { bypass: "user" }],
       [{ claudeCodeVersion: "2.1.256", selectedBypass: "allow" }, { bypass: "allow" }],
       [{ claudeCodeVersion: "2.1.257", selectedBypass: "preserve" }, { bypass: "preserve" }],
-      [{ claudeCodeVersion: "2.1.257", selectedBypass: "allow", confirm: async () => false }, { bypass: "deny" }],
-      [{ claudeCodeVersion: "2.1.257", legacyBypass: true, selectedBypass: "allow", confirm: async () => false }, { bypass: "preserve" }],
+      [{ claudeCodeVersion: "2.1.257", selectedBypass: "allow", confirm: consent, setUserBypass: writeFailure }, { bypass: "deny" }],
+      [{ claudeCodeVersion: "2.1.257", legacyBypass: true, selectedBypass: "allow", confirm: consent, setUserBypass: writeFailure }, { bypass: "preserve" }],
       [{ claudeCodeVersion: "2.1.257", selectedBypass: "allow", confirm: consent, setUserBypass: writeSuccess }, { bypass: "user" }],
       [{ claudeCodeVersion: "2.1.257", selectedBypass: "allow", confirm: consent, setUserBypass: writeExisting }, { bypass: "user" }],
       [{ claudeCodeVersion: "2.1.257", selectedBypass: "allow", confirm: consent, setUserBypass: writeFailure }, { bypass: "deny" }],
       [{ claudeCodeVersion: "2.1.257", legacyBypass: true, selectedBypass: "allow", confirm: consent, setUserBypass: writeFailure }, { bypass: "preserve" }],
-      [{ claudeCodeVersion: "2.1.257", retryChoice: "retry", selectedBypass: "allow", confirm: async () => false }, { bypass: "deny" }],
-      [{ claudeCodeVersion: "2.1.257", retryChoice: "retry", selectedBypass: "allow", confirm: async () => true, setUserBypass: writeSuccess }, { bypass: "user" }],
+      [{ claudeCodeVersion: "2.1.257", retryChoice: "retry", selectedBypass: "allow", confirm: consent, setUserBypass: writeFailure }, { bypass: "deny" }],
+      [{ claudeCodeVersion: "2.1.257", retryChoice: "retry", selectedBypass: "allow", confirm: consent, setUserBypass: writeSuccess }, { bypass: "user" }],
       [{ claudeCodeVersion: "2.1.257", retryChoice: "retry", selectedBypass: "user" }, { bypass: "user" }],
       [{ claudeCodeVersion: "2.1.257", retryChoice: "retry", selectedBypass: "preserve" }, { bypass: "preserve" }],
       [{ claudeCodeVersion: "2.1.257", retryChoice: "retry", selectedBypass: "deny" }, { bypass: "deny" }],
@@ -81,6 +80,27 @@ export async function runBypassPermissionChecks() {
       [{ claudeCodeVersion: "2.1.257", dryRun: true, migrationChoice: "yes", legacyBypass: true }, { bypass: "preserve" }]
     ];
     for (const [input, expected] of choices) assert.deepEqual(await choosePermissionConfig(input), expected);
+    warnings.length = 0;
+    assert.deepEqual(await choosePermissionConfig({
+      claudeCodeVersion: "2.1.257", selectedBypass: "allow",
+      setUserBypass: writeExisting
+    }), { bypass: "user" });
+    assert.deepEqual(await choosePermissionConfig({
+      claudeCodeVersion: "2.1.257", migrationChoice: "yes", legacyBypass: true, selectedBypass: "allow",
+      setUserBypass: writeExisting
+    }), { bypass: "user" });
+    assert.doesNotMatch(warnings.join("\n"), /WARN: already enabled/);
+    const warningCount = warnings.length;
+    await choosePermissionConfig({
+      claudeCodeVersion: "2.1.257", selectedBypass: "allow",
+      setUserBypass: writeFailure
+    });
+    assert.ok(warnings.length > warningCount, "failed user-settings writes retain their warning");
+    await choosePermissionConfig({
+      claudeCodeVersion: "2.1.257", migrationChoice: "yes", legacyBypass: true, selectedBypass: "allow",
+      setUserBypass: writeFailure
+    });
+    assert.match(warnings.join("\n"), /ineffective in Claude Code v2\.1\.257\+/);
     for (const bypass of ["deny", "user"]) {
       let writes = 0;
       const result = await choosePermissionConfig({
@@ -116,7 +136,8 @@ export async function runBypassPermissionChecks() {
       process.exit(0);
     `], { encoding: "utf8", timeout: 10000 });
     assert.equal(promptCheck.status, 0, `${promptCheck.error || ""}\n${promptCheck.stderr}`);
-    assert.match(promptCheck.stdout, version === "2.1.257" ? /User scope affects every project/ : /Step 5\/6/);
+    const promptOutput = promptCheck.stdout.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\s+/g, " ");
+    assert.match(promptOutput, version === "2.1.257" ? /~\/\.claude\/settings\.json.*affects every project/ : /Step 5\/6/);
   }
 
   for (const legacyBypass of [false, true]) {
@@ -205,7 +226,7 @@ export async function runBypassPermissionChecks() {
         confirm: async () => { confirmCalls++; return true; },
         setUserBypass: async () => { writeCalls++; return { changed: true }; }
       }), { bypass: "user" });
-      assert.equal(confirmCalls, 1);
+      assert.equal(confirmCalls, 0, "selecting Yes must be sufficient consent");
       assert.equal(writeCalls, 1);
       assert.equal(promptSeen, true, "live selection must reach the prompt");
       assert.equal(selected, true, "live selection must send the selected input");
@@ -217,6 +238,10 @@ export async function runBypassPermissionChecks() {
     process.exit(0);
   `], { encoding: "utf8", timeout: 10000, env: { ...process.env, CI: "0" } });
   assert.equal(promptLiveCheck.status, 0, `${promptLiveCheck.error || ""}\\n${promptLiveCheck.stderr}`);
+  const livePromptOutput = promptLiveCheck.stdout.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\s+/g, " ");
+  assert.match(livePromptOutput, /~\/\.claude\/settings\.json/);
+  assert.match(livePromptOutput, /affects every project/);
+  assert.doesNotMatch(livePromptOutput, /Enable bypass permissions in ~\/\.claude\/settings\.json\?/);
 
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-user-permissions-"));
   const settingsPath = path.join(root, "settings.json");
