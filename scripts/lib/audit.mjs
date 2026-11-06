@@ -82,7 +82,9 @@ export async function auditProject(target) {
     ...(gstack?.wrappers || []).map((wrapper) => path.relative(skillsRoot, path.join(target, wrapper)).split(path.sep)[0]),
     ...(usesGstack ? ["gstack"] : [])
   ].sort();
-  const hasOnlyManagedSkills = JSON.stringify(actualSkillDirs) === JSON.stringify([...new Set(expectedSkillDirs)].sort());
+  const uniqueExpectedSkillDirs = [...new Set(expectedSkillDirs)].sort();
+  const hasManagedSkills = uniqueExpectedSkillDirs.every((skillDir) => actualSkillDirs.includes(skillDir));
+  const hasOnlyManagedSkills = JSON.stringify(actualSkillDirs) === JSON.stringify(uniqueExpectedSkillDirs);
   const eccRulesDir = path.join(target, ".claude", "rules", "ecc");
   const hasClaudeEccRulesDir = exists(eccRulesDir);
   const eccRulePackDirs = await listDirNames(eccRulesDir);
@@ -106,6 +108,7 @@ export async function auditProject(target) {
     hasClaudeSkillsDir: exists(path.join(target, ".claude", "skills")),
     actualSkillDirs,
     expectedSkillDirs,
+    hasManagedSkills,
     hasOnlyManagedSkills,
     hasClaudeCommandsDir: exists(path.join(target, ".claude", "commands")),
     hasClaudeHooksDir: exists(path.join(target, ".claude", "hooks")),

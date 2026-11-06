@@ -96,11 +96,14 @@ try {
     applyRules: false
   });
   const unrelatedRulePath = path.join(unrelatedRulesTarget, ".claude", "rules", "third-party", "rule.md");
-  const unrelatedSkillPath = path.join(unrelatedRulesTarget, ".claude", "skills", "third-party", "SKILL.md");
+  const preservedSkillPaths = [
+    path.join(unrelatedRulesTarget, ".claude", "skills", "codex", "SKILL.md"),
+    path.join(unrelatedRulesTarget, ".claude", "skills", "gitnexus", "SKILL.md")
+  ];
   await fs.mkdir(path.dirname(unrelatedRulePath), { recursive: true });
-  await fs.mkdir(path.dirname(unrelatedSkillPath), { recursive: true });
+  await Promise.all(preservedSkillPaths.map((file) => fs.mkdir(path.dirname(file), { recursive: true })));
   await fs.writeFile(unrelatedRulePath, "preserve", "utf8");
-  await fs.writeFile(unrelatedSkillPath, "preserve", "utf8");
+  await Promise.all(preservedSkillPaths.map((file) => fs.writeFile(file, "preserve", "utf8")));
 
   await provisionProject({
     sourceRoot: repoRoot,
@@ -110,9 +113,25 @@ try {
     applyRules: false
   });
   assert.equal(await fs.readFile(unrelatedRulePath, "utf8"), "preserve");
-  assert.equal(await fs.readFile(unrelatedSkillPath, "utf8"), "preserve");
+  for (const file of preservedSkillPaths) assert.equal(await fs.readFile(file, "utf8"), "preserve");
   assert.equal((await auditProject(unrelatedRulesTarget)).state, "NO_PIPELINE_MINIMAL");
   await doctorProject(unrelatedRulesTarget);
+
+  const repoConfigPath = path.join(unrelatedRulesTarget, ".repo-pattern", ".repo-pattern.json");
+  const repoConfig = JSON.parse(await fs.readFile(repoConfigPath, "utf8"));
+  const managedSkill = OPTIONAL_SKILLS.find((skill) => skill.value === "document-specialist");
+  repoConfig.runtime.localSkills = true;
+  repoConfig.optionalSkills = [{ name: managedSkill.value, source: managedSkill.source, revision: managedSkill.revision }];
+  await fs.writeFile(repoConfigPath, JSON.stringify(repoConfig));
+  const managedSkillPath = path.join(unrelatedRulesTarget, ".claude", "skills", managedSkill.installedDirs[0], "SKILL.md");
+  await fs.mkdir(path.dirname(managedSkillPath), { recursive: true });
+  await fs.writeFile(managedSkillPath, "managed");
+  const preservedAudit = await auditProject(unrelatedRulesTarget);
+  assert.equal(preservedAudit.hasManagedSkills, true);
+  assert.equal(preservedAudit.hasOnlyManagedSkills, false);
+  await doctorProject(unrelatedRulesTarget, { silent: true });
+  await fs.rm(path.dirname(managedSkillPath), { recursive: true });
+  await assert.rejects(() => doctorProject(unrelatedRulesTarget, { silent: true }), /Doctor failed/);
 } finally {
   console.log = originalLog;
   await fs.rm(unrelatedRulesTarget, { recursive: true, force: true });
