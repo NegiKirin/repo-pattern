@@ -8,7 +8,7 @@ import { auditProject } from "../lib/audit.mjs";
 import { doctorProject } from "../lib/doctor.mjs";
 import { GSTACK_REVIEW_SIDECARS } from "../lib/gstack.mjs";
 import { provisionProject } from "../lib/provision.mjs";
-import { installGstackSafetyFixture, writeEccGitFixture } from "./fixtures.mjs";
+import { installGstackSafetyFixture, installGstackUpstreamSetupFixture, writeEccGitFixture } from "./fixtures.mjs";
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.dirname(path.dirname(cliDir));
@@ -37,7 +37,7 @@ try {
   }), { mode: 0o600 });
   const gstackCheckout = path.join(gstackProvisionTarget, ".claude", "skills", "gstack");
   await fs.mkdir(gstackCheckout, { recursive: true });
-  await fs.writeFile(path.join(gstackCheckout, "setup"), "#!/bin/sh\n", { mode: 0o755 });
+  await installGstackUpstreamSetupFixture(gstackCheckout);
   await installGstackSafetyFixture(gstackCheckout);
   await fs.writeFile(path.join(gstackCheckout, "SKILL.md"), "Project-local gstack", "utf8");
   await fs.mkdir(path.join(gstackCheckout, "review"), { recursive: true });

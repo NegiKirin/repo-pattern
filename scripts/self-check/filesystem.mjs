@@ -191,6 +191,7 @@ try {
     "CLAUDE.md",
     "AGENTS.md",
     ".playwright-mcp/",
+    ".repo-pattern-runtime/",
     ".gstack/",
     ".impeccable/",
     "# Local databases",

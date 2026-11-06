@@ -199,7 +199,8 @@ try {
   result = runCli(["setup", "--target", gstackSetupTarget, "--mcp", "context7", "--mcp", "tavily", "--mcp", "gitnexus", "--setup-pipeline", "gstack", "--yes", "--dry-run"]);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /git clone --single-branch --depth 1|copy .*\.claude\/skills\/gstack/);
-  assert.match(result.stdout, /write gstack skill wrapper/);
+  assert.match(result.stdout, /run .*\/setup --local --host claude --no-prefix --no-harness-auto --no-team/);
+  assert.doesNotMatch(result.stdout, /write gstack skill wrapper/);
   assert.match(result.stdout, /Setup pipeline\s+gstack/);
   assert.match(result.stdout, /Pipeline scope\s+project-local gstack at \.claude\/skills\/gstack/);
   assert.doesNotMatch(result.stdout, /Install ECC inside Claude Code/);
@@ -212,7 +213,8 @@ try {
   result = runCli(["setup", "--target", gstackHooksSetupTarget, "--mcp", "context7", "--mcp", "tavily", "--mcp", "gitnexus", "--setup-pipeline", "gstack", "--with-plan-tune-hooks", "--yes", "--dry-run"]);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Plan-tune hooks\s+installed in \.claude\/settings\.json/);
-  assert.doesNotMatch(result.stdout, /\.\/setup|~\/\.claude\/settings\.json/);
+  assert.match(result.stdout, /run .*\/setup --local --host claude --no-prefix --no-harness-auto --no-team/);
+  assert.doesNotMatch(result.stdout, /~\/\.claude\/settings\.json/);
 } finally {
   await fs.rm(gstackHooksSetupTarget, { recursive: true, force: true });
 }

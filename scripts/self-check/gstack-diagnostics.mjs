@@ -39,7 +39,7 @@ export async function runGstackDiagnosticChecks() {
     await fs.writeFile(path.join(local, "setup.md"), "fixture\n");
     await fs.mkdir(path.join(target, ".repo-pattern", "gstack"), { recursive: true });
     const digest = createHash("sha256").update("fixture\n").digest("hex");
-    await fs.writeFile(path.join(target, ".repo-pattern", "gstack", "documents.json"), JSON.stringify({ version: 1, files: [{ path: "setup.md", upstreamSha256: digest, normalizedSha256: digest }] }));
+    await fs.writeFile(path.join(target, ".repo-pattern", "gstack", "documents.json"), JSON.stringify({ version: 2, files: [{ path: "setup.md", sha256: digest }] }));
     originalExec("git", ["-C", local, "add", "setup.md"]);
     originalExec("git", ["-C", local, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture"]);
     let stagedCheckout;

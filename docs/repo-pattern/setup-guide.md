@@ -42,11 +42,11 @@ Available setup pipelines:
 - `both`: ECC plus project-local gstack.
 - `none`: base project metadata only.
 
-`gstack` requires Git and Bun v1.4.2+ on `PATH`. repo-pattern never downloads Bun or runs upstream `gstack/setup`. Setup installs checkout dependencies, builds runtime binaries, installs project-local Playwright Chromium, and probes a local HTML page before promoting the staged checkout. Dependency installation, runtime builds, and Chromium downloads have ten-minute deadlines; runtime probes have thirty-second deadlines.
+`gstack` requires Git and Bun v1.4.2+ on `PATH`. repo-pattern never downloads Bun. Setup invokes the upstream checkout's `setup --local` from the target project, preserving upstream skill publication, renders, and links instead of rewriting copies. Upstream local mode is deprecated but remains the selected project-local installation mode. The installer uses project-local state, an isolated home/configuration, and a local Chromium cache; team mode, harness autodetection, and OS font installation are disabled. The previous checkout and installation artifacts are retained for rollback while the installer runs against stable final paths. Runtime probes have thirty-second deadlines. Setup persists the project-local gstack runtime environment and the upstream per-install render path in `.claude/settings.json` so later hooks use the same installation identity. Conflicting existing values block setup rather than being overwritten.
 
 Use `GSTACK_SKIP_PLAYWRIGHT=1` for an explicit browser-install opt-out. The skipped status is persisted and reported by `doctor`; it does not mean browser workflows are ready. Rerun the same setup command without this environment variable to install and verify Chromium or repair missing dependencies and binaries. Chromium is stored under `.claude/skills/gstack/.repo-pattern-runtime/chromium`, not in a global browser cache.
 
-On Linux, Chromium may require system libraries. Setup reports administrator remediation when they are missing; it never runs `sudo` or installs OS packages. A failed preparation preserves the previously installed checkout and managed wrappers.
+On Linux, Chromium may require system libraries. Setup reports administrator remediation when they are missing; it never runs `sudo` or installs OS packages. A failed preparation preserves the previously installed checkout and upstream-published skills. Legacy synthetic-wrapper installations are unsupported and are not migrated automatically. `--dry-run` previews the upstream local setup without running the installer or writing files.
 
 ## Regenerate MCP configuration
 

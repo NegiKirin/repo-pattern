@@ -33,6 +33,7 @@ const BASIC_GITIGNORE_LINES = [
   "CLAUDE.md",
   "AGENTS.md",
   ".playwright-mcp/",
+  ".repo-pattern-runtime/",
   ".gstack/",
   ".impeccable/",
   "",

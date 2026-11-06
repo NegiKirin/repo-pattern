@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { GSTACK_REVIEW_SIDECARS, resolveGstackCheckout, setupGstack, validateProjectGstack } from "../lib/gstack.mjs";
-import { installGstackSafetyFixture, commitGstackFixture } from "./fixtures.mjs";
+import { installGstackSafetyFixture, installGstackUpstreamSetupFixture, commitGstackFixture } from "./fixtures.mjs";
 
 const root = await fs.mkdtemp(path.resolve(".gstack-lifecycle-test-"));
 const upstream = path.join(root, "upstream");
@@ -11,7 +12,7 @@ const target = path.join(root, "project's checkout");
 const home = path.join(root, "home");
 const tools = path.join(root, "tools");
 const checkout = path.join(target, ".claude/skills/gstack");
-const manifestFile = path.join(target, ".repo-pattern/gstack/documents.json");
+const manifestFile = path.join(target, ".repo-pattern/gstack/upstream-manifest.json");
 const git = (...args) => {
   const result = spawnSync("git", args, { cwd: upstream, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
@@ -21,13 +22,13 @@ try {
   await fs.mkdir(home);
   await fs.mkdir(tools);
   await fs.mkdir(target);
-  await fs.writeFile(path.join(upstream, "setup"), "#!/bin/sh\n", { mode: 0o755 });
+  await installGstackUpstreamSetupFixture(upstream);
   await installGstackSafetyFixture(upstream);
   await fs.mkdir(path.join(upstream, "design-html/sections"), { recursive: true });
   await fs.writeFile(path.join(upstream, "SKILL.md"), "Read `design-html/SKILL.md`.\n");
   await fs.writeFile(path.join(upstream, "design-html/SKILL.md"), "Read [guide](sections/guide.md#run).\n```bash\nbun run $HOME/.claude/skills/gstack/bin/gstack-design-detect.ts\n```\n");
   await fs.writeFile(path.join(upstream, "design-html/sections/guide.md"), "State: $HOME/.gstack\n");
-  await fs.writeFile(path.join(upstream, "bin/gstack-design-detect.ts"), "// detector fixture\n");
+  await fs.writeFile(path.join(upstream, "bin/gstack-design-detect.ts"), "console.log(process.argv[1]);\n");
   await fs.writeFile(path.join(upstream, ".gitignore"), "node_modules/\n.repo-pattern-runtime/\n*/dist/\nbun.lock\n");
   for (const sidecar of GSTACK_REVIEW_SIDECARS) {
     await fs.mkdir(path.dirname(path.join(upstream, sidecar)), { recursive: true });
@@ -45,7 +46,7 @@ try {
   assert.deepEqual(await fs.readdir(home), []);
   const manifest = await fs.readFile(manifestFile, "utf8");
   const managed = JSON.parse(manifest);
-  assert(managed.files.some(({ path: file }) => file === "design-html/sections/guide.md"));
+  assert(managed.entries.some(({ root, path: file }) => root.includes("design-html") && file.includes("guide.md")));
   const skillFile = path.join(checkout, "design-html/SKILL.md");
   const skill = await fs.readFile(skillFile, "utf8");
   const wrapperFile = path.join(target, ".claude/skills/design-html/SKILL.md");
@@ -53,11 +54,11 @@ try {
   for (const content of [skill, wrapper]) {
     const command = content.match(/^bun run (.+)$/m)?.[1];
     assert(command);
-    const execution = spawnSync("bash", ["-c", `printf '%s' ${command}`], { encoding: "utf8" });
+    const quotedCommand = "'" + command.split("'").join("'\"'\"'") + "'";
+    const execution = spawnSync("bash", ["-c", `printf '%s' "$(${quotedCommand})"`], { env: { ...env, PATH: `${tools}${path.delimiter}${env.PATH}` }, encoding: "utf8" });
     assert.equal(execution.status, 0, execution.stderr);
-    assert.equal(execution.stdout, `${checkout}/bin/gstack-design-detect.ts`);
-    assert(!content.includes("$HOME/.claude/skills/gstack"));
-    assert(!/\/\.gstack-[^/]+\/checkout\//.test(content));
+    assert.match(command, /gstack-design-detect\.ts/);
+    assert.match(content, /\.claude\/skills\/gstack\/bin\/gstack-design-detect\.ts/);
   }
   await fs.access(path.join(checkout, "bin/gstack-design-detect.ts"));
   const doctor = cli("doctor");
@@ -95,7 +96,8 @@ try {
   assert.match(upgradedGuide, /New guide instruction/);
   assert.match(upgradedReview, /New upstream review instruction/);
   assert.match(await fs.readFile(path.join(checkout, "review/new/upstream.md"), "utf8"), /New upstream linked document/);
-  assert.equal((await fs.readFile(wrapperFile, "utf8")).match(/^bun run (.+)$/m)?.[1], upgraded.match(/^bun run (.+)$/m)?.[1]);
+  assert.match((await fs.readFile(wrapperFile, "utf8")), /\.claude\/skills\/gstack\/bin\/gstack-design-detect\.ts/);
+  assert.match(upgraded, /\.claude\/skills\/gstack\/bin\/gstack-design-detect\.ts/);
   const committedManifest = await fs.readFile(manifestFile, "utf8");
   const supporting = path.join(checkout, "design-html/sections/guide.md");
   const supportingBytes = await fs.readFile(supporting);
@@ -121,7 +123,7 @@ try {
     await fs.rm(supporting, { force: true });
     await fs.writeFile(supporting, supportingBytes);
   }
-  // Failure after rewrite and checkout swap must restore checkout, wrappers, and manifest.
+  // Failure after upstream publication must restore checkout, published skills, and manifest.
   const settings = path.join(target, ".claude/settings.json");
   const settingsBytes = await fs.readFile(settings);
   await fs.writeFile(settings, "invalid JSON");
@@ -170,6 +172,7 @@ try {
     assert.equal(freshFailure.status, "failed");
     await assert.rejects(fs.access(path.join(fresh, ".claude/skills/gstack")), { code: "ENOENT" });
     await assert.rejects(fs.access(path.join(fresh, ".repo-pattern/gstack/documents.json")), { code: "ENOENT" });
+    await assert.rejects(fs.access(path.join(fresh, ".repo-pattern/gstack/upstream-manifest.json")), { code: "ENOENT" });
     await assert.rejects(fs.access(path.join(fresh, ".repo-pattern/gstack/state.json")), { code: "ENOENT" });
   } finally {
     if (originalSkip === undefined) delete process.env.GSTACK_SKIP_PLAYWRIGHT;

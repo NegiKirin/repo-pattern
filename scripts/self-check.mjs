@@ -29,6 +29,8 @@ await runEffortPickerChecks();
 await runEccSourceAndTransactionChecks();
 await runCliContractChecks();
 await runGstackChecks();
+await import("./self-check/gstack-upstream-setup.mjs");
+await import("./self-check/gstack-upstream-integrity.mjs");
 await import("./self-check/gstack-documents.mjs");
 await import("./self-check/gstack-document-lifecycle.mjs");
 await (await import("./self-check/gstack-runtime.mjs")).runGstackRuntimeChecks();

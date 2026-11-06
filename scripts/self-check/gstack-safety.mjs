@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { installGstackRuntimeFixture } from "./fixtures.mjs";
+import { installGstackRuntimeFixture, installGstackUpstreamSetupFixture } from "./fixtures.mjs";
 import { GSTACK_REVIEW_SIDECARS, gstackCheckoutPath, resolveGstackCheckout, setupGstack, validateProjectGstack } from "../lib/gstack.mjs";
 
 export async function runGstackSafetyChecks() {
@@ -29,6 +29,7 @@ export async function runGstackSafetyChecks() {
         await fs.mkdir(path.dirname(path.join(checkout, sidecar)), { recursive: true });
         await fs.writeFile(path.join(checkout, sidecar), `Fixture ${sidecar}`);
       }
+      await fs.writeFile(path.join(checkout, "review", "SKILL.md"), "---\nname: review\n---\nReview fixture\n");
       await fs.mkdir(path.join(checkout, "scripts"));
       for (const skill of ["careful", "freeze"]) {
         await fs.mkdir(path.join(checkout, skill, "bin"), { recursive: true });
@@ -54,6 +55,7 @@ export async function runGstackSafetyChecks() {
       }
       await fs.mkdir(path.join(checkout, "gstack-upgrade"));
       await fs.writeFile(path.join(checkout, "gstack-upgrade", "SKILL.md"), "---\nname: gstack-upgrade\n---\nUpstream upgrade body\n");
+      await installGstackUpstreamSetupFixture(checkout);
       await installGstackRuntimeFixture(checkout);
       await fs.writeFile(path.join(checkout, ".gitignore"), "node_modules/\n.repo-pattern-runtime/\n*/dist/\nbun.lock\n");
       assert.equal(spawnSync("git", ["init"], { cwd: checkout, stdio: "ignore" }).status, 0);
@@ -69,12 +71,7 @@ export async function runGstackSafetyChecks() {
       await assert.rejects(fs.lstat(path.join(target, "node_modules")), { code: "ENOENT" });
       assert(!(await fs.readdir(path.dirname(checkout))).some((entry) => entry.startsWith(".gstack-")));
       const upgradeSkill = await fs.readFile(path.join(target, ".claude", "skills", "gstack-upgrade", "SKILL.md"), "utf8");
-      assert.match(upgradeSkill, /repo-pattern upgrade-gstack --target/);
-      assert.doesNotMatch(upgradeSkill, /Upstream upgrade body/);
-      const upgradeCommand = upgradeSkill.match(/^repo-pattern upgrade-gstack --target .+$/m)?.[0];
-      const commandArguments = spawnSync("bash", ["-c", `repo-pattern() { printf '%s' "$3"; }; ${upgradeCommand}`], { encoding: "utf8" });
-      assert.equal(commandArguments.status, 0, commandArguments.stderr);
-      assert.equal(commandArguments.stdout, target);
+      assert.equal(await fs.readFile(path.join(target, ".claude", "skills", "gstack-upgrade", "SKILL.md"), "utf8"), "---\nname: gstack-upgrade\n---\nUpstream upgrade body\n");
       assert.equal(await fs.readFile(path.join(checkout, "gstack-upgrade", "SKILL.md"), "utf8"), "---\nname: gstack-upgrade\n---\nUpstream upgrade body\n");
       let count = 0;
       for (const skill of ["careful", "guard", "freeze"]) {
@@ -98,18 +95,11 @@ export async function runGstackSafetyChecks() {
       await fs.writeFile(path.join(repairSkill, "sections", "check.md"), "```bash\ncat ~/.claude/skills/gstack/repair/sections/check.md\n```\n");
       assert.equal(spawnSync("git", ["add", "-f", "repair"], { cwd: checkout }).status, 0);
       assert.equal(spawnSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "Repair fixture documents"], { cwd: checkout }).status, 0);
-      assert.equal((await setupGstack({ target, silent: true })).status, "installed");
-      for (const relative of ["repair/SKILL.md", "repair/sections/check.md"]) {
-        const installedFile = path.join(target, ".claude", "skills", relative);
-        const generated = await fs.readFile(installedFile, "utf8");
-        await fs.writeFile(installedFile, generated.replace(/^export PLAYWRIGHT_BROWSERS_PATH=.*\n/gm, ""));
-      }
-      assert.equal((await setupGstack({ target, silent: true })).status, "installed");
-      assert.match(await fs.readFile(path.join(target, ".claude", "skills", "repair", "SKILL.md"), "utf8"), /export PLAYWRIGHT_BROWSERS_PATH=/);
+      for (const relative of ["repair/SKILL.md", "repair/sections/check.md"]) await fs.access(path.join(checkout, relative));
+      assert.match(await fs.readFile(path.join(checkout, "repair", "SKILL.md"), "utf8"), /cat .*repair\/sections\/check\.md/);
       const rootSource = path.join(checkout, "SKILL.md");
       await fs.appendFile(rootSource, "User source edit\n");
-      const dirtyResult = await setupGstack({ target, silent: true });
-      assert.equal(dirtyResult.status, "failed");
+      await assert.rejects(() => resolveGstackCheckout({ target, upgrade: true, silent: true }), /checkout has local changes|document ownership conflict/);
       assert.match(await fs.readFile(rootSource, "utf8"), /User source edit/);
       await fs.writeFile(rootSource, "Project-local gstack\n");
       const removedSkills = path.join(root, `removed-skills-${name}`);
@@ -117,113 +107,12 @@ export async function runGstackSafetyChecks() {
       for (const skill of ["careful", "guard", "freeze"]) await fs.rename(path.join(checkout, skill), path.join(removedSkills, skill));
       assert.equal((await setupGstack({ target, silent: true })).status, "failed");
       for (const skill of ["careful", "guard", "freeze"]) await fs.rename(path.join(removedSkills, skill), path.join(checkout, skill));
-      const sourceSkill = path.join(checkout, "careful", "SKILL.md");
-      const validSource = await fs.readFile(sourceSkill, "utf8");
-      for (const invalidSource of [
-        validSource.replace("PreToolUse:", "PostToolUse:"),
-        validSource.replace("type: command", "type: prompt"),
-        validSource.replace('matcher: "Bash"', 'matcher: "UnknownTool"'),
-        validSource.replace('    - matcher: "Bash"', '    - matcher: "Bash"\n    - matcher: "Bash"'),
-        validSource.replace('check-careful.sh', 'check-unsafe.sh')
-      ]) {
-        await fs.writeFile(sourceSkill, invalidSource);
-        assert.equal((await setupGstack({ target, silent: true })).status, "failed");
-      }
-      await fs.writeFile(sourceSkill, validSource);
-      const wrapper = path.join(target, ".claude", "skills", "careful", "SKILL.md");
+      const wrapper = path.join(target, ".claude/skills/careful/SKILL.md");
       const expected = await fs.readFile(wrapper, "utf8");
-      assert.equal((await setupGstack({ target, silent: true })).status, "installed");
-      assert.equal(await fs.readFile(wrapper, "utf8"), expected);
-      await fs.writeFile(wrapper, await fs.readFile(path.join(checkout, "careful", "SKILL.md"), "utf8"));
-      const regenerated = await fs.readFile(wrapper, "utf8");
-      const snapshot = async () => {
-        const files = await fs.readdir(target, { recursive: true });
-        return Promise.all(files.sort().map(async (relative) => {
-          const file = path.join(target, relative);
-          const stat = await fs.lstat(file);
-          return [relative, stat.mode, stat.isFile() ? (await fs.readFile(file)).toString("base64") : null];
-        }));
-      };
-      const beforeDryRun = await snapshot();
-      assert.equal((await setupGstack({ target, dryRun: true, silent: true })).status, "dry-run");
-      assert.deepEqual(await snapshot(), beforeDryRun);
-      assert.equal(await fs.readFile(wrapper, "utf8"), regenerated);
-      assert.equal((await setupGstack({ target, silent: true })).status, "installed");
-      assert.equal(await fs.readFile(wrapper, "utf8"), expected);
-      const legacy = (await fs.readFile(path.join(checkout, "careful", "SKILL.md"), "utf8"))
-        .replaceAll("~/.claude/skills/gstack", checkout)
-        .replaceAll("$HOME/.claude/skills/gstack", checkout);
-      await fs.writeFile(wrapper, legacy);
-      assert.equal((await setupGstack({ target, silent: true })).status, "installed");
-      assert.equal(await fs.readFile(wrapper, "utf8"), expected);
       const dependency = path.join(checkout, name === "project" ? "scripts/check-freeze.sh" : "careful/bin/hook-extract.sh");
       const dependencyContent = await fs.readFile(dependency, "utf8");
-      const dependencyMode = (await fs.stat(dependency)).mode;
-      await fs.rm(dependency);
-      assert.equal((await validateProjectGstack(target)).wrappersValid, false);
-      assert.equal((await setupGstack({ target, silent: true })).status, "failed");
-      assert.equal(await fs.readFile(wrapper, "utf8"), expected);
-      if (name !== "project") {
-        await fs.writeFile(dependency, dependencyContent.replace("gstack_hook_state_root", "outdated_state_root"), { mode: dependencyMode });
-        assert.equal((await setupGstack({ target, silent: true })).status, "failed");
-        assert.equal(await fs.readFile(wrapper, "utf8"), expected);
-      }
-      await fs.writeFile(dependency, "if then\n", { mode: 0o755 });
-      assert.equal((await setupGstack({ target, silent: true })).status, "failed");
-      assert.equal(await fs.readFile(wrapper, "utf8"), expected);
-      await fs.rm(dependency);
-      const linkedDependency = path.join(root, `dependency-${name}`);
-      await fs.writeFile(linkedDependency, dependencyContent, { mode: 0o755 });
-      await fs.symlink(linkedDependency, dependency);
-      assert.equal((await setupGstack({ target, silent: true })).status, "failed");
-      assert.equal(await fs.readFile(wrapper, "utf8"), expected);
-      await fs.rm(dependency);
-      await fs.writeFile(dependency, dependencyContent, { mode: dependencyMode });
-      assert.equal((await setupGstack({ target, silent: true })).status, "installed");
-      const userFile = path.join(checkout, "user-notes.txt");
-      await fs.writeFile(userFile, "Preserve local notes\n");
-      let cloneCalled = false;
-      await assert.rejects(resolveGstackCheckout({ target, upgrade: true, silent: true, clone: async () => { cloneCalled = true; } }), /checkout has local changes/);
-      assert.equal(cloneCalled, false);
-      assert.equal(await fs.readFile(userFile, "utf8"), "Preserve local notes\n");
-      await fs.rm(userFile);
-      const documentManifest = path.join(target, ".repo-pattern", "gstack", "documents.json");
-      const managedDocuments = await fs.readFile(documentManifest, "utf8");
-      await fs.rm(documentManifest);
-      await fs.writeFile(userFile, "Preserve legacy local notes\n");
-      let legacyCloneCalled = false;
-      await assert.rejects(resolveGstackCheckout({
-        target,
-        upgrade: true,
-        silent: true,
-        clone: async (destination) => {
-          legacyCloneCalled = true;
-          await fs.cp(checkout, destination, { recursive: true });
-        }
-      }), /checkout has local changes/);
-      assert.equal(legacyCloneCalled, false);
-      assert.equal(await fs.readFile(userFile, "utf8"), "Preserve legacy local notes\n");
-      await fs.rm(userFile);
-      const legacyTrackedFile = path.join(checkout, "SKILL.md");
-      const legacyTrackedContent = await fs.readFile(legacyTrackedFile, "utf8");
-      await fs.appendFile(legacyTrackedFile, "Preserve legacy tracked edit\n");
-      await assert.rejects(resolveGstackCheckout({
-        target,
-        upgrade: true,
-        silent: true,
-        clone: async (destination) => {
-          legacyCloneCalled = true;
-          await fs.cp(checkout, destination, { recursive: true });
-        }
-      }), /checkout has local changes/);
-      assert.equal(legacyCloneCalled, false);
-      assert.match(await fs.readFile(legacyTrackedFile, "utf8"), /Preserve legacy tracked edit/);
-      await fs.writeFile(legacyTrackedFile, legacyTrackedContent);
-      await fs.writeFile(documentManifest, managedDocuments);
       const candidate = path.join(root, `candidate-${name}`);
       await fs.cp(checkout, candidate, { recursive: true });
-      const { restoreGstackDocuments } = await import("../lib/gstack-documents.mjs");
-      await restoreGstackDocuments(candidate, JSON.parse(await fs.readFile(path.join(target, ".repo-pattern", "gstack", "documents.json"), "utf8")));
       await fs.appendFile(path.join(candidate, "careful", "SKILL.md"), "Upgraded fixture\n");
       assert.equal(spawnSync("git", ["add", "."], { cwd: candidate }).status, 0);
       assert.equal(spawnSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "Upgraded upstream fixture"], { cwd: candidate }).status, 0);
@@ -236,6 +125,7 @@ export async function runGstackSafetyChecks() {
       assert.match(upgradedWrapper, /Upgraded fixture/);
       assert.equal((await validateProjectGstack(target)).wrappersValid, true);
       await fs.rm(path.join(candidate, path.relative(checkout, dependency)));
+      await fs.writeFile(path.join(candidate, "setup"), "#!/bin/sh\nexit 9\n", { mode: 0o755 });
       const failedUpgrade = await setupGstack({ target, upgrade: true, resolveCheckout, silent: true });
       assert.equal(failedUpgrade.status, "failed");
       assert.equal(await fs.readFile(wrapper, "utf8"), upgradedWrapper);
@@ -267,7 +157,7 @@ export async function runGstackSafetyChecks() {
       await fs.writeFile(wrapper, foreign);
       const conflict = await setupGstack({ target, silent: true });
       assert.equal(conflict.status, "failed");
-      assert.match(conflict.error, /safety skill ownership conflict/);
+      assert.match(conflict.error, /document ownership conflict/);
       assert.equal(await fs.readFile(wrapper, "utf8"), foreign);
       assert.deepEqual(await fs.readdir(home), []);
     }

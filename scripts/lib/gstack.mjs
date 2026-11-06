@@ -4,11 +4,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { appendGitignoreLine, copyRecursiveWithProgress, ensureDir, exists, isTracked, readJson, removePath, writeJson, writePrivateJson } from "./fs-utils.mjs";
-import { assertGstackSafety } from "./gstack-safety.mjs";
-import { prepareGstackRuntime, validateGstackRuntime, runRuntimeCommand } from "./gstack-runtime.mjs";
-import { printSummary } from "./prompt.mjs";
-import { quoteGstackShellPaths } from "./gstack-shell-paths.mjs";
-import { GSTACK_DOCUMENT_MANIFEST, discoverGstackDocuments, normalizeGstackDocuments, verifyGstackDocuments, restoreGstackDocuments } from "./gstack-documents.mjs";
+import { validateGstackRuntime, runRuntimeCommand } from "./gstack-runtime.mjs";
+import { GSTACK_DOCUMENT_MANIFEST, recordGstackDocuments, verifyGstackDocuments } from "./gstack-documents.mjs";
+import { GSTACK_UPSTREAM_MANIFEST, GSTACK_UPSTREAM_OWNER, manifestForPaths, runUpstreamLocalSetup, snapshotUpstreamTransaction, verifyUpstreamManifest } from "./gstack-upstream.mjs";
 
 const GSTACK_REPOSITORY = "https://github.com/garrytan/gstack.git";
 const GSTACK_DIAGNOSTIC_MAX_CHARS = 4000;
@@ -27,7 +25,6 @@ export const GSTACK_REVIEW_SIDECARS = [
   "review/specialists/security.md",
   "review/specialists/testing.md"
 ];
-const FORBIDDEN_HOME_PATH = /(?:~|\$(?:\{HOME\}|HOME)|\/(?:home|Users)\/[^/\s]+|\/root|[A-Za-z]:[\\/]Users[\\/][^\\/\s]+)[\\/](?:\.claude|\.gstack|\.bun|\.codex|\.kiro|\.factory|\.config[\\/]opencode)(?:[\\/]|\b)/;
 
 function run(command, args, options = {}) {
   return childExecFileSync(command, args, { encoding: "utf8", ...options });
@@ -122,7 +119,7 @@ export async function isValidGstackCheckout(checkout, { run: runCommand = run } 
   }
 }
 
-const GSTACK_SAFE_STAGES = new Set(["Bun validation", "checkout resolution", "checkout preparation", "gstack safety checks", "gstack bootstrap", "plan-tune hooks", "final validation"]);
+const GSTACK_SAFE_STAGES = new Set(["Bun validation", "checkout resolution", "checkout preparation", "gstack safety checks", "gstack bootstrap", "plan-tune hooks", "final validation", "upstream local setup"]);
 
 function redactedGstackDiagnostic(error) {
   const output = [error.stderr, error.stdout, error.message]
@@ -142,6 +139,7 @@ function redactedGstackDiagnostic(error) {
     ...(/^gstack review sidecar is missing or invalid:/.test(error.message || "") ? ["gstack review sidecar is missing or invalid. Refresh the gstack checkout, then rerun setup."] : []),
     ...(process.env.REPO_PATTERN_DEBUG_GSTACK === "1" && error.gstackOutput ? [`Debug output: ${String(error.gstackOutput).slice(-4000)}`] : []),
     ...(Number.isInteger(error.status) ? [`Exit code: ${error.status}.`] : []),
+    ...(/unsupported legacy gstack state\.json has no upstream manifest/.test(error.message || "") ? ["Unsupported legacy gstack state.json has no upstream manifest. Preserve existing files; reinstall using upstream setup. Automatic migration is not supported."] : []),
     ...(error.gstackCloneFailure ? ["gstack clone failed. Check Git access and network connectivity, then rerun setup."] : []),
     ...(!error.gstackCloneFailure && /\b(?:bun)\b/i.test(output) ? ["Bun prerequisite failed."] : []),
     ...(!error.gstackCloneFailure && /\b(?:git|checkout)\b/i.test(output) ? ["Git checkout operation failed."] : []),
@@ -153,44 +151,7 @@ function redactedGstackDiagnostic(error) {
   return diagnostics.join("\n").slice(0, GSTACK_DIAGNOSTIC_MAX_CHARS);
 }
 
-export function replaceGstackPaths(source, checkout, statePath, safetyRewrite = true) {
-  const shellReplacements = [];
-  for (const home of ["~", "$HOME", "${HOME}"]) {
-    for (const [suffix, destination] of [["/.claude/skills/gstack", checkout], ["/.gstack", statePath], ["/.claude.json", path.join(statePath, "claude.json")], ["/.claude", path.join(statePath, "claude")], ["/.codex", path.join(statePath, "codex")], ["/.bun", path.join(statePath, "bun")]]) {
-      if (/[\s'"$`\\]/.test(destination)) shellReplacements.push([home + suffix, destination]);
-    }
-  }
-  if (/[\s'"$`\\]/.test(statePath)) shellReplacements.unshift(["${GSTACK_HOME:-$HOME/.gstack}", statePath]);
-  source = quoteGstackShellPaths(source, shellReplacements);
-  const converted = safetyRewrite ? source
-    .replace(/^([\t ]*command:[\t ]*)'bash -c "exec bash \\"\$HOME\/\.claude\/skills\/gstack\/((?:careful|freeze)\/bin\/check-(?:careful|freeze)\.sh)\\""'[\t ]*$/gm,
-      (_, prefix, script) => `${prefix}${JSON.stringify(`GSTACK_HOME=${shellQuote(statePath)} bash ${shellQuote(path.join(checkout, script))}`)}`)
-    .replace(/^([\t ]*command:[\t ]*)"(bash )?(?:~|\$HOME)\/\.claude\/skills\/gstack\/((?:scripts|(?:careful|freeze)\/bin)\/check-(?:careful|freeze)\.sh)"[\t ]*$/gm,
-      (_, prefix, interpreter, script) => `${prefix}${JSON.stringify(`GSTACK_HOME=${shellQuote(statePath)} ${interpreter || ""}${shellQuote(path.join(checkout, script))}`)}`)
-    .replace(/(?:~|\$HOME)\/\.claude\/skills\/gstack\/bin\/gstack-paths(?=[)\s])/g,
-      `GSTACK_HOME=${shellQuote(statePath)} ${shellQuote(path.join(checkout, "bin", "gstack-paths"))}`) : source;
-  return converted
-    .replace(/^(```(?:bash|sh|shell)\r?\n)(?!export PLAYWRIGHT_BROWSERS_PATH=)/gm, `$1export PLAYWRIGHT_BROWSERS_PATH=${shellQuote(path.join(checkout, ".repo-pattern-runtime", "chromium"))}\n`)
-    .replaceAll("~/.claude/skills/gstack", checkout)
-    .replaceAll("$HOME/.claude/skills/gstack", checkout)
-    .replaceAll("${HOME}/.claude/skills/gstack", checkout)
-    .replaceAll("${GSTACK_HOME:-$HOME/.gstack}", statePath)
-    .replaceAll("${HOME}/.gstack", statePath)
-    .replaceAll("$HOME/.gstack", statePath)
-    .replaceAll("~/.gstack", statePath)
-    .replaceAll("${HOME}/.claude.json", path.join(statePath, "claude.json"))
-    .replaceAll("$HOME/.claude.json", path.join(statePath, "claude.json"))
-    .replaceAll("~/.claude.json", path.join(statePath, "claude.json"))
-    .replaceAll("${HOME}/.claude", path.join(statePath, "claude"))
-    .replaceAll("$HOME/.claude", path.join(statePath, "claude"))
-    .replaceAll("~/.claude", path.join(statePath, "claude"))
-    .replaceAll("${HOME}/.codex", path.join(statePath, "codex"))
-    .replaceAll("$HOME/.codex", path.join(statePath, "codex"))
-    .replaceAll("~/.codex", path.join(statePath, "codex"))
-    .replaceAll("${HOME}/.bun", path.join(statePath, "bun"))
-    .replaceAll("$HOME/.bun", path.join(statePath, "bun"))
-    .replaceAll("~/.bun", path.join(statePath, "bun"));
-}
+/* legacy path rewriting removed */
 
 function shellQuote(value) {
   return `'${String(value).replaceAll("'", `'"'"'`)}'`;
@@ -241,226 +202,6 @@ async function skillDirectories(checkout) {
   }
   await walk(checkout);
   return directories;
-}
-
-function rewrittenGstackContent(source, checkout, statePath) {
-  const rewritten = replaceGstackPaths(source, checkout, statePath)
-    .replace(new RegExp(`${checkout.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/([^/\\s\x60\"']+)/sections/`, "g"), `${path.dirname(checkout)}/$1/sections/`);
-  if (FORBIDDEN_HOME_PATH.test(rewritten)) {
-    throw new Error(`gstack skill references forbidden home-scoped state: ${rewritten.match(FORBIDDEN_HOME_PATH)?.[0]}`);
-  }
-  return rewritten;
-}
-
-function wrapperContent(source, checkout, statePath) {
-  return rewrittenGstackContent(source, checkout, statePath);
-}
-
-async function writeSkillWrapper(destination, content) {
-  await ensureDir(destination);
-  await fs.writeFile(path.join(destination, "SKILL.md"), content, "utf8");
-}
-
-async function snapshotGstackArtifacts(target, wrappers, assets, sidecars, statePath) {
-  const paths = [
-    ...wrappers.map(({ wrapper }) => path.join(target, wrapper, "SKILL.md")),
-    ...assets.map(({ asset }) => path.join(target, ".claude", "skills", asset)),
-    ...sidecars.map(({ sidecar }) => path.join(target, ".claude", "skills", sidecar)),
-    path.join(statePath, "state.json"),
-    path.join(statePath, GSTACK_DOCUMENT_MANIFEST),
-    path.join(target, ".claude", "settings.json")
-  ];
-  const statePathExisted = await fs.lstat(statePath).then(() => true, (error) => {
-    if (error.code === "ENOENT") return false;
-    throw error;
-  });
-  const snapshotRoot = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-transaction-"));
-  const entries = [];
-  try {
-    for (const destination of paths) {
-      await assertNoSymlinkPath(target, path.relative(target, destination));
-      try {
-        await fs.lstat(destination);
-        const snapshot = path.join(snapshotRoot, String(entries.length));
-        await fs.cp(destination, snapshot, { recursive: true, force: true });
-        entries.push({ destination, snapshot, exists: true });
-      } catch (error) {
-        if (error.code === "ENOENT") entries.push({ destination, exists: false });
-        else throw error;
-      }
-    }
-  } catch (error) {
-    await fs.rm(snapshotRoot, { recursive: true, force: true });
-    throw error;
-  }
-  return {
-    snapshotRoot,
-    async rollback() {
-      for (const entry of [...entries].reverse()) {
-        await assertNoSymlinkPath(target, path.relative(target, entry.destination));
-        await fs.rm(entry.destination, { recursive: true, force: true });
-        if (entry.exists) await fs.cp(entry.snapshot, entry.destination, { recursive: true, force: true });
-      }
-      if (!statePathExisted) await fs.rmdir(statePath).catch((error) => {
-        if (error.code !== "ENOENT" && error.code !== "ENOTEMPTY") throw error;
-      });
-    },
-    async remove() {
-      await fs.rm(snapshotRoot, { recursive: true, force: true });
-    }
-  };
-}
-
-async function expectedGstackWrappers(target, checkout, statePath) {
-  const skillsRoot = path.dirname(checkout);
-  const skillDirs = await skillDirectories(checkout);
-  return Promise.all(skillDirs.map(async ({ source: sourceDir, relative }) => {
-    const wrapper = path.relative(target, path.join(skillsRoot, relative || "_gstack-command"));
-    let source = await fs.readFile(path.join(sourceDir, "SKILL.md"), "utf8");
-    if (relative === "gstack-upgrade") {
-      const frontmatter = source.match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/)?.[0];
-      if (!frontmatter) throw new Error("gstack upgrade frontmatter is invalid.");
-      const body = await fs.readFile(new URL("./gstack-upgrade.md", import.meta.url), "utf8");
-      source = `${frontmatter}\n${body.replaceAll("{{TARGET}}", shellQuote(target))}`;
-    }
-    return { wrapper, content: wrapperContent(source, checkout, statePath) };
-  })).then((wrappers) => wrappers.sort((left, right) => left.wrapper.localeCompare(right.wrapper)));
-}
-
-async function skillAssets(checkout, statePath, sourceDir, relative) {
-  const assets = [];
-  async function walk(directory) {
-    const entries = await fs.readdir(directory, { withFileTypes: true });
-    for (const entry of entries) {
-      const source = path.join(directory, entry.name);
-      if (entry.isSymbolicLink()) throw new Error(`gstack skill asset must not be a symlink: ${source}`);
-      if (entry.isDirectory()) await walk(source);
-      else if (entry.isFile()) {
-        const asset = path.join(relative || "_gstack-command", path.relative(sourceDir, source));
-        assets.push({ asset, content: rewrittenGstackContent(await fs.readFile(source, "utf8"), checkout, statePath) });
-      }
-    }
-  }
-  for (const root of ["sections", "templates", "references"]) {
-    const directory = path.join(sourceDir, root);
-    try {
-      const stat = await fs.lstat(directory);
-      if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`gstack skill ${root} are invalid: ${directory}`);
-    } catch (error) {
-      if (error.code === "ENOENT") continue;
-      throw error;
-    }
-    await walk(directory);
-  }
-  return assets;
-}
-
-async function expectedGstackAssets(target, checkout, statePath) {
-  const skillDirs = await skillDirectories(checkout);
-  const groups = await Promise.all(skillDirs.map(({ source, relative }) => skillAssets(checkout, statePath, source, relative)));
-  return groups.flat().sort((left, right) => left.asset.localeCompare(right.asset));
-}
-
-async function expectedGstackSidecars(checkout) {
-  return Promise.all(GSTACK_REVIEW_SIDECARS.map(async (sidecar) => {
-    await assertNoSymlinkPath(checkout, sidecar);
-    const source = path.join(checkout, sidecar);
-    const stat = await fs.lstat(source);
-    if (!stat.isFile() || stat.isSymbolicLink()) {
-      throw new Error(`gstack review sidecar is missing or invalid: ${sidecar}`);
-    }
-    return { sidecar, content: await fs.readFile(source, "utf8") };
-  }));
-}
-
-export async function bootstrapGstack({ target, checkout = gstackCheckoutPath(target), statePath = gstackStatePath(target), previousWrappers = [], previousAssets = [], previousSidecars = [], dryRun = false, progress = null, silent = false }) {
-  await assertNoSymlinkPath(target, path.relative(target, checkout));
-  await assertNoSymlinkPath(target, path.relative(target, statePath));
-  if (dryRun) {
-    const operation = progress?.beginOperation?.({ id: "gstack-bootstrap", label: "Bootstrapping gstack", totalUnits: 1, unitLabel: "items", weight: 2 });
-    if (!silent) console.log(`[dry-run] write gstack skill wrappers and sidecars under ${path.join(target, ".claude", "skills")}`);
-    operation?.complete({ detail: "preview" });
-    return [];
-  }
-  const wrappers = await expectedGstackWrappers(target, checkout, statePath);
-  for (const { wrapper, content } of wrappers) {
-    const skill = path.relative(path.join(".claude", "skills"), wrapper);
-    const file = path.join(target, wrapper, "SKILL.md");
-    await assertNoSymlinkPath(target, path.relative(target, file));
-    try {
-      const actual = await fs.readFile(file, "utf8");
-      const upstream = await fs.readFile(path.join(checkout, skill === "_gstack-command" ? "" : skill, "SKILL.md"), "utf8");
-      const legacy = replaceGstackPaths(upstream, checkout, statePath, false).replace(/^export PLAYWRIGHT_BROWSERS_PATH=.*\r?\n/gm, "");
-      const previousGeneration = replaceGstackPaths(upstream, checkout, statePath).replace(/^export PLAYWRIGHT_BROWSERS_PATH=.*\r?\n/gm, "");
-      const previous = previousWrappers.find((entry) => entry.wrapper === wrapper)?.content;
-      if (actual !== content && actual !== upstream && actual !== legacy && actual !== previousGeneration && actual !== content.replace(/^export PLAYWRIGHT_BROWSERS_PATH=.*\r?\n/gm, "") && actual !== previous) throw new Error(`gstack safety skill ownership conflict: ${wrapper}`);
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
-    }
-  }
-  const assets = await expectedGstackAssets(target, checkout, statePath);
-  const sidecars = await expectedGstackSidecars(checkout);
-  for (const { wrapper } of wrappers) await assertNoSymlinkPath(target, wrapper);
-  for (const { asset } of assets) await assertNoSymlinkPath(target, path.join(".claude", "skills", asset));
-  for (const { sidecar } of sidecars) await assertNoSymlinkPath(target, path.join(".claude", "skills", sidecar));
-  const work = [
-    ...wrappers.map(({ wrapper, content }) => ({ label: "Writing gstack wrappers", destination: path.join(target, wrapper), content, kind: "wrapper" })),
-    ...assets.map(({ asset, content }) => ({ label: "Writing gstack assets", destination: path.join(target, ".claude", "skills", asset), content, kind: "asset" })),
-    ...sidecars.map(({ sidecar, content }) => ({ label: "Writing gstack sidecars", destination: path.join(target, ".claude", "skills", sidecar), content, kind: "sidecar" }))
-  ];
-  for (const item of work.filter(({ kind }) => kind !== "wrapper")) {
-    await assertNoSymlinkPath(target, path.relative(target, item.destination));
-    try {
-      const actual = await fs.readFile(item.destination, "utf8");
-      const previous = item.kind === "asset"
-        ? previousAssets.find(({ asset }) => path.join(target, ".claude", "skills", asset) === item.destination)?.content
-        : previousSidecars.find(({ sidecar }) => path.join(target, ".claude", "skills", sidecar) === item.destination)?.content;
-      const previousGeneration = item.kind === "asset"
-        ? replaceGstackPaths(await fs.readFile(path.join(checkout, path.relative(path.join(target, ".claude", "skills"), item.destination)), "utf8"), checkout, statePath).replace(/^export PLAYWRIGHT_BROWSERS_PATH=.*\r?\n/gm, "")
-        : item.content;
-      if (actual !== item.content && actual !== previous && actual !== previousGeneration && actual !== item.content.replace(/^export PLAYWRIGHT_BROWSERS_PATH=.*\r?\n/gm, "")) throw new Error(`gstack safety skill ownership conflict: ${path.relative(target, item.destination)}`);
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
-    }
-  }
-  const operation = progress?.beginOperation?.({ id: "gstack-bootstrap", label: "Bootstrapping gstack", totalUnits: work.length + 1, unitLabel: "items", weight: 2 });
-  try {
-    let completed = 0;
-    for (const item of work) {
-      if (dryRun) {
-        if (!silent) console.log(`[dry-run] write gstack ${item.kind} ${item.destination}`);
-      } else if (item.kind === "wrapper") await writeSkillWrapper(item.destination, item.content);
-      else {
-        await ensureDir(path.dirname(item.destination));
-        await fs.writeFile(item.destination, item.content, "utf8");
-      }
-      operation?.update({ completedUnits: ++completed, totalUnits: work.length + 1, detail: `${completed}/${work.length + 1} items` });
-    }
-    if (!dryRun) {
-      await ensureDir(statePath);
-      const stateFile = path.join(statePath, "state.json");
-      try {
-        if ((await fs.lstat(stateFile)).isSymbolicLink()) {
-          throw new Error(`gstack target path contains a symlink: ${stateFile}`);
-        }
-      } catch (error) {
-        if (error.code !== "ENOENT") throw error;
-      }
-      await writeJson(stateFile, {
-        checkout: path.relative(target, checkout),
-        wrappers: wrappers.map(({ wrapper }) => wrapper),
-        assets: assets.map(({ asset }) => asset),
-        sidecars: sidecars.map(({ sidecar }) => sidecar),
-        bootstrappedAt: new Date().toISOString()
-      }, { silent });
-    }
-    operation?.update({ completedUnits: ++completed, totalUnits: work.length + 1, detail: `${completed}/${work.length + 1} items` });
-    operation?.complete({ detail: "completed" });
-  } catch (error) {
-    operation?.fail({ detail: "failed" });
-    throw error;
-  }
-  return wrappers.map(({ wrapper }) => wrapper);
 }
 
 function hookCommand(checkout, statePath, hookName) {
@@ -564,14 +305,7 @@ export async function resolveGstackCheckout({
       if (conflicts.length) throw Object.assign(new Error(`gstack document ownership conflict: ${conflicts.join("; ")}`), { gstackDocumentPaths: conflicts.map((message) => message.split(":")[0]) });
     }
     const changes = childExecFileSync("git", ["-C", localCheckout, "status", "--porcelain", "-z", "--untracked-files=all"], { encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }, timeout: 30000 });
-    const managed = managedDocuments ? new Set(managedDocuments.files.map((entry) => entry.path)) : null;
-    const foreign = changes.split("\0").filter(Boolean).filter((entry) => {
-      const status = entry.slice(0, 2);
-      const file = entry.slice(3);
-      return managedDocuments
-        ? (upgrade && !managed.has(file)) || (managed.has(file) && status !== " M")
-        : Boolean(upgrade);
-    });
+    const foreign = upgrade ? changes.split("\0").filter(Boolean) : [];
     if (foreign.length) throw new Error(`gstack safety skill ownership conflict: .claude/skills/gstack checkout has local changes: ${foreign.map((entry) => entry.slice(3)).join(", ")}. Preserve and resolve them before setup or upgrading.`);
   }
   const globalValid = !upgrade && await isValidGstackCheckout(globalCheckout, { run: runCommand });
@@ -581,7 +315,7 @@ export async function resolveGstackCheckout({
     operation?.complete({ detail: "preview" });
     return {
       checkout: localCheckout,
-      source: localValid ? "local" : globalValid ? "global-migration" : "clone",
+      source: localValid ? "local" : globalValid ? "global" : "clone",
       async commit() {},
       async rollback() {}
     };
@@ -633,7 +367,6 @@ export async function resolveGstackCheckout({
     if (!await isValidGstackCheckout(temporary, { run: runCommand })) {
       throw new Error("Resolved gstack checkout is invalid.");
     }
-    if (managedDocuments && localValid) await restoreGstackDocuments(temporary, managedDocuments);
     if (prepare) await prepare(temporary);
     const backup = await fs.mkdtemp(path.join(parent, ".gstack-backup-"));
     await fs.rmdir(backup);
@@ -657,7 +390,7 @@ export async function resolveGstackCheckout({
     }
     return {
       checkout: localCheckout,
-      source: localValid ? "local" : globalValid ? "global-migration" : "clone",
+      source: localValid ? "local" : globalValid ? "global" : "clone",
       async commit() {
         await removeLocalPath(backup);
       },
@@ -692,112 +425,122 @@ export function gstackEnvironment(bun, environment = process.env) {
   return { ...environment, PATH: `${path.dirname(bun)}${path.delimiter}${environment.PATH || ""}` };
 }
 
+async function listSkillRoots(target) {
+  const root = path.join(target, ".claude", "skills");
+  try {
+    return (await fs.readdir(root, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink() && !entry.name.startsWith(".") && entry.name !== "gstack")
+      .map((entry) => path.join(".claude", "skills", entry.name));
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function setupUpstreamGstack({ target, checkout, statePath, dryRun, planTuneHooks = false, upgrade, resolveCheckout, progress, silent }) {
+  await assertNoSymlinkPath(target, path.relative(target, statePath));
+  for (const relative of [".repo-pattern-runtime", ".repo-pattern-runtime/home", ".repo-pattern-runtime/claude-config", ".repo-pattern-runtime/state-root", ".repo-pattern-runtime/renders", ".repo-pattern-runtime/codex", ".repo-pattern-runtime/state", ".claude/skills/gstack/.repo-pattern-runtime/tmp", ".claude/skills/gstack/.repo-pattern-runtime/chromium", ".claude/skills/gstack/.repo-pattern-runtime/bun-cache", ".claude/skills/gstack/.repo-pattern-runtime/bun"]) await assertNoSymlinkPath(target, relative);
+  const publicationBefore = await listSkillRoots(target);
+  const publicationNames = publicationBefore.map((relative) => path.basename(relative));
+  const manifestFile = path.join(statePath, GSTACK_UPSTREAM_MANIFEST);
+  const previous = await readJson(manifestFile, null);
+  if (previous) {
+    const errors = await verifyUpstreamManifest(target, previous);
+    const documents = await readJson(path.join(statePath, GSTACK_DOCUMENT_MANIFEST), null);
+    if (documents) errors.push(...await verifyGstackDocuments(checkout, documents));
+    else errors.push("documents.json: missing upstream document integrity record");
+    if (errors.length) throw Object.assign(new Error(errors.join("; ")), { gstackDocumentPaths: errors.map((error) => error.split(":")[0]) });
+  }
+  if (!previous && await exists(path.join(statePath, "state.json"))) {
+    throw new Error("unsupported legacy gstack state.json has no upstream manifest; preserve files and reinstall using upstream setup; automatic migration is not supported");
+  }
+  const settingsFile = path.join(target, ".claude", "settings.json");
+  await assertNoSymlinkPath(target, path.relative(target, settingsFile));
+  await readJson(settingsFile, {});
+  let lease;
+  let transaction;
+  if (dryRun) {
+    try {
+      lease = await resolveCheckout({ target, dryRun: true, upgrade, progress, silent, prepare: async () => {} });
+    } catch (error) {
+      error.gstackStage ||= "checkout resolution";
+      throw error;
+    }
+    if (!silent) console.log(`[dry-run] run ${path.join(checkout, "setup")} --local --host claude --no-prefix --no-harness-auto --no-team`);
+    return { status: "dry-run", source: lease.source || "upstream-local", path: checkout, statePath, browserSkipped: process.env.GSTACK_SKIP_PLAYWRIGHT === "1", browserStatus: "not-run" };
+  }
+  try {
+    try { ensureBun(); }
+    catch (error) { error.gstackStage = "Bun validation"; throw error; }
+    transaction = await snapshotUpstreamTransaction({ target, checkout, statePath, publicationRoots: publicationNames });
+    try {
+      lease = await resolveCheckout({ target, dryRun: false, upgrade, progress, silent, prepare: async () => {} });
+    } catch (error) {
+      error.gstackStage ||= "checkout resolution";
+      throw error;
+    }
+    const candidateRoots = [...new Set((await skillDirectories(checkout)).map(({ relative }) => relative ? path.basename(relative) : "_gstack-command"))];
+    const publicationRoots = previous
+      ? [...new Set(previous.entries.map(({ root }) => path.basename(root)))]
+      : [];
+    for (const root of candidateRoots) {
+      if (publicationBefore.some((existing) => path.basename(existing) === root) && !publicationRoots.includes(root)) throw new Error(`gstack publication ownership conflict: ${root}`);
+      await assertNoSymlinkPath(target, path.join(".claude", "skills", root));
+    }
+    for (const root of publicationRoots) await fs.rm(path.join(target, ".claude", "skills", root), { recursive: true, force: true });
+    const browserSkipped = process.env.GSTACK_SKIP_PLAYWRIGHT === "1";
+    const result = await runUpstreamLocalSetup({ target, checkout, statePath, publicationRoots, browserSkipped });
+    await writePlanTuneHooks({ target, planTuneHooks, silent });
+    const autoplanSkill = path.join(target, ".claude", "skills", "autoplan", "SKILL.md");
+    const renderedSkill = await fs.realpath(autoplanSkill).catch(() => null);
+    const renderRoot = renderedSkill && renderedSkill !== autoplanSkill && !renderedSkill.startsWith(`${checkout}${path.sep}`)
+      ? path.dirname(path.dirname(renderedSkill)) : null;
+    const settings = await readJson(settingsFile, {});
+    const runtimeEnv = { GSTACK_ROOT: checkout, GSTACK_STATE_ROOT: result.env.GSTACK_STATE_ROOT, GSTACK_HOME: result.env.GSTACK_HOME, PLAYWRIGHT_BROWSERS_PATH: result.env.PLAYWRIGHT_BROWSERS_PATH };
+    if (renderRoot) runtimeEnv.GSTACK_USER_RENDER_DIR = renderRoot;
+    for (const [key, value] of Object.entries(runtimeEnv)) {
+      if (settings.env?.[key] && settings.env[key] !== value) throw new Error(`gstack runtime environment ownership conflict: ${key}`);
+    }
+    await writeJson(settingsFile, { ...settings, env: { ...settings.env, ...runtimeEnv } }, { silent });
+    const published = (await listSkillRoots(target)).map((root) => path.basename(root)).filter((root) => candidateRoots.includes(root) || !publicationNames.includes(root));
+    if (!published.includes("_gstack-command") && !published.includes("autoplan")) throw new Error("gstack upstream setup did not publish skills");
+    const manifest = await manifestForPaths(target, published);
+    const readiness = await validateGstackRuntime(checkout, { browserSkipped });
+    if (!readiness.runtimeValid || !["ready", "skipped"].includes(readiness.browserStatus)) throw new Error("gstack upstream runtime validation failed");
+    const documentSeeds = (await skillDirectories(checkout)).map(({ source }) => path.relative(checkout, path.join(source, "SKILL.md")));
+    const documents = await recordGstackDocuments(checkout, documentSeeds);
+    await fs.mkdir(statePath, { recursive: true });
+    await writeJson(path.join(statePath, GSTACK_DOCUMENT_MANIFEST), documents, { silent });
+    await writeJson(path.join(statePath, GSTACK_UPSTREAM_MANIFEST), manifest, { silent });
+    await writeJson(path.join(statePath, "state.json"), { installOwner: GSTACK_UPSTREAM_OWNER, checkout: path.relative(target, checkout), statePath: path.relative(target, statePath), manifest: GSTACK_UPSTREAM_MANIFEST, wrappers: published.map((root) => path.join(".claude", "skills", root)), browserSkipped, installedAt: new Date().toISOString() }, { silent });
+    await lease.commit();
+    await transaction.remove().catch(() => {});
+    return { status: "installed", source: lease.source || "upstream-local", path: checkout, statePath, browserSkipped, browserStatus: readiness.browserStatus };
+  } catch (error) {
+    const rollbackErrors = [];
+    if (!transaction) {
+      error.rollbackErrors = rollbackErrors;
+      throw error;
+    }
+    try { await lease?.rollback(); } catch (rollbackError) { rollbackErrors.push(`gstack checkout rollback failed: ${rollbackError.message}`); }
+    try {
+      for (const root of await listSkillRoots(target)) {
+        if (!publicationBefore.includes(root)) await fs.rm(path.join(target, root), { recursive: true, force: true });
+      }
+      await transaction.rollback();
+    } catch (rollbackError) { rollbackErrors.push(`gstack artifact rollback failed: ${rollbackError.message}`); }
+    error.rollbackErrors = rollbackErrors;
+    if (rollbackErrors.length) error.recoverySnapshot = transaction.root;
+    else await transaction.remove().catch(() => {});
+    throw error;
+  }
+}
+
 export async function setupGstack({ target, dryRun = false, planTuneHooks = false, upgrade = false, resolveCheckout = resolveGstackCheckout, progress = null, silent = false }) {
   const checkout = gstackCheckoutPath(target);
   const statePath = gstackStatePath(target);
-  let checkoutLease = null;
-  let transaction = null;
-  let currentStage = "Bun validation";
-  try {
-    if (!dryRun) ensureBun();
-    const install = async () => {
-      currentStage = "checkout resolution";
-      const previousValid = !dryRun && await exists(path.join(statePath, "state.json")) && await isValidGstackCheckout(checkout);
-      if (previousValid) {
-        const manifestFile = path.join(statePath, GSTACK_DOCUMENT_MANIFEST);
-        await assertNoSymlinkPath(target, path.relative(target, manifestFile));
-        const manifest = await readJson(manifestFile, null);
-        if (manifest) {
-          const conflicts = await verifyGstackDocuments(checkout, manifest);
-          if (conflicts.length) throw Object.assign(new Error("gstack document ownership conflict"), { gstackDocumentPaths: conflicts.map((message) => message.split(":")[0]) });
-        }
-      }
-      const previousWrappers = previousValid ? await expectedGstackWrappers(target, checkout, statePath) : [];
-      const previousAssets = previousValid ? await expectedGstackAssets(target, checkout, statePath) : [];
-      const previousSidecars = previousValid ? await expectedGstackSidecars(checkout) : [];
-      const browserSkipped = process.env.GSTACK_SKIP_PLAYWRIGHT === "1";
-      currentStage = "checkout resolution";
-      let documentManifest = null;
-      const resolved = await resolveCheckout({ target, dryRun, upgrade, progress, silent, prepare: async (staged) => {
-        currentStage = "checkout preparation";
-        const upstreamSeeds = (await skillDirectories(staged)).map(({ source }) => path.relative(staged, path.join(source, "SKILL.md")));
-        await normalizeGstackDocuments(staged, upstreamSeeds, (source) => source);
-        await prepareGstackRuntime(staged, { browserSkipped });
-        const seeds = (await skillDirectories(staged)).map(({ source }) => path.relative(staged, path.join(source, "SKILL.md")));
-        documentManifest = await normalizeGstackDocuments(staged, seeds, (source) => replaceGstackPaths(source, checkout, statePath));
-      } });
-      checkoutLease = resolved;
-      if (!dryRun) {
-        currentStage = "gstack safety checks";
-        const wrappers = await expectedGstackWrappers(target, checkout, statePath);
-        await assertGstackSafety({ checkout, wrappers, statePath });
-        const assets = await expectedGstackAssets(target, checkout, statePath);
-        const sidecars = await expectedGstackSidecars(checkout);
-        transaction = await snapshotGstackArtifacts(target, wrappers, assets, sidecars, statePath);
-      }
-      currentStage = "gstack bootstrap";
-      await bootstrapGstack({ target, checkout, statePath, previousWrappers, previousAssets, previousSidecars, dryRun, progress, silent });
-      currentStage = "plan-tune hooks";
-      await writePlanTuneHooks({ target, planTuneHooks, dryRun, progress, silent });
-      if (!dryRun) {
-        const stateFile = path.join(statePath, "state.json");
-        await writeJson(stateFile, { ...await readJson(stateFile, {}), browserSkipped }, { silent });
-        if (documentManifest) await writeJson(path.join(statePath, GSTACK_DOCUMENT_MANIFEST), documentManifest, { silent });
-        currentStage = "final validation";
-        const validation = await validateProjectGstack(target);
-        if (![validation.checkoutValid, validation.stateValid, validation.wrappersValid, validation.assetsValid, validation.sidecarsValid, validation.documentsValid, validation.runtimeValid, ["ready", "skipped"].includes(validation.browserStatus)].every(Boolean)) throw new Error(`gstack ${upgrade ? "upgrade" : "setup"} validation failed.`);
-        await checkoutLease.commit();
-        try {
-          await transaction.remove();
-        } catch (error) {
-          if (!silent) console.warn(`WARN: gstack rollback snapshot cleanup failed: ${error.message}`);
-        }
-        transaction = null;
-      }
-      return { status: dryRun ? "dry-run" : "installed", source: resolved.source, path: checkout, statePath, browserSkipped, browserStatus: dryRun ? "not-run" : browserSkipped ? "skipped" : "ready" };
-    };
-    const result = await install();
-    if (!dryRun && !silent) printSummary("gstack", gstackSummaryRows(target, planTuneHooks, result.browserStatus), { progress });
-    return result;
-  } catch (error) {
-    if (!error.gstackStage && GSTACK_SAFE_STAGES.has(currentStage)) error.gstackStage = currentStage;
-    const rollbackErrors = [];
-    if (transaction) {
-      try {
-        await transaction.rollback();
-      } catch (rollbackError) {
-        rollbackErrors.push(`gstack artifact rollback failed: ${rollbackError.message}`);
-        if (!silent) console.warn(`WARN: ${rollbackErrors.at(-1)}`);
-      }
-      if (rollbackErrors.length === 0) {
-        try {
-          await transaction.remove();
-        } catch (rollbackError) {
-          rollbackErrors.push(`gstack rollback snapshot cleanup failed: ${rollbackError.message}`);
-          if (!silent) console.warn(`WARN: ${rollbackErrors.at(-1)}`);
-        }
-      }
-    }
-    if (checkoutLease) {
-      try {
-        await checkoutLease.rollback();
-      } catch (rollbackError) {
-        rollbackErrors.push(`gstack checkout rollback failed: ${rollbackError.message}`);
-        if (!silent) console.warn(`WARN: ${rollbackErrors.at(-1)}`);
-      }
-    }
-    if (error.gstackCloneFailure && !silent) {
-      const stderr = String(error.stderr || "");
-      if (stderr) process.stderr.write(stderr);
-    }
-    return {
-      status: "failed",
-      path: checkout,
-      statePath,
-      error: redactedGstackDiagnostic(error),
-      ...(rollbackErrors.length > 0 ? { rollbackErrors, ...(transaction && rollbackErrors.some((message) => message.startsWith("gstack artifact rollback failed:")) ? { recoverySnapshot: transaction.snapshotRoot } : {}) } : {})
-    };
-  }
+  try { return await setupUpstreamGstack({ target, checkout, statePath, dryRun, planTuneHooks, upgrade, resolveCheckout, progress, silent }); }
+  catch (error) { return { status: "failed", path: checkout, statePath, error: redactedGstackDiagnostic(error), rollbackErrors: error.rollbackErrors || [], recoverySnapshot: error.recoverySnapshot }; }
 }
 
 export async function removeEccPluginSettings({ target, dryRun = false }) {
@@ -815,111 +558,27 @@ export async function removeEccPluginSettings({ target, dryRun = false }) {
 export async function validateProjectGstack(target) {
   const checkout = gstackCheckoutPath(target);
   const statePath = gstackStatePath(target);
-  let pathsValid = true;
-  try {
-    await assertNoSymlinkPath(target, path.relative(target, checkout));
-    await assertNoSymlinkPath(target, path.relative(target, statePath));
-  } catch {
-    pathsValid = false;
+  const upstreamManifest = await readJson(path.join(statePath, GSTACK_UPSTREAM_MANIFEST), null);
+  if (upstreamManifest?.owner === GSTACK_UPSTREAM_OWNER) {
+    const checkoutValid = await isValidGstackCheckout(checkout);
+    const manifestErrors = checkoutValid ? await verifyUpstreamManifest(target, upstreamManifest) : ["gstack upstream checkout is invalid"];
+    let state = {};
+    try {
+      await assertNoSymlinkPath(target, path.relative(target, checkout));
+      await assertNoSymlinkPath(target, path.relative(target, statePath));
+      await assertNoSymlinkPath(target, path.relative(target, path.join(statePath, "state.json")));
+      state = await readJson(path.join(statePath, "state.json"), {});
+      if (state?.installOwner !== GSTACK_UPSTREAM_OWNER || state.checkout !== path.relative(target, checkout) || state.manifest !== GSTACK_UPSTREAM_MANIFEST) throw new Error("invalid upstream installation state");
+    } catch { manifestErrors.push("invalid upstream installation state"); }
+    const documents = await readJson(path.join(statePath, GSTACK_DOCUMENT_MANIFEST), null);
+    if (checkoutValid && documents) manifestErrors.push(...await verifyGstackDocuments(checkout, documents));
+    if (!documents) manifestErrors.push("documents.json: missing upstream document integrity record");
+    const runtime = checkoutValid ? await validateGstackRuntime(checkout, { browserSkipped: state?.browserSkipped === true }) : { runtimeValid: false, browserStatus: "missing", runtimeChecks: [] };
+    return { checkout, statePath, checkoutValid, stateValid: manifestErrors.length === 0, wrappers: [...new Set((Array.isArray(upstreamManifest.entries) ? upstreamManifest.entries : []).map((entry) => entry?.root).filter((root) => typeof root === "string"))], wrappersValid: manifestErrors.length === 0, assets: [], assetsValid: manifestErrors.length === 0, sidecars: [], sidecarsValid: manifestErrors.length === 0, documentsValid: manifestErrors.length === 0, documentErrors: manifestErrors, documentWarnings: [], ...runtime };
   }
-  const checkoutValid = pathsValid && await isValidGstackCheckout(checkout);
-  const stateFile = path.join(statePath, "state.json");
-  let stateValid = pathsValid;
-  let wrapperState = {};
-  if (stateValid) {
-    try {
-      await assertNoSymlinkPath(target, path.relative(target, stateFile));
-      const stateStat = await fs.lstat(stateFile);
-      if (!stateStat.isFile() || stateStat.isSymbolicLink()) stateValid = false;
-      else {
-        wrapperState = await readJson(stateFile, {});
-        if (!wrapperState ||
-          !Array.isArray(wrapperState.wrappers) ||
-          !Array.isArray(wrapperState.assets) ||
-          !Array.isArray(wrapperState.sidecars) ||
-          wrapperState.checkout !== path.relative(target, checkout) ||
-          Number.isNaN(Date.parse(wrapperState.bootstrappedAt))) {
-          stateValid = false;
-          wrapperState = {};
-        }
-      }
-    } catch {
-      stateValid = false;
-    }
-  }
-  const wrappers = wrapperState.wrappers || [];
-  const assets = wrapperState.assets || [];
-  const sidecars = wrapperState.sidecars || [];
-  let expectedWrappers = [];
-  let expectedAssets = [];
-  let expectedSidecars = [];
-  if (checkoutValid) {
-    try {
-      [expectedWrappers, expectedAssets, expectedSidecars] = await Promise.all([
-        expectedGstackWrappers(target, checkout, statePath),
-        expectedGstackAssets(target, checkout, statePath),
-        expectedGstackSidecars(checkout)
-      ]);
-      await assertGstackSafety({ checkout, wrappers: expectedWrappers, statePath });
-    } catch {
-      stateValid = false;
-    }
-  }
-  const wrappersMatch = JSON.stringify([...wrappers].sort()) === JSON.stringify(expectedWrappers.map(({ wrapper }) => wrapper));
-  const assetsMatch = JSON.stringify([...assets].sort()) === JSON.stringify(expectedAssets.map(({ asset }) => asset).sort());
-  const sidecarsMatch = JSON.stringify([...sidecars].sort()) === JSON.stringify(expectedSidecars.map(({ sidecar }) => sidecar).sort());
-  const wrappersValid = checkoutValid && stateValid && wrappers.length > 0 && wrappersMatch && await Promise.all(expectedWrappers.map(async ({ wrapper, content }) => {
-    try {
-      const file = path.join(target, wrapper, "SKILL.md");
-      await assertNoSymlinkPath(target, path.relative(target, file));
-      return exists(file) && await fs.readFile(file, "utf8") === content;
-    } catch {
-      return false;
-    }
-  })).then((valid) => valid.every(Boolean));
-  const assetChecks = await Promise.all(expectedAssets.map(async ({ asset, content }) => {
-    try {
-      const file = path.join(target, ".claude", "skills", asset);
-      await assertNoSymlinkPath(target, path.relative(target, file));
-      const stat = await fs.lstat(file);
-      const actual = await fs.readFile(file, "utf8");
-      return stat.isFile() && !stat.isSymbolicLink() && actual === content;
-    } catch {
-      return false;
-    }
-  }));
-  const assetsValid = checkoutValid && stateValid && assetsMatch && assetChecks.every(Boolean);
-  const sidecarChecks = await Promise.all(expectedSidecars.map(async ({ sidecar, content }) => {
-    try {
-      const file = path.join(target, ".claude", "skills", sidecar);
-      await assertNoSymlinkPath(target, path.relative(target, file));
-      const stat = await fs.lstat(file);
-      const actual = await fs.readFile(file, "utf8");
-      return stat.isFile() && !stat.isSymbolicLink() && actual === content;
-    } catch {
-      return false;
-    }
-  }));
-  const sidecarsValid = checkoutValid && stateValid && sidecarsMatch && sidecarChecks.every(Boolean);
-  const runtime = checkoutValid ? await validateGstackRuntime(checkout, { browserSkipped: wrapperState.browserSkipped === true }) : { runtimeValid: false, browserStatus: "missing", runtimeChecks: [] };
-  let documentErrors = [];
-  const documentWarnings = [];
-  if (checkoutValid && pathsValid) {
-    try {
-      const manifestFile = path.join(statePath, GSTACK_DOCUMENT_MANIFEST);
-      await assertNoSymlinkPath(target, path.relative(target, manifestFile));
-      documentErrors = await verifyGstackDocuments(checkout, await readJson(manifestFile, null));
-      const seeds = (await skillDirectories(checkout)).map(({ source }) => path.relative(checkout, path.join(source, "SKILL.md")));
-      const inventory = await discoverGstackDocuments(checkout, seeds, { clean: true, diagnostics: documentWarnings });
-      const manifest = await readJson(manifestFile, null);
-      if (JSON.stringify(inventory) !== JSON.stringify(manifest?.files?.map((entry) => entry.path).sort())) documentErrors.push("documents.json: managed document inventory mismatch; rerun repo-pattern setup");
-      for (const relative of inventory) {
-        const lines = (await fs.readFile(path.join(checkout, relative), "utf8")).split(/\r?\n/);
-        for (const [index, line] of lines.entries()) {
-          if (FORBIDDEN_HOME_PATH.test(line) || /(?:~|\$HOME|\$\{HOME\})\/\.claude\.json/.test(line)) documentErrors.push(`${relative}:${index + 1}: global document path; rerun repo-pattern setup`);
-        }
-      }
-    } catch (error) { documentErrors.push(`gstack documents: ${error.message}; rerun repo-pattern setup`); }
-  } else documentErrors = ["gstack document checkout is unavailable; rerun repo-pattern setup"];
-  return { checkout, statePath, checkoutValid, stateValid, wrappers, wrappersValid, assets, assetsValid, sidecars, sidecarsValid, documentsValid: documentErrors.length === 0, documentErrors, documentWarnings, ...runtime };
+  const checkoutValid = await isValidGstackCheckout(checkout);
+  const manifestErrors = ["gstack upstream manifest is missing or invalid"];
+  const state = await readJson(path.join(statePath, "state.json"), {});
+  const runtime = { runtimeValid: false, browserStatus: "missing", runtimeChecks: [] };
+  return { checkout, statePath, checkoutValid, stateValid: false, wrappers: [], wrappersValid: false, assets: [], assetsValid: false, sidecars: [], sidecarsValid: false, documentsValid: false, documentErrors: manifestErrors, documentWarnings: [], ...runtime };
 }
