@@ -9,20 +9,6 @@ const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const upstream = (checkout, relative) => execFileSync("git", ["-C", checkout, "show", `HEAD:${relative}`], { maxBuffer: 16 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
 const comparableText = (bytes) => Buffer.from(bytes.toString("utf8").replace(/\r\n/g, "\n"));
 
-async function writeSafeFile(root, relative, bytes) {
-  const file = await safeFile(root, relative);
-  const handle = await fs.open(file, "r+");
-  try {
-    const stat = await handle.stat();
-    if (!stat.isFile()) throw new Error(`document changed while opening: ${relative}`);
-    await handle.truncate(0);
-    await handle.writeFile(bytes);
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-}
-
 async function safeFile(root, relative) {
   if (typeof relative !== "string" || path.isAbsolute(relative) || relative.split(/[\\/]/).some((part) => part === "..") || !relative.endsWith(".md") || excluded.test(relative)) throw new Error(`invalid document path: ${relative}`);
   let current = root;
@@ -113,47 +99,32 @@ export async function discoverGstackDocuments(checkout, seeds, { clean = false, 
   return [...found].sort();
 }
 
-export async function normalizeGstackDocuments(checkout, seeds, normalize) {
+export async function recordGstackDocuments(checkout, seeds) {
   const diagnostics = [];
   const inventory = await discoverGstackDocuments(checkout, seeds, { diagnostics });
   const files = [];
   for (const relative of inventory) {
     const file = await safeFile(checkout, relative);
-    const original = await fs.readFile(file);
-    const clean = upstream(checkout, relative);
-    // Generated documents must agree with this checkout's upstream revision.
-    if (!comparableText(original).equals(comparableText(clean))) throw new Error(`gstack document ownership conflict: ${relative} differs from Git upstream`);
-    const normalized = Buffer.from(normalize(original.toString("utf8")));
-    await writeSafeFile(checkout, relative, normalized);
-    files.push({ path: relative, upstreamSha256: hash(comparableText(clean)), normalizedSha256: hash(comparableText(normalized)) });
+    const original = comparableText(await fs.readFile(file));
+    const clean = comparableText(upstream(checkout, relative));
+    if (!original.equals(clean)) throw new Error(`gstack document ownership conflict: ${relative} differs from Git upstream`);
+    files.push({ path: relative, sha256: hash(original) });
   }
-  return { version: 1, files, ...(diagnostics.length ? { diagnostics: [...new Set(diagnostics)] } : {}) };
+  return { version: 2, files, ...(diagnostics.length ? { diagnostics: [...new Set(diagnostics)] } : {}) };
 }
 
-export async function verifyGstackDocuments(checkout, manifest, { checkUpstream = true } = {}) {
+export async function verifyGstackDocuments(checkout, manifest) {
   const errors = [];
-  if (manifest?.version !== 1 || !Array.isArray(manifest.files) || !manifest.files.length) return ["documents.json: invalid or missing managed document manifest; rerun repo-pattern setup"];
+  if (manifest?.version !== 2 || !Array.isArray(manifest.files) || !manifest.files.length) return ["documents.json: invalid or unsupported upstream document manifest; reinstall gstack using upstream setup"];
   const seen = new Set();
   for (const entry of manifest.files) {
     try {
-      if (!entry || seen.has(entry.path) || !/^[a-f0-9]{64}$/.test(entry.upstreamSha256) || !/^[a-f0-9]{64}$/.test(entry.normalizedSha256)) throw new Error("invalid manifest entry");
+      if (!entry || seen.has(entry.path) || !/^[a-f0-9]{64}$/.test(entry.sha256)) throw new Error("invalid manifest entry");
       seen.add(entry.path);
       const file = await safeFile(checkout, entry.path);
-      if (checkUpstream && hash(comparableText(upstream(checkout, entry.path))) !== entry.upstreamSha256) throw new Error("upstream hash mismatch");
-      const bytes = await fs.readFile(file);
-      if (hash(comparableText(bytes)) !== entry.normalizedSha256) throw new Error("managed bytes changed");
+      if (hash(comparableText(upstream(checkout, entry.path))) !== entry.sha256) throw new Error("upstream hash mismatch");
+      if (hash(comparableText(await fs.readFile(file))) !== entry.sha256) throw new Error("managed bytes changed");
     } catch (error) { errors.push(`${entry?.path || "documents.json"}: document manifest integrity failure: ${error.message}; preserve user changes and rerun repo-pattern setup`); }
   }
   return errors;
-}
-
-export async function restoreGstackDocuments(checkout, manifest) {
-  const errors = await verifyGstackDocuments(checkout, manifest, { checkUpstream: false });
-  if (errors.length) throw new Error(`gstack document ownership conflict: ${errors.join("; ")}`);
-  for (const entry of manifest.files) {
-    let source;
-    try { source = upstream(checkout, entry.path); }
-    catch (error) { if (error.status === 128) continue; throw error; }
-    await writeSafeFile(checkout, entry.path, source);
-  }
 }

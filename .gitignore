@@ -1,5 +1,6 @@
 # repo-pattern local runtime
 .repo-pattern/
+.repo-pattern-runtime/
 
 # Claude Code local state
 /CLAUDE.md
@@ -88,3 +89,4 @@ bin/
 coverage.out
 # Rust
 CLAUDE.md
+.gstack/

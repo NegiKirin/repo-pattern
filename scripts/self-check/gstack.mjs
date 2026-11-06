@@ -8,7 +8,7 @@ import { auditProject, printAudit } from "../lib/audit.mjs";
 import { cleanupProject } from "../lib/cleanup.mjs";
 import { doctorProject } from "../lib/doctor.mjs";
 import { ECC_PLUGIN, applyEccPluginSettings, setupEcc } from "../lib/ecc.mjs";
-import { applyPlanTuneHooks, bootstrapGstack, ensureBun, GSTACK_REVIEW_SIDECARS, gstackCheckoutPath, gstackEnvironment, gstackStatePath, gstackSummaryRows, isValidGstackCheckout, removeEccPluginSettings, resolveGstackCheckout, setupGstack, validateProjectGstack } from "../lib/gstack.mjs";
+import { applyPlanTuneHooks, ensureBun, gstackCheckoutPath, gstackEnvironment, gstackStatePath, gstackSummaryRows, isValidGstackCheckout, removeEccPluginSettings, resolveGstackCheckout, setupGstack } from "../lib/gstack.mjs";
 import { applyMcpValues, generateMcp, mcpSecretPrompt, persistedMcpValues, readGeneratedMcpValues, validateRelativeMcpPath } from "../lib/mcp.mjs";
 import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, provisionProject, reconcileLocalPluginSettings, setupPipelineScope, updateClaudePermissions } from "../lib/provision.mjs";
 import { writePrivateJson } from "../lib/fs-utils.mjs";
@@ -17,7 +17,7 @@ import { needsLocalSettingsPrompt, setupProject, setupRetryOptions } from "../li
 import { applyEccRules, buildAgentManifest, clearEccRules, formatEccCloneError, hasGitUpstream, validateAgentManifest } from "../lib/rules.mjs";
 import { applyOptionalSkills, applyPluginSkillSettings, expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills, OPTIONAL_SKILLS } from "../lib/skills.mjs";
 import { runGstackRollbackChecks } from "./gstack-rollback.mjs";
-import { commitGstackFixture, installGstackSafetyFixture } from "./fixtures.mjs";
+import { commitGstackFixture, installGstackSafetyFixture, installGstackUpstreamSetupFixture } from "./fixtures.mjs";
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.dirname(path.dirname(cliDir));
 const cliPath = path.join(cliDir, "..", "repo-pattern.mjs");
@@ -146,7 +146,7 @@ try {
     clone: () => { throw new Error("clone should not run"); },
     progress
   });
-  assert.equal(migrated.source, "global-migration");
+  assert.equal(migrated.source, "global");
   assert.equal(await fs.readFile(path.join(localCheckout, "source"), "utf8"), "global");
   assert.equal(await fs.readFile(path.join(globalCheckout, "source"), "utf8"), "global");
   assert.equal(progressEvents[0].label, "Copying gstack checkout");
@@ -191,7 +191,7 @@ try {
     assert.equal(failed.status, "failed");
     assert.match(failed.error, /gstack output: \[redacted\]/);
   } finally { process.stderr.write = originalStderrWrite; }
-  assert.deepEqual(cloneFailureOutput, [cloneFailure.stderr]);
+  assert.deepEqual(cloneFailureOutput, []);
 
   await fs.rm(localCheckout, { recursive: true, force: true });
   await assert.rejects(
@@ -213,26 +213,26 @@ const migrationHome = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gsta
 try {
   const globalMigrationCheckout = path.join(migrationHome, ".claude", "skills", "gstack");
   await fs.mkdir(path.join(globalMigrationCheckout, "review"), { recursive: true });
-  await fs.writeFile(path.join(globalMigrationCheckout, "setup"), "#!/bin/sh\n", { mode: 0o755 });
+  await installGstackUpstreamSetupFixture(globalMigrationCheckout);
   await installGstackSafetyFixture(globalMigrationCheckout);
+  await fs.mkdir(path.join(globalMigrationCheckout, "bin"), { recursive: true });
   spawnSync("git", ["init"], { cwd: globalMigrationCheckout, stdio: "ignore" });
   await fs.writeFile(path.join(globalMigrationCheckout, "SKILL.md"), "Project-local gstack", "utf8");
   await fs.writeFile(path.join(globalMigrationCheckout, "review", "SKILL.md"), "Review", "utf8");
-  for (const sidecar of GSTACK_REVIEW_SIDECARS) {
-    await fs.mkdir(path.dirname(path.join(globalMigrationCheckout, sidecar)), { recursive: true });
-    await fs.writeFile(path.join(globalMigrationCheckout, sidecar), `Fixture ${sidecar}`, "utf8");
-  }
   commitGstackFixture(globalMigrationCheckout);
   const originalHome = process.env.HOME;
+  const originalPath = process.env.PATH;
   process.env.HOME = migrationHome;
+  process.env.PATH = `${path.join(globalMigrationCheckout, "bin")}${path.delimiter}${originalPath || ""}`;
   try {
     const result = await setupGstack({ target: migrationTarget });
-    assert.equal(result.status, "installed");
-    assert.equal(result.source, "global-migration");
+    assert.equal(result.status, "installed", result.error);
+    assert.equal(result.source, "global", result.error);
     await (await import("./gstack-doctor.mjs")).runGstackDoctorChecks(migrationTarget, repoRoot);
     await import("./gstack-setup-status.mjs").then(({ runGstackSetupStatusChecks }) => runGstackSetupStatusChecks(migrationTarget));
   } finally {
     process.env.HOME = originalHome;
+    process.env.PATH = originalPath;
   }
   assert.equal(await fs.readFile(path.join(globalMigrationCheckout, "SKILL.md"), "utf8"), "Project-local gstack");
   assert.equal(await fs.access(path.join(migrationHome, ".claude", "settings.json")).then(() => true, () => false), false);
@@ -271,129 +271,6 @@ try {
   await fs.rm(missingBunTarget, { recursive: true, force: true });
 }
 
-const wrapperTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-wrapper-"));
-try {
-  const checkout = gstackCheckoutPath(wrapperTarget);
-  await fs.mkdir(path.join(checkout, "review"), { recursive: true });
-  await fs.writeFile(path.join(checkout, "setup"), "#!/bin/sh\n", { mode: 0o755 });
-  await installGstackSafetyFixture(checkout);
-  await fs.writeFile(path.join(checkout, "SKILL.md"), "Root ~/.claude/skills/gstack $HOME/.gstack gstack-config", "utf8");
-  await fs.writeFile(path.join(checkout, "review", "SKILL.md"), "Review ~/.claude/skills/gstack $HOME/.claude.json $HOME/.claude/plans ~/.codex/plans ${HOME}/.gstack/projects", "utf8");
-  for (const sidecar of GSTACK_REVIEW_SIDECARS) {
-    await fs.mkdir(path.dirname(path.join(checkout, sidecar)), { recursive: true });
-    await fs.writeFile(path.join(checkout, sidecar), `Fixture ${sidecar}`, "utf8");
-  }
-  await fs.mkdir(path.join(checkout, "hosts", "claude", "hooks"), { recursive: true });
-  for (const hook of ["question-log-hook", "question-preference-hook"]) {
-    await fs.writeFile(path.join(checkout, "hosts", "claude", "hooks", hook), "#!/bin/sh\n", { mode: 0o755 });
-  }
-  await fs.mkdir(path.join(checkout, "setup-gbrain"), { recursive: true });
-  await fs.writeFile(path.join(checkout, "setup-gbrain", "SKILL.md"), "GBRAIN_BIN=\"$HOME/.bun/bin/gbrain\"", "utf8");
-  await fs.mkdir(path.join(checkout, "codex"), { recursive: true });
-  await fs.writeFile(path.join(checkout, "codex", "SKILL.md"), "Unsupported host integration", "utf8");
-  await fs.mkdir(path.join(checkout, ".cursor", "skills", "gstack"), { recursive: true });
-  await fs.writeFile(path.join(checkout, ".cursor", "skills", "gstack", "SKILL.md"), "Hidden integration", "utf8");
-  spawnSync("git", ["init"], { cwd: checkout, stdio: "ignore" });
-  commitGstackFixture(checkout);
-  const originalPath = process.env.PATH;
-  process.env.PATH = `${path.dirname(process.execPath)}:${originalPath}`;
-  const result = await setupGstack({ target: wrapperTarget, planTuneHooks: true });
-  process.env.PATH = originalPath;
-  assert.equal(result.status, "installed");
-  const state = await validateProjectGstack(wrapperTarget);
-  assert.equal(state.checkoutValid, true);
-  assert.equal(state.stateValid, true);
-  assert.equal(state.wrappersValid, true);
-  assert.deepEqual(state.sidecars, GSTACK_REVIEW_SIDECARS);
-  assert.equal(state.sidecarsValid, true);
-  for (const sidecar of GSTACK_REVIEW_SIDECARS) {
-    assert.equal(await fs.readFile(path.join(wrapperTarget, ".claude", "skills", sidecar), "utf8"), `Fixture ${sidecar}`);
-  }
-  const outsideState = path.join(wrapperTarget, "outside-state.json");
-  const stateFile = path.join(gstackStatePath(wrapperTarget), "state.json");
-  await fs.writeFile(outsideState, "outside", "utf8");
-  await fs.rm(stateFile);
-  await fs.symlink(outsideState, stateFile);
-  await assert.rejects(() => bootstrapGstack({ target: wrapperTarget }), /symlink/);
-  const symlinkedState = await validateProjectGstack(wrapperTarget);
-  assert.equal(symlinkedState.stateValid, false);
-  assert.equal(symlinkedState.wrappersValid, false);
-  assert.equal(symlinkedState.sidecarsValid, false);
-  assert.equal(await fs.readFile(outsideState, "utf8"), "outside");
-  await fs.rm(stateFile);
-  await fs.writeFile(stateFile, "null", "utf8");
-  const malformedState = await validateProjectGstack(wrapperTarget);
-  assert.equal(malformedState.stateValid, false);
-  assert.equal(malformedState.wrappersValid, false);
-  assert.equal(malformedState.sidecarsValid, false);
-  await fs.rm(stateFile);
-  await fs.writeFile(stateFile, JSON.stringify({
-    checkout: "wrong-checkout",
-    wrappers: state.wrappers,
-    bootstrappedAt: new Date().toISOString()
-  }), "utf8");
-  const mismatchedCheckoutState = await validateProjectGstack(wrapperTarget);
-  assert.equal(mismatchedCheckoutState.stateValid, false);
-  assert.equal(mismatchedCheckoutState.wrappersValid, false);
-  assert.equal(mismatchedCheckoutState.sidecarsValid, false);
-  await fs.writeFile(stateFile, JSON.stringify({ ...state, bootstrappedAt: new Date().toISOString() }), "utf8");
-  const checklist = path.join(wrapperTarget, ".claude", "skills", "review", "checklist.md");
-  const expectedChecklist = await fs.readFile(checklist, "utf8");
-  await fs.writeFile(checklist, "drifted", "utf8");
-  assert.equal((await validateProjectGstack(wrapperTarget)).sidecarsValid, false);
-  await fs.writeFile(checklist, expectedChecklist, "utf8");
-  assert(!state.wrappers.some((wrapper) => wrapper.includes(".cursor") || wrapper.includes("codex")));
-  assert.equal(await fs.access(path.join(wrapperTarget, ".claude", "skills", ".cursor")).then(() => true, () => false), false);
-  assert.equal(await fs.access(path.join(wrapperTarget, ".claude", "skills", "codex")).then(() => true, () => false), false);
-  const rootWrapper = path.join(wrapperTarget, ".claude", "skills", "_gstack-command", "SKILL.md");
-  const expectedRootWrapper = await fs.readFile(rootWrapper, "utf8");
-  await fs.writeFile(rootWrapper, "drifted", "utf8");
-  assert.equal((await validateProjectGstack(wrapperTarget)).wrappersValid, false);
-  await fs.writeFile(rootWrapper, expectedRootWrapper, "utf8");
-  await fs.writeFile(path.join(checkout, "review", "SKILL.md"), `${os.homedir()}/.gstack`, "utf8");
-  await assert.rejects(() => bootstrapGstack({ target: wrapperTarget }), /forbidden home-scoped state/);
-  await fs.writeFile(path.join(checkout, "review", "SKILL.md"), "Review ~/.claude/skills/gstack", "utf8");
-  await fs.mkdir(path.join(checkout, "added"));
-  await fs.writeFile(path.join(checkout, "added", "SKILL.md"), "Added skill", "utf8");
-  assert.equal((await validateProjectGstack(wrapperTarget)).wrappersValid, false);
-  const wrapper = await fs.readFile(path.join(wrapperTarget, ".claude", "skills", "_gstack-command", "SKILL.md"), "utf8");
-  const reviewWrapper = await fs.readFile(path.join(wrapperTarget, ".claude", "skills", "review", "SKILL.md"), "utf8");
-  for (const wrapperPath of state.wrappers) {
-    const generatedWrapper = await fs.readFile(path.join(wrapperTarget, wrapperPath, "SKILL.md"), "utf8");
-    assert.doesNotMatch(generatedWrapper, /<!-- Generated by repo-pattern\. Project-local gstack runtime: do not edit\. -->/);
-    assert.doesNotMatch(generatedWrapper, /<!-- GSTACK_HOME=.* GSTACK_ROOT=.* -->/);
-  }
-  const gbrainWrapper = await fs.readFile(path.join(wrapperTarget, ".claude", "skills", "setup-gbrain", "SKILL.md"), "utf8");
-  assert.match(wrapper, new RegExp(gstackStatePath(wrapperTarget).replaceAll("/", "\\/")));
-  assert.match(reviewWrapper, new RegExp(gstackStatePath(wrapperTarget).replaceAll("/", "\\/")));
-  assert.match(gbrainWrapper, new RegExp(path.join(gstackStatePath(wrapperTarget), "bun").replaceAll("/", "\\/")));
-  assert.doesNotMatch(wrapper, /~\/\.claude\/skills\/gstack|\$HOME/);
-  assert.doesNotMatch(reviewWrapper, /~\/\.codex|\$HOME\/\.claude/);
-  assert.doesNotMatch(gbrainWrapper, /\$HOME\/\.bun/);
-} finally {
-  await fs.rm(wrapperTarget, { recursive: true, force: true });
-}
-
-const nestedWrapperTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-nested-wrapper-"));
-const nestedWrapperOutside = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-nested-wrapper-outside-"));
-try {
-  const checkout = gstackCheckoutPath(nestedWrapperTarget);
-  await fs.mkdir(path.join(checkout, "review"), { recursive: true });
-  await fs.writeFile(path.join(checkout, "setup"), "#!/bin/sh\n", { mode: 0o755 });
-  await fs.writeFile(path.join(checkout, "review", "SKILL.md"), "Review", "utf8");
-  for (const sidecar of GSTACK_REVIEW_SIDECARS) {
-    await fs.mkdir(path.dirname(path.join(checkout, sidecar)), { recursive: true });
-    await fs.writeFile(path.join(checkout, sidecar), `Fixture ${sidecar}`, "utf8");
-  }
-  spawnSync("git", ["init"], { cwd: checkout, stdio: "ignore" });
-  await fs.symlink(nestedWrapperOutside, path.join(nestedWrapperTarget, ".claude", "skills", "review"), "dir");
-  await assert.rejects(() => bootstrapGstack({ target: nestedWrapperTarget }), /symlink/);
-  assert.equal(await fs.readdir(nestedWrapperOutside).then((entries) => entries.length), 0);
-  assert.equal((await validateProjectGstack(nestedWrapperTarget)).wrappersValid, false);
-} finally {
-  await fs.rm(nestedWrapperTarget, { recursive: true, force: true });
-  await fs.rm(nestedWrapperOutside, { recursive: true, force: true });
-}
 
 await runGstackRollbackChecks();
 }

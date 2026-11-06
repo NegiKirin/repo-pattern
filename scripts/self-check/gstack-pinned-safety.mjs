@@ -4,8 +4,8 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { installGstackRuntimeFixture } from "./fixtures.mjs";
-import { GSTACK_REVIEW_SIDECARS, gstackCheckoutPath, gstackStatePath, setupGstack } from "../lib/gstack.mjs";
+import { installGstackRuntimeFixture, installGstackUpstreamSetupFixture } from "./fixtures.mjs";
+import { GSTACK_REVIEW_SIDECARS, gstackCheckoutPath, setupGstack } from "../lib/gstack.mjs";
 
 const hashes = {
   "careful/bin/check-careful.sh": "23dc8fa32afa75ac44a93328157d2e9afc8a286eb41cccfdd6340bbfd72bfed2",
@@ -13,6 +13,11 @@ const hashes = {
   "freeze/bin/check-freeze.sh": "97e6013a990911ef544e4e80fc464560286e298d85ffbdf391b860e9910376f4",
   "bin/gstack-paths": "42365c4cd5f0042e2d7c86a929252d18e051884a5abc125c2a8893c1ae636060"
 };
+
+function shellQuote(value) {
+  return `'${String(value).replaceAll("'", `'"'"'`)}'`;
+}
+
 
 export async function runGstackPinnedSafetyChecks() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-pinned 'safety-"));
@@ -23,14 +28,13 @@ export async function runGstackPinnedSafetyChecks() {
     await fs.mkdir(home);
     process.env.HOME = home;
     const checkout = gstackCheckoutPath(target);
-    const statePath = gstackStatePath(target);
     await fs.mkdir(checkout, { recursive: true });
     await fs.cp(new URL("./fixtures/gstack-safety/", import.meta.url), checkout, { recursive: true });
     for (const [relative, hash] of Object.entries(hashes)) {
       assert.equal(createHash("sha256").update(await fs.readFile(path.join(checkout, relative))).digest("hex"), hash);
     }
     await fs.chmod(path.join(checkout, "bin/gstack-paths"), 0o755);
-    await fs.writeFile(path.join(checkout, "setup"), "#!/bin/sh\n", { mode: 0o755 });
+    await installGstackUpstreamSetupFixture(checkout);
     await fs.writeFile(path.join(checkout, "SKILL.md"), "Fixture root\n");
     await fs.appendFile(path.join(checkout, "freeze/SKILL.md"), '\neval "$(~/.claude/skills/gstack/bin/gstack-paths)"\n');
     for (const sidecar of GSTACK_REVIEW_SIDECARS) {
@@ -73,15 +77,18 @@ export async function runGstackPinnedSafetyChecks() {
     const outside = path.join(target, "outside.txt");
     await fs.mkdir(boundary);
     await fs.writeFile(outside, "unchanged");
+    const generatedSettings = JSON.parse(await fs.readFile(path.join(target, ".claude/settings.json"), "utf8"));
+    const env = { ...process.env, HOME: home, ...generatedSettings.env };
+    const statePath = env.GSTACK_HOME;
+    assert.ok(statePath);
+    await fs.mkdir(statePath, { recursive: true });
     await fs.writeFile(path.join(statePath, "freeze-dir.txt"), `${boundary}\n`);
     const baselineState = path.join(root, "baseline");
     await fs.mkdir(baselineState);
     await fs.writeFile(path.join(baselineState, "freeze-dir.txt"), `${boundary}\n`);
-    const env = { ...process.env, HOME: home };
-    delete env.GSTACK_HOME;
     const execute = (args, payload, environment = env) => {
       const result = spawnSync(args[0], args.slice(1), { cwd: target, env: environment, input: JSON.stringify(payload), encoding: "utf8" });
-      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.status, 0, `${result.stderr}\ncommand=${args[args.length - 1]}`);
       return JSON.parse(result.stdout);
     };
     let count = 0;
