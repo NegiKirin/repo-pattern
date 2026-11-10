@@ -54,11 +54,11 @@ try {
   for (const content of [skill, wrapper]) {
     const command = content.match(/^bun run (.+)$/m)?.[1];
     assert(command);
-    const quotedCommand = "'" + command.split("'").join("'\"'\"'") + "'";
-    const execution = spawnSync("bash", ["-c", `printf '%s' "$(${quotedCommand})"`], { env: { ...env, PATH: `${tools}${path.delimiter}${env.PATH}` }, encoding: "utf8" });
+    const execution = spawnSync("bash", ["-c", `printf '%s' ${command}`], { env, encoding: "utf8" });
     assert.equal(execution.status, 0, execution.stderr);
     assert.match(command, /gstack-design-detect\.ts/);
-    assert.match(content, /\.claude\/skills\/gstack\/bin\/gstack-design-detect\.ts/);
+    assert.equal(execution.stdout, path.join(checkout, "bin/gstack-design-detect.ts"));
+    assert.doesNotMatch(content, /(?:~|\$HOME|\$\{HOME\})\/(?:\.claude\/skills\/gstack|\.gstack|\.claude\.json|\.claude|\.codex|\.bun)/);
   }
   await fs.access(path.join(checkout, "bin/gstack-design-detect.ts"));
   const doctor = cli("doctor");
@@ -96,8 +96,13 @@ try {
   assert.match(upgradedGuide, /New guide instruction/);
   assert.match(upgradedReview, /New upstream review instruction/);
   assert.match(await fs.readFile(path.join(checkout, "review/new/upstream.md"), "utf8"), /New upstream linked document/);
-  assert.match((await fs.readFile(wrapperFile, "utf8")), /\.claude\/skills\/gstack\/bin\/gstack-design-detect\.ts/);
-  assert.match(upgraded, /\.claude\/skills\/gstack\/bin\/gstack-design-detect\.ts/);
+  for (const content of [await fs.readFile(wrapperFile, "utf8"), upgraded]) {
+    const command = content.match(/^bun run (.+)$/m)?.[1];
+    assert(command);
+    const execution = spawnSync("bash", ["-c", `printf '%s' ${command}`], { env, encoding: "utf8" });
+    assert.equal(execution.status, 0, execution.stderr);
+    assert.equal(execution.stdout, path.join(checkout, "bin/gstack-design-detect.ts"));
+  }
   const committedManifest = await fs.readFile(manifestFile, "utf8");
   const supporting = path.join(checkout, "design-html/sections/guide.md");
   const supportingBytes = await fs.readFile(supporting);

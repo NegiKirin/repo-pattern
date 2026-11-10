@@ -9,6 +9,60 @@ const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const upstream = (checkout, relative) => execFileSync("git", ["-C", checkout, "show", `HEAD:${relative}`], { maxBuffer: 16 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
 const comparableText = (bytes) => Buffer.from(bytes.toString("utf8").replace(/\r\n/g, "\n"));
 
+function shellQuote(value) {
+  return `'${String(value).replaceAll("'", `'"'"'`)}'`;
+}
+
+function quoteShellPaths(source, replacements) {
+  return source.replace(/(```(?:bash|sh|shell)\r?\n)([\s\S]*?)(^```)/gm, (_match, opening, body, closing) => opening + body.split("\n").map((line) => {
+    let quote = null;
+    let result = "";
+    for (let index = 0; index < line.length;) {
+      const entry = replacements.find(([original]) => line.startsWith(original, index));
+      if (entry) {
+        const [original, replacement] = entry;
+        result += quote === '"' ? replacement.replace(/["$`\\]/g, "\\$&") : quote === "'" ? replacement.replaceAll("'", `'"'"'`) : shellQuote(replacement);
+        index += original.length;
+        continue;
+      }
+      const character = line[index++];
+      if (character === "\\" && quote !== "'" && index < line.length) result += character + line[index++];
+      else { result += character; if (character === quote) quote = null; else if (!quote && (character === "'" || character === '"')) quote = character; }
+    }
+    return result;
+  }).join("\n") + closing);
+}
+
+export function rewriteGstackPaths(source, checkout, statePath) {
+  const roots = [["/.claude/skills/gstack", checkout], ["/.gstack", statePath], ["/.claude.json", path.join(statePath, "claude.json")], ["/.claude", path.join(statePath, "claude")], ["/.codex", path.join(statePath, "codex")], ["/.bun", path.join(statePath, "bun")]];
+  const replacements = [["${GSTACK_HOME:-$HOME/.gstack}", statePath], ...roots.flatMap(([suffix, destination]) => ["~", "$HOME", "${HOME}"].map((home) => [home + suffix, destination]))];
+  let rewritten = quoteShellPaths(source, replacements);
+  for (const [original, destination] of replacements) rewritten = rewritten.replaceAll(original, destination);
+  return rewritten;
+}
+
+export function normalizeGstackDocument(source, checkout, statePath, renderRoot = null) {
+  const rendered = renderRoot ? source.replaceAll(renderRoot, "~/.claude/skills/gstack").replaceAll(checkout, "~/.claude/skills/gstack") : source;
+  return rewriteGstackPaths(rendered, checkout, statePath);
+}
+
+export async function normalizeGstackRenderedDocuments(renderRoot, checkout, statePath) {
+  const files = [];
+  async function walk(current) {
+    for (const entry of await fs.readdir(current, { withFileTypes: true })) {
+      const file = path.join(current, entry.name);
+      if (entry.isDirectory()) await walk(file);
+      else if (entry.isFile() && !entry.isSymbolicLink() && entry.name.endsWith(".md")) {
+        const source = await fs.readFile(file, "utf8");
+        await fs.writeFile(file, normalizeGstackDocument(source, checkout, statePath, renderRoot));
+        files.push(file);
+      }
+    }
+  }
+  await walk(renderRoot);
+  return files;
+}
+
 async function safeFile(root, relative) {
   if (typeof relative !== "string" || path.isAbsolute(relative) || relative.split(/[\\/]/).some((part) => part === "..") || !relative.endsWith(".md") || excluded.test(relative)) throw new Error(`invalid document path: ${relative}`);
   let current = root;
@@ -99,6 +153,29 @@ export async function discoverGstackDocuments(checkout, seeds, { clean = false, 
   return [...found].sort();
 }
 
+export async function normalizeGstackDocuments(checkout, seeds, normalize) {
+  const diagnostics = [];
+  const inventory = await discoverGstackDocuments(checkout, seeds, { clean: true, diagnostics });
+  const files = [];
+  for (const relative of inventory) {
+    const file = await safeFile(checkout, relative);
+    const actual = comparableText(await fs.readFile(file));
+    const clean = comparableText(upstream(checkout, relative));
+    if (!actual.equals(clean)) throw new Error(`gstack document ownership conflict: ${relative} differs from Git upstream`);
+    const normalized = comparableText(Buffer.from(normalize(clean.toString("utf8"))));
+    await fs.writeFile(file, normalized);
+    files.push({ path: relative, upstreamSha256: hash(clean), normalizedSha256: hash(normalized) });
+  }
+  return { version: 1, files, ...(diagnostics.length ? { diagnostics: [...new Set(diagnostics)] } : {}) };
+}
+
+export async function restoreGstackDocuments(checkout, manifest) {
+  if (manifest?.version !== 1 || !Array.isArray(manifest.files)) throw new Error("documents.json: invalid managed document manifest");
+  const errors = await verifyGstackDocuments(checkout, manifest);
+  if (errors.length) throw new Error(`gstack document ownership conflict: ${errors.join("; ")}`);
+  for (const entry of manifest.files) await fs.writeFile(await safeFile(checkout, entry.path), upstream(checkout, entry.path));
+}
+
 export async function recordGstackDocuments(checkout, seeds) {
   const diagnostics = [];
   const inventory = await discoverGstackDocuments(checkout, seeds, { diagnostics });
@@ -115,6 +192,19 @@ export async function recordGstackDocuments(checkout, seeds) {
 
 export async function verifyGstackDocuments(checkout, manifest) {
   const errors = [];
+  if (manifest?.version === 1) {
+    if (!Array.isArray(manifest.files) || !manifest.files.length || manifest.files.some((entry) => !entry || !/^[a-f0-9]{64}$/.test(entry.upstreamSha256) || !/^[a-f0-9]{64}$/.test(entry.normalizedSha256))) return ["documents.json: invalid or unsupported upstream document manifest; reinstall gstack using upstream setup"];
+    for (const entry of manifest.files) {
+      try {
+        const file = await safeFile(checkout, entry.path);
+        const actual = hash(comparableText(await fs.readFile(file)));
+        const clean = hash(comparableText(upstream(checkout, entry.path)));
+        if (actual !== entry.normalizedSha256 && actual !== clean) throw new Error("managed bytes changed");
+        if (clean !== entry.upstreamSha256) throw new Error("upstream hash mismatch");
+      } catch (error) { errors.push(`${entry?.path || "documents.json"}: document manifest integrity failure: ${error.message}; preserve user changes and rerun repo-pattern setup`); }
+    }
+    return errors;
+  }
   if (manifest?.version !== 2 || !Array.isArray(manifest.files) || !manifest.files.length) return ["documents.json: invalid or unsupported upstream document manifest; reinstall gstack using upstream setup"];
   const seen = new Set();
   for (const entry of manifest.files) {

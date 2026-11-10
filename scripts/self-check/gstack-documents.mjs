@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { discoverGstackDocuments, recordGstackDocuments, verifyGstackDocuments } from "../lib/gstack-documents.mjs";
+import { discoverGstackDocuments, recordGstackDocuments, rewriteGstackPaths, verifyGstackDocuments } from "../lib/gstack-documents.mjs";
 
 // Fixtures stay inside the repository; no global install or downloaded code is used.
 const root = await fs.mkdtemp(path.resolve(".gstack-documents-test-"));
@@ -31,6 +31,9 @@ try {
   assert.deepEqual(manifest.files.map(({ path }) => path), inventory);
   assert(manifest.files.every(({ sha256 }) => /^[a-f0-9]{64}$/.test(sha256)));
   assert.equal((await verifyGstackDocuments(checkout, manifest)).length, 0);
+  const rewritten = rewriteGstackPaths("State ${GSTACK_HOME:-$HOME/.gstack} and ~/.claude/skills/gstack/bin/tool\n```bash\necho '$HOME/.gstack'\n````", "/tmp/project's checkout/.claude/skills/gstack", "/tmp/project's checkout/.repo-pattern/gstack");
+  assert(!rewritten.includes("$HOME/.gstack"));
+  assert(rewritten.includes("/tmp/project's checkout/.repo-pattern/gstack"));
   await write("line-endings.md", "first\nsecond\n");
   const lineEndingsGit = (...args) => execFileSync("git", ["-C", checkout, ...args], { encoding: "utf8" });
   lineEndingsGit("add", "line-endings.md");

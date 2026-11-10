@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { appendGitignoreLine, copyRecursiveWithProgress, ensureDir, exists, isTracked, readJson, removePath, writeJson, writePrivateJson } from "./fs-utils.mjs";
 import { validateGstackRuntime, runRuntimeCommand } from "./gstack-runtime.mjs";
-import { GSTACK_DOCUMENT_MANIFEST, recordGstackDocuments, verifyGstackDocuments } from "./gstack-documents.mjs";
+import { GSTACK_DOCUMENT_MANIFEST, normalizeGstackDocuments, normalizeGstackRenderedDocuments, recordGstackDocuments, restoreGstackDocuments, rewriteGstackPaths, verifyGstackDocuments } from "./gstack-documents.mjs";
 import { GSTACK_UPSTREAM_MANIFEST, GSTACK_UPSTREAM_OWNER, manifestForPaths, runUpstreamLocalSetup, snapshotUpstreamTransaction, verifyUpstreamManifest } from "./gstack-upstream.mjs";
 
 const GSTACK_REPOSITORY = "https://github.com/garrytan/gstack.git";
@@ -305,7 +305,8 @@ export async function resolveGstackCheckout({
       if (conflicts.length) throw Object.assign(new Error(`gstack document ownership conflict: ${conflicts.join("; ")}`), { gstackDocumentPaths: conflicts.map((message) => message.split(":")[0]) });
     }
     const changes = childExecFileSync("git", ["-C", localCheckout, "status", "--porcelain", "-z", "--untracked-files=all"], { encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }, timeout: 30000 });
-    const foreign = upgrade ? changes.split("\0").filter(Boolean) : [];
+    const normalizedPaths = new Set(managedDocuments?.version === 1 ? managedDocuments.files.map((entry) => entry.path) : []);
+    const foreign = upgrade ? changes.split("\0").filter((entry) => entry && !(entry.startsWith(" M ") && normalizedPaths.has(entry.slice(3)))) : [];
     if (foreign.length) throw new Error(`gstack safety skill ownership conflict: .claude/skills/gstack checkout has local changes: ${foreign.map((entry) => entry.slice(3)).join(", ")}. Preserve and resolve them before setup or upgrading.`);
   }
   const globalValid = !upgrade && await isValidGstackCheckout(globalCheckout, { run: runCommand });
@@ -473,6 +474,8 @@ async function setupUpstreamGstack({ target, checkout, statePath, dryRun, planTu
     try { ensureBun(); }
     catch (error) { error.gstackStage = "Bun validation"; throw error; }
     transaction = await snapshotUpstreamTransaction({ target, checkout, statePath, publicationRoots: publicationNames });
+    const priorDocuments = await readJson(path.join(statePath, GSTACK_DOCUMENT_MANIFEST), null);
+    if (priorDocuments?.version === 1) await restoreGstackDocuments(checkout, priorDocuments);
     try {
       lease = await resolveCheckout({ target, dryRun: false, upgrade, progress, silent, prepare: async () => {} });
     } catch (error) {
@@ -490,11 +493,18 @@ async function setupUpstreamGstack({ target, checkout, statePath, dryRun, planTu
     for (const root of publicationRoots) await fs.rm(path.join(target, ".claude", "skills", root), { recursive: true, force: true });
     const browserSkipped = process.env.GSTACK_SKIP_PLAYWRIGHT === "1";
     const result = await runUpstreamLocalSetup({ target, checkout, statePath, publicationRoots, browserSkipped });
-    await writePlanTuneHooks({ target, planTuneHooks, silent });
     const autoplanSkill = path.join(target, ".claude", "skills", "autoplan", "SKILL.md");
     const renderedSkill = await fs.realpath(autoplanSkill).catch(() => null);
     const renderRoot = renderedSkill && renderedSkill !== autoplanSkill && !renderedSkill.startsWith(`${checkout}${path.sep}`)
       ? path.dirname(path.dirname(renderedSkill)) : null;
+    const documentSeeds = (await skillDirectories(checkout)).map(({ source }) => path.relative(checkout, path.join(source, "SKILL.md")));
+    const documents = await normalizeGstackDocuments(checkout, documentSeeds, (source) => rewriteGstackPaths(source, checkout, result.env.GSTACK_HOME));
+    if (renderRoot) {
+      const runtimeRoot = await fs.realpath(path.join(target, ".repo-pattern-runtime"));
+      if (!renderRoot.startsWith(`${runtimeRoot}${path.sep}`)) throw new Error("gstack render root escapes project runtime");
+      await normalizeGstackRenderedDocuments(renderRoot, checkout, result.env.GSTACK_HOME);
+    }
+    await writePlanTuneHooks({ target, planTuneHooks, silent });
     const settings = await readJson(settingsFile, {});
     const runtimeEnv = { GSTACK_ROOT: checkout, GSTACK_STATE_ROOT: result.env.GSTACK_STATE_ROOT, GSTACK_HOME: result.env.GSTACK_HOME, PLAYWRIGHT_BROWSERS_PATH: result.env.PLAYWRIGHT_BROWSERS_PATH };
     if (renderRoot) runtimeEnv.GSTACK_USER_RENDER_DIR = renderRoot;
@@ -504,11 +514,9 @@ async function setupUpstreamGstack({ target, checkout, statePath, dryRun, planTu
     await writeJson(settingsFile, { ...settings, env: { ...settings.env, ...runtimeEnv } }, { silent });
     const published = (await listSkillRoots(target)).map((root) => path.basename(root)).filter((root) => candidateRoots.includes(root) || !publicationNames.includes(root));
     if (!published.includes("_gstack-command") && !published.includes("autoplan")) throw new Error("gstack upstream setup did not publish skills");
-    const manifest = await manifestForPaths(target, published);
     const readiness = await validateGstackRuntime(checkout, { browserSkipped });
     if (!readiness.runtimeValid || !["ready", "skipped"].includes(readiness.browserStatus)) throw new Error("gstack upstream runtime validation failed");
-    const documentSeeds = (await skillDirectories(checkout)).map(({ source }) => path.relative(checkout, path.join(source, "SKILL.md")));
-    const documents = await recordGstackDocuments(checkout, documentSeeds);
+    const manifest = await manifestForPaths(target, published);
     await fs.mkdir(statePath, { recursive: true });
     await writeJson(path.join(statePath, GSTACK_DOCUMENT_MANIFEST), documents, { silent });
     await writeJson(path.join(statePath, GSTACK_UPSTREAM_MANIFEST), manifest, { silent });

@@ -26,8 +26,9 @@ try {
   }
   await fs.mkdir(path.join(checkout, "autoplan/sections"), { recursive: true });
   await fs.writeFile(path.join(checkout, "SKILL.md"), "---\nname: gstack\n---\nLocal gstack\n");
-  await fs.writeFile(path.join(checkout, "autoplan/SKILL.md"), "---\nname: autoplan\n---\nRead ~/.claude/skills/gstack/autoplan/sections/ceo-phase.md\n");
-  await fs.writeFile(path.join(checkout, "autoplan/sections/ceo-phase.md"), "Canonical CEO phase\n");
+  await fs.writeFile(path.join(checkout, "autoplan/SKILL.md"), "---\nname: autoplan\n---\nRead ~/.claude/skills/gstack/autoplan/sections/ceo-phase.md\nClose: ~/.claude/skills/gstack/autoplan/sections/phase-close.md\nState: ~/.gstack\nConfig: ~/.claude.json ~/.claude ~/.codex ~/.bun\n");
+  await fs.writeFile(path.join(checkout, "autoplan/sections/ceo-phase.md"), "Canonical CEO phase: ~/.gstack\nClose: ~/.claude/skills/gstack/autoplan/sections/phase-close.md\n");
+  await fs.writeFile(path.join(checkout, "autoplan/sections/phase-close.md"), "Canonical phase close: ~/.codex\n");
   await fs.writeFile(path.join(checkout, ".gitignore"), "node_modules/\n.repo-pattern-runtime/\n*/dist/\nbun.lock\nsetup-call.json\n");
   await fs.writeFile(path.join(checkout, "setup"), `#!/usr/bin/env node
 import fs from 'node:fs/promises';
@@ -112,9 +113,10 @@ if (process.env.FIXTURE_SETUP_FAIL === '1') process.exit(9);
   assert.equal((await setupGstack({ target, silent: true })).status, "failed", "missing source integrity record must block replacement");
   await fs.writeFile(documentsFile, documentsBytes);
   const phaseFile = path.join(checkout, "autoplan/sections/ceo-phase.md");
+  const phaseBytes = await fs.readFile(phaseFile);
   await fs.writeFile(phaseFile, "User-edited linked section\n");
   assert.equal((await validateProjectGstack(target)).documentsValid, false, "linked section edits must fail integrity validation");
-  await fs.writeFile(phaseFile, "Canonical CEO phase\n");
+  await fs.writeFile(phaseFile, phaseBytes);
   const before = await fs.readFile(path.join(target, ".repo-pattern/gstack/state.json"), "utf8");
   process.env.FIXTURE_SETUP_FAIL = "1";
   const failed = await setupGstack({ target, silent: true });
@@ -138,12 +140,49 @@ if (process.env.FIXTURE_SETUP_FAIL === '1') process.exit(9);
   assert.equal(conflict.status, "failed", "must preserve modified upstream publication");
   assert.match(await fs.readFile(path.join(target, ".claude/skills/autoplan/SKILL.md"), "utf8"), /User edit/);
   assert.deepEqual(await fs.readdir(home), ["sentinel"]);
-  const renderedTarget = path.join(root, "rendered-project");
+  const renderedTarget = path.join(root, "rendered project's checkout");
   const renderedCheckout = path.join(renderedTarget, ".claude/skills/gstack");
   await fs.mkdir(path.dirname(renderedCheckout), { recursive: true });
   await fs.cp(checkout, renderedCheckout, { recursive: true });
   await installGstackRenderedUpstreamSetupFixture(renderedCheckout);
+  const trackedDocuments = spawnSync("git", ["ls-files", "*.md"], { cwd: renderedCheckout, encoding: "utf8" }).stdout.trim().split("\n");
+  for (const relative of trackedDocuments) {
+    const original = spawnSync("git", ["show", `HEAD:${relative}`], { cwd: renderedCheckout });
+    assert.equal(original.status, 0);
+    await fs.writeFile(path.join(renderedCheckout, relative), original.stdout);
+  }
+  const phaseTemplate = "Probe: ~/.claude/skills/gstack/bin/gstack-codex-probe\nClose: ~/.claude/skills/gstack/autoplan/sections/phase-close.md\n```bash\nprintf '%s' $HOME/.claude/skills/gstack/bin/gstack-codex-probe\nprintf '%s' \"$HOME/.claude/skills/gstack/bin/gstack-codex-probe\"\n```\nState: ${GSTACK_HOME:-$HOME/.gstack}\n";
+  await fs.writeFile(path.join(renderedCheckout, "autoplan/sections/ceo-phase.md"), phaseTemplate);
+  await fs.writeFile(path.join(renderedCheckout, "autoplan/sections/ceo-phase.md.tmpl"), phaseTemplate);
+  const setupFile = path.join(renderedCheckout, "setup");
+  let renderedSetup = await fs.readFile(setupFile, "utf8");
+  renderedSetup = renderedSetup.replace('const build = spawnSync', 'await fs.copyFile(path.join(source, "autoplan/sections/ceo-phase.md.tmpl"), path.join(source, "autoplan/sections/ceo-phase.md"));\nconst build = spawnSync');
+  renderedSetup = renderedSetup.replace('await fs.cp(skill, rendered, { recursive: true, force: true });', `await fs.cp(skill, rendered, { recursive: true, force: true });
+  async function renderDocuments(directory) {
+    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+      const file = path.join(directory, entry.name);
+      if (entry.isDirectory()) await renderDocuments(file);
+      else if (entry.isFile() && entry.name.endsWith(".md")) {
+        const text = (await fs.readFile(file, "utf8"))
+          .replace(/~\\/\\.claude\\/skills\\/gstack\\/([^\\s)\x60"'*]+\\/sections\\/)/g, (_, section) => renderRoot + "/" + section)
+          .replaceAll("$HOME/.claude/skills/gstack", source).replaceAll("~/.claude/skills/gstack", source);
+        await fs.writeFile(file, text);
+      }
+    }
+  }
+  await renderDocuments(rendered);`);
+  renderedSetup = renderedSetup.replace('const renderRoot = path.join(', 'const renderRoot = process.env.FIXTURE_EXTERNAL_RENDER || path.join(');
+  await fs.writeFile(setupFile, renderedSetup);
   commitGstackFixture(renderedCheckout);
+  const externalRender = path.join(root, "external-render");
+  await fs.mkdir(externalRender);
+  const foreignDocument = path.join(externalRender, "foreign.md");
+  await fs.writeFile(foreignDocument, "Keep ~/.gstack unchanged\n");
+  process.env.FIXTURE_EXTERNAL_RENDER = externalRender;
+  const escapedRender = await setupGstack({ target: renderedTarget, silent: true });
+  delete process.env.FIXTURE_EXTERNAL_RENDER;
+  assert.equal(escapedRender.status, "failed");
+  assert.equal(await fs.readFile(foreignDocument, "utf8"), "Keep ~/.gstack unchanged\n");
   const renderedInstall = await setupGstack({ target: renderedTarget, silent: true });
   assert.equal(renderedInstall.status, "installed", renderedInstall.error);
   const renderedSkill = path.join(renderedTarget, ".claude/skills/autoplan/SKILL.md");
@@ -153,8 +192,20 @@ if (process.env.FIXTURE_SETUP_FAIL === '1') process.exit(9);
   assert(actualRenderRoot.startsWith(path.join(renderedTarget, ".repo-pattern-runtime")));
   assert((await fs.lstat(renderedSkill)).isSymbolicLink());
   assert.equal(await fs.readFile(renderedSkill, "utf8"), await fs.readFile(path.join(renderedCheckout, "autoplan/SKILL.md"), "utf8"));
+  const renderedPhase = path.join(actualRenderRoot, "autoplan/sections/ceo-phase.md");
+  const canonicalPhase = path.join(renderedCheckout, "autoplan/sections/ceo-phase.md");
+  const canonicalBytes = await fs.readFile(canonicalPhase, "utf8");
+  assert.equal(await fs.readFile(renderedPhase, "utf8"), canonicalBytes, "rendered phase must satisfy upstream's exact-content ownership check");
+  assert(canonicalBytes.includes(renderedSettings.env.GSTACK_HOME));
+  const shell = canonicalBytes.match(/```bash\n([\s\S]*?)```/)[1];
+  const executed = spawnSync("bash", ["-c", shell], { encoding: "utf8" });
+  assert.equal(executed.status, 0, executed.stderr);
+  assert.equal(executed.stdout, path.join(renderedCheckout, "bin/gstack-codex-probe").repeat(2));
   assert.equal((await validateProjectGstack(renderedTarget)).documentsValid, true);
   assert.equal((await setupGstack({ target: renderedTarget, silent: true })).status, "installed");
+  await fs.appendFile(renderedPhase, "Foreign modification\n");
+  assert.equal((await validateProjectGstack(renderedTarget)).wrappersValid, false);
+  assert.equal((await setupGstack({ target: renderedTarget, silent: true })).status, "failed");
   console.log("gstack upstream local setup checks passed");
 } finally {
   for (const key of Object.keys(process.env)) if (!Object.hasOwn(originalEnvironment, key)) delete process.env[key];
