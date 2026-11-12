@@ -15,7 +15,8 @@
     "check:module-limits": "node scripts/check-module-limits.mjs",
     "measure:test-duration": "node scripts/measure-test-duration.mjs",
     "pack:dry": "npm pack --dry-run",
-    "prepublishOnly": "npm test && npm run pack:dry"
+    "prepublishOnly": "npm test && npm run pack:dry",
+    "check:diff-coverage": "node scripts/test-coverage.mjs"
   },
   "license": "MIT",
   "author": "NegiKirin",
