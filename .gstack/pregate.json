@@ -3,7 +3,37 @@
   "runner": "npm test -- {files}",
   "dependencies": {
     ".gitignore": [],
-    "scripts/lib/**": ["scripts/self-check.test.mjs"],
-    "scripts/self-check/**": ["scripts/self-check.test.mjs"]
+    "scripts/lib/**": [
+      "scripts/self-check.test.mjs"
+    ],
+    "scripts/self-check/**": [
+      "scripts/self-check.test.mjs",
+      "scripts/self-check.mjs"
+    ],
+    ".github/workflows/**": [
+      "scripts/phase-1-characterization.test.mjs"
+    ],
+    "docs/phase-0-issue-97-inventory.json": [
+      "scripts/phase-1-characterization.test.mjs"
+    ],
+    "package-lock.json": [
+      "scripts/phase-1-characterization.test.mjs"
+    ],
+    "scripts/check-diff-coverage.mjs": [
+      "scripts/self-check/coverage-cli.mjs"
+    ],
+    "scripts/repo-pattern.mjs": [
+      "test/cli/cli-contract.test.mjs",
+      "scripts/phase-1-characterization.test.mjs"
+    ],
+    "src/**": [
+      "scripts/self-check.mjs"
+    ],
+    "src/vendor/herdr/**": [
+      "scripts/self-check/herdr.mjs"
+    ],
+    "scripts/vendor/herdr/**": [
+      "scripts/self-check/herdr.mjs"
+    ]
   }
 }
