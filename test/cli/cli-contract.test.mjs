@@ -56,7 +56,9 @@ test("noninteractive dry-run output remains byte-identical to the Phase 0 baseli
     const expected = await baselineStreams("dry-run");
     const result = runCli(["setup", "--target", target, "--setup-pipeline", "none", "--yes", "--dry-run"]);
     assert.equal(result.status, 0);
-    assert.deepEqual(result.stdout.toString().replaceAll(target, baselineTarget), expected.stdout.toString());
+    const actual = result.stdout.toString().replaceAll(target, baselineTarget).replaceAll(repoRoot, "<repo-root>");
+    const fixture = expected.stdout.toString().replaceAll(repoRoot, "<repo-root>");
+    assert.equal(actual, fixture);
     assert.deepEqual(result.stderr, expected.stderr);
   } finally {
     await rm(target, { recursive: true, force: true });

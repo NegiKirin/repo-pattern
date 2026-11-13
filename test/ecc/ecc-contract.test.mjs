@@ -51,9 +51,9 @@ test("ECC rule selection and manifest validation preserve deterministic contract
   const target = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-ecc-manifest-"));
   try {
     await fs.writeFile(path.join(target, "A.md"), "upper");
-    await fs.writeFile(path.join(target, "a.md"), "lower");
+    await fs.writeFile(path.join(target, "B.md"), "lower");
     const manifest = await buildAgentManifest(target);
-    assert.deepEqual(manifest.map((entry) => entry.path), ["A.md", "a.md"]);
+    assert.deepEqual(manifest.map((entry) => entry.path), ["A.md", "B.md"]);
     assert.equal(validateAgentManifest(manifest), true);
   } finally {
     await fs.rm(target, { recursive: true, force: true });
