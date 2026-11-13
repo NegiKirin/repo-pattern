@@ -17,7 +17,8 @@ function runCli(args) {
 }
 
 function normalizeDryRun(output, target, sourceRoot) {
-  return output.replaceAll(target, baselineTarget).replaceAll(sourceRoot, "<repo-root>");
+  const wrappedTarget = new RegExp([...target].map((character) => character.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")).join("\\s*"), "g");
+  return output.replace(wrappedTarget, baselineTarget).replaceAll(sourceRoot, "<repo-root>");
 }
 
 function baselineSourceRoot(output) {
