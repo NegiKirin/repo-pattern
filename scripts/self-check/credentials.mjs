@@ -4,9 +4,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { cleanupProject } from "../lib/cleanup.mjs";
-import { provisionProject, updateClaudePermissions } from "../lib/provision.mjs";
-import { applyOptionalSkills } from "../lib/skills.mjs";
+import { cleanupProject } from "../../src/cleanup.mjs";
+import { provisionProject } from "../../src/setup/provision.mjs";
+import { updateClaudePermissions } from "../../src/setup/settings.mjs";
+import { applyOptionalSkills } from "../../src/skills.mjs";
 import { writeEccGitFixture } from "./fixtures.mjs";
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));

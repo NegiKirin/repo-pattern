@@ -5,13 +5,13 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { provisionProject } from "../lib/provision.mjs";
-import { OPTIONAL_SKILLS } from "../lib/skills.mjs";
+import { provisionProject } from "../../src/setup/provision.mjs";
+import { OPTIONAL_SKILLS } from "../../src/skills.mjs";
 
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 
 export async function runHerdrChecks() {
-  const { applyHerdrHook, installHerdrIntegration, HERDR_COMMAND } = await import("../lib/herdr.mjs");
+  const { applyHerdrHook, installHerdrIntegration, HERDR_COMMAND } = await import("../../src/herdr.mjs");
   const other = { matcher: "startup", hooks: [{ type: "command", command: "keep-me" }] };
   const input = { custom: { kept: true }, hooks: { SessionStart: [other], Stop: [other] } };
   const merged = applyHerdrHook(input);
@@ -58,7 +58,7 @@ export async function runHerdrChecks() {
     await fs.writeFile(path.join(target, ".claude", "settings.json"), JSON.stringify({ custom: true }));
     await provisionProject({ sourceRoot: repoRoot, target, setupPipeline: "none", optionalSkills: ["herdr"], mcpServers: [] });
     const script = path.join(target, ".claude", "hooks", "herdr-agent-state.sh");
-    assert.equal(await fs.readFile(script, "utf8"), await fs.readFile(path.join(repoRoot, "scripts", "vendor", "herdr", "herdr-agent-state.sh"), "utf8"));
+    assert.equal(await fs.readFile(script, "utf8"), await fs.readFile(path.join(repoRoot, "src", "vendor", "herdr", "herdr-agent-state.sh"), "utf8"));
     await fs.access(path.join(target, ".claude", "skills", "herdr", "SKILL.md"));
     const settingsFile = path.join(target, ".claude", "settings.json");
     const settings = JSON.parse(await fs.readFile(settingsFile, "utf8"));

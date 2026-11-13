@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createProgressReporter, createSetupProgress } from "../lib/progress.mjs";
+import { createProgressReporter, createSetupProgress } from "../../src/ui/progress.mjs";
 
 export async function runProgressChecks() {
   const durable = [];

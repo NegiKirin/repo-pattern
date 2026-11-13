@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { discoverGstackDocuments, recordGstackDocuments, rewriteGstackPaths, verifyGstackDocuments } from "../lib/gstack-documents.mjs";
+import { discoverGstackDocuments, recordGstackDocuments, rewriteGstackPaths, verifyGstackDocuments } from "../../src/gstack/gstack-documents.mjs";
 
 // Fixtures stay inside the repository; no global install or downloaded code is used.
 const root = await fs.mkdtemp(path.resolve(".gstack-documents-test-"));

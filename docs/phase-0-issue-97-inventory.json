@@ -1,0 +1,119 @@
+{
+  "schema": "repo-pattern.phase-0-inventory.v1",
+  "issue": 97,
+  "branch": "feat/issue-97-source-refactor",
+  "baseline": {
+    "commit": "4ee09d32566d432630470e8adfe8108044a4478b",
+    "observed_status_before_inventory": "clean_except_authorized_untracked_plan",
+    "authorized_untracked": "docs/plans/issue-97-source-refactor.md",
+    "source_movement_performed": false,
+    "responsibility_extraction_performed": false
+  },
+  "gitnexus": {
+    "repository": "repo-pattern",
+    "cycle_check": { "status": "clean", "cycleCount": 0 },
+    "impact": [
+      { "symbol": "setupProject", "uid": "Function:scripts/lib/setup.mjs:setupProject", "direction": "upstream", "risk": "HIGH", "direct": 3, "impacted": 6, "processes": 3, "modules": 2, "direct_callers": ["scripts/repo-pattern.mjs:main", "scripts/self-check/mcp-servers.mjs:runMcpServerChecks", "scripts/self-check/provision-and-pipelines.mjs:runProvisionAndPipelineChecks"] },
+      { "symbol": "provisionProject", "uid": "Function:scripts/lib/provision.mjs:provisionProject", "direction": "upstream", "risk": "CRITICAL", "direct": 11, "impacted": 16, "processes": 8, "modules": 2, "direct_callers": ["scripts/lib/setup.mjs:setupProject", "scripts/self-check/bypass-permissions.mjs:runBypassPermissionChecks", "scripts/self-check/credentials.mjs:runCredentialChecks", "scripts/self-check/filesystem.mjs:runFilesystemChecks", "scripts/self-check/generated-attribution-hook.mjs:runGeneratedAttributionHookChecks", "scripts/self-check/gstack-doctor.mjs:runGstackDoctorChecks", "scripts/self-check/gstack-provision.mjs:runGstackProvisionChecks", "scripts/self-check/herdr.mjs:runHerdrChecks", "scripts/self-check/interactive-provision.mjs:runInteractiveProvisionChecks", "scripts/self-check/mcp-and-settings.mjs:runMcpAndSettingsChecks", "scripts/self-check/provision-and-pipelines.mjs:runProvisionAndPipelineChecks"] },
+      { "symbol": "main", "uid": "Function:scripts/repo-pattern.mjs:main", "direction": "upstream", "risk": "LOW", "direct": 1, "impacted": 1, "processes": 0, "modules": 0 },
+      { "symbol": "parseArgs", "uid": "Function:scripts/repo-pattern.mjs:parseArgs", "direction": "upstream", "risk": "LOW", "direct": 1, "impacted": 2, "processes": 1, "modules": 1 },
+      { "symbol": "checkEccCoverage", "uid": "Function:scripts/check-ecc-coverage.mjs:checkEccCoverage", "direction": "upstream", "risk": "LOW", "direct": 3, "impacted": 6, "processes": 0, "modules": 1 }
+    ],
+    "warnings": ["setupProject is HIGH risk; report before edits", "provisionProject is CRITICAL risk; report before edits"],
+    "remaining_symbol_impacts": "not-yet-run: no source symbol will be edited in Phase 0; rerun exact impact immediately before each later phase edit for every selected symbol"
+  },
+  "inventory": {
+    "runtime_files": [
+      "scripts/repo-pattern.mjs",
+      "scripts/lib/audit.mjs", "scripts/lib/bypass-permissions.mjs", "scripts/lib/cleanup.mjs", "scripts/lib/doctor.mjs", "scripts/lib/ecc-agent-manifest.mjs", "scripts/lib/ecc.mjs", "scripts/lib/ecc-rule-registry.mjs", "scripts/lib/ecc-rules.mjs", "scripts/lib/ecc-source.mjs", "scripts/lib/ecc-sync-transaction.mjs", "scripts/lib/fs-utils.mjs", "scripts/lib/git-progress.mjs", "scripts/lib/gstack-documents.mjs", "scripts/lib/gstack.mjs", "scripts/lib/gstack-runtime.mjs", "scripts/lib/gstack-upstream.mjs", "scripts/lib/herdr.mjs", "scripts/lib/mcp.mjs", "scripts/lib/progress.mjs", "scripts/lib/project-detect.mjs", "scripts/lib/prompt.mjs", "scripts/lib/provision.mjs", "scripts/lib/rules.mjs", "scripts/lib/setup.mjs", "scripts/lib/setup-wizard.mjs", "scripts/lib/skills.mjs"
+    ],
+    "test_orchestration_files": ["scripts/self-check.mjs", "scripts/self-check.test.mjs"],
+    "test_files": [
+      "scripts/self-check/bypass-permissions-interactive.mjs", "scripts/self-check/bypass-permissions.mjs", "scripts/self-check/cli-contract.mjs", "scripts/self-check/coverage-cli.mjs", "scripts/self-check/credentials.mjs", "scripts/self-check/doctor-output.mjs", "scripts/self-check/ecc-rules-and-manifest.mjs", "scripts/self-check/ecc-source-and-transaction.mjs", "scripts/self-check/effort-picker.mjs", "scripts/self-check/filesystem.mjs", "scripts/self-check/fixtures.mjs", "scripts/self-check/generated-attribution-hook.mjs", "scripts/self-check/git-progress.mjs", "scripts/self-check/gstack-diagnostics.mjs", "scripts/self-check/gstack-doctor.mjs", "scripts/self-check/gstack-document-lifecycle.mjs", "scripts/self-check/gstack-documents.mjs", "scripts/self-check/gstack-pinned-safety.mjs", "scripts/self-check/gstack-provision.mjs", "scripts/self-check/gstack-rollback.mjs", "scripts/self-check/gstack-runtime.mjs", "scripts/self-check/gstack-safety.mjs", "scripts/self-check/gstack-setup-status.mjs", "scripts/self-check/gstack-upstream-integrity.mjs", "scripts/self-check/gstack-upstream-setup.mjs", "scripts/self-check/gstack.mjs", "scripts/self-check/herdr.mjs", "scripts/self-check/interactive-provision.mjs", "scripts/self-check/mcp-and-settings.mjs", "scripts/self-check/mcp-input-fields.mjs", "scripts/self-check/mcp-servers.mjs", "scripts/self-check/progress.mjs", "scripts/self-check/provision-and-pipelines.mjs", "scripts/self-check/quality-gates.mjs", "scripts/self-check/setup-wizard.mjs"
+    ],
+    "tooling_files": ["scripts/check-diff-coverage.mjs", "scripts/check-ecc-coverage.mjs", "scripts/check-module-limits.mjs", "scripts/measure-test-duration.mjs", "scripts/test-coverage.mjs"],
+    "vendor_files": ["scripts/vendor/herdr/LICENSE", "scripts/vendor/herdr/herdr-agent-state.sh"],
+    "fixture_files": ["scripts/self-check/fixtures/gstack-safety/bin/gstack-paths", "scripts/self-check/fixtures/gstack-safety/careful/bin/check-careful.sh", "scripts/self-check/fixtures/gstack-safety/careful/bin/hook-extract.sh", "scripts/self-check/fixtures/gstack-safety/careful/SKILL.md", "scripts/self-check/fixtures/gstack-safety/freeze/bin/check-freeze.sh", "scripts/self-check/fixtures/gstack-safety/freeze/SKILL.md", "scripts/self-check/fixtures/gstack-safety/guard/SKILL.md", "scripts/self-check/fixtures/gstack-safety/LICENSE", "scripts/self-check/fixtures/gstack-safety/README.md"],
+    "documentation_files": ["README.md", "docs/gstack-managed-documents.md", "docs/plans/gstack-upstream-local-setup.md", "docs/plans/issue-97-source-refactor.md"],
+    "package_asset_files": [".claude.example/CLAUDE.md", ".claude.example/hooks/remove-generated-attribution.mjs", ".claude.example/settings.example.json", ".claude.example/settings.local.example.json", ".repo-pattern.example.json", "mcp/servers/chrome-devtools.json", "mcp/servers/context7.json", "mcp/servers/gitnexus.json", "mcp/servers/playwright.json", "mcp/servers/shadcn.json", "mcp/servers/shadcn-studio.json", "mcp/servers/tavily.json", "docs/", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md"],
+    "old_to_new_map": {
+      "scripts/repo-pattern.mjs": ["bin/repo-pattern.mjs", "src/cli.mjs"],
+      "scripts/lib/setup.mjs": ["src/setup/setup.mjs", "src/ui/setup-interaction.mjs"],
+      "scripts/lib/provision.mjs": ["src/setup/provision.mjs", "src/setup/settings.mjs"],
+      "scripts/lib/bypass-permissions.mjs": ["src/setup/bypass-permissions.mjs"],
+      "scripts/lib/ecc*.mjs": ["src/ecc/"],
+      "scripts/lib/rules.mjs": ["src/ecc/rules.mjs"],
+      "scripts/lib/gstack*.mjs": ["src/gstack/"],
+      "scripts/lib/prompt.mjs": ["src/ui/prompt.mjs"],
+      "scripts/lib/progress.mjs": ["src/ui/progress.mjs"],
+      "scripts/lib/setup-wizard.mjs": ["src/ui/setup-wizard.mjs"],
+      "scripts/lib/fs-utils.mjs": ["src/shared/fs-utils.mjs"],
+      "scripts/lib/git-progress.mjs": ["src/shared/git-progress.mjs"],
+      "scripts/lib/{audit,cleanup,doctor,herdr,mcp,project-detect,skills}.mjs": ["src/<same-basename>.mjs"],
+      "scripts/vendor/herdr/": ["src/vendor/herdr/"],
+      "scripts/self-check/": ["test/{cli,setup,ecc,gstack,ui,shared}/ plus test/fixtures/"],
+      "scripts/check-ecc-coverage.mjs": ["scripts/check-coverage.mjs"],
+      "scripts/check-diff-coverage.mjs": ["scripts/check-diff-coverage.mjs"],
+      "scripts/check-module-limits.mjs": ["scripts/check-module-limits.mjs"],
+      "scripts/measure-test-duration.mjs": ["scripts/measure-test-duration.mjs"]
+    },
+    "map_status": "proposed destinations from approved plan; exact per-test destination and remaining module map not yet finalized"
+  },
+  "paths_and_importers": {
+    "static_import_root": "scripts/repo-pattern.mjs imports package.json and scripts/lib modules; scripts/self-check.mjs imports named self-check modules; test wrapper imports self-check orchestrator",
+    "dynamic_imports": ["scripts/self-check.mjs:24 imports scripts/self-check/herdr.mjs dynamically", "scripts/self-check.mjs:32-34 dynamically imports gstack upstream/integrity/documents modules"],
+    "import_meta_url": ["scripts/repo-pattern.mjs:15", "scripts/check-diff-coverage.mjs:7,82", "scripts/check-module-limits.mjs:5,40", "scripts/self-check/doctor-output.mjs:10", "scripts/self-check/cli-contract.mjs:5-7", "scripts/self-check/fixtures.mjs: imports fileURLToPath"],
+    "subprocesses": ["scripts/test-coverage.mjs:spawn", "scripts/measure-test-duration.mjs:spawnSync", "scripts/check-diff-coverage.mjs:execFileSync", "scripts/self-check/cli-contract.mjs:spawnSync", "scripts/self-check/doctor-output.mjs:spawnSync", "scripts/self-check/filesystem.mjs:spawnSync", "scripts/self-check/fixtures.mjs:spawnSync bun", "scripts/lib/gstack-runtime.mjs:runCommand", "scripts/lib/gstack-upstream.mjs:runCommand", "scripts/lib/git-progress.mjs:spawn"],
+    "active_old_path_references": ["docs/repo-pattern/setup-guide.md references scripts/repo-pattern.mjs in command examples; classification/update required in later phase"],
+    "path_resolution_risk": "package root currently derives from scripts/repo-pattern.mjs import.meta.url; package allowlist and moved asset roots require characterization"
+  },
+  "modes": {"scripts/repo-pattern.mjs": "0755", "scripts/vendor/herdr/herdr-agent-state.sh": "0664", "scripts/vendor/herdr/LICENSE": "0664", "fixture_executable_modes": "not individually captured in this inventory"},
+  "assertions_and_failures": {
+    "method": "node source scan over 35 scripts/self-check/*.mjs excluding fixtures directory; assertionCalls counts regex \\bassert(?:\\.[A-Za-z]+)?\\s*\\(; failurePatternCalls counts throws/rejects forms",
+    "exact_totals": {"self_check_modules": 35, "assertionCalls": 1213, "failurePatternCalls": 117},
+    "per_module_counts": "captured in Phase 0 command output; not duplicated here to avoid a second source of truth",
+    "scenario_count": "not established: pattern-call totals are not equivalent to behavioral failure-scenario count",
+    "old_to_new_mapping": "not-yet-mapped for every old check block; required before Phase 4; no placeholder tests created",
+    "known_import_side_effect": "scripts/self-check/gstack-documents.mjs creates a fixture at module load per approved plan/spec; lifecycle migration required"
+  },
+  "baseline_evidence": {
+    "evidence_root": ".repo-pattern-runtime/state-root/projects/NegiKirin-repo-pattern/phase-0-issue-97",
+    "commands": [
+      {"scenario":"help","command":"node scripts/repo-pattern.mjs --help","exit":0,"stdout":"help.stdout","stderr":"help.stderr"},
+      {"scenario":"version","command":"node scripts/repo-pattern.mjs --version","exit":0,"stdout":"version.stdout","stderr":"version.stderr"},
+      {"scenario":"invalid argument","command":"node scripts/repo-pattern.mjs unknown-command","exit":2,"stdout":"invalid.stdout","stderr":"invalid.stderr"},
+      {"scenario":"noninteractive dry-run / none","command":"node scripts/repo-pattern.mjs setup --target <temporary> --setup-pipeline none --yes --dry-run","exit":0,"stdout":"dry-run.stdout","stderr":"dry-run.stderr","workspace_tree":"dry-run.tree","target_record":"dry-run.target"},
+      {"scenario":"module limits","command":"npm run check:module-limits","exit":0,"stdout":"module-limits.stdout","stderr":"module-limits.stderr"}
+    ],
+    "required_not_captured": ["interactive selection", "cancellation", "retry", "force", "migrate", "controlled provision failures", "generated workspace content/modes/links and recovery results"],
+    "parity": "not claimed; no refactored implementation exists",
+    "live_upstream": "not claimed; fixtures do not prove live ECC/gstack availability"
+  },
+  "coverage_command_graph": {
+    "public": "npm run test:coverage -> node scripts/test-coverage.mjs",
+    "current_children": ["scripts/self-check.mjs with NODE_V8_COVERAGE", "scripts/check-ecc-coverage.mjs", "scripts/check-diff-coverage.mjs <ref>"],
+    "required_target": "scripts/check-coverage.mjs over all src/ and bin/ runtime files with line/function/branch >= 80%",
+    "status": "current ECC-only checker and planned whole-runtime checker differ; resolution pending later phase"
+  },
+  "conventions": {
+    "test_runner_current": "custom sequential orchestration through scripts/self-check.mjs; scripts/self-check.test.mjs is a side-effect wrapper",
+    "required_future_runner": "node:test and node:assert/strict",
+    "test_card_current": "observed comments use protects=...; fails_when=...; why_new=...; seam=... in some gstack tests; required spec form uses protects=...; fails_when=...; no_claim=...",
+    "test_card_resolution": "not finalized; inspect existing cards and choose least-invasive test-local convention before Phase 1/4 edits"
+  },
+  "bun": {"documented_minimum":"1.4.2+", "runtime_validation":"scripts/lib/gstack.mjs requires Bun v1.4.2+", "workflow_pin":"not inspected in this retry; plan records current release workflow as 1.3.14 and requires correction/verification later", "policy":"do not change product requirement"},
+  "unresolved_assumptions": [
+    "Exact destination for every self-check module and fixture remains to be finalized.",
+    "Interactive, cancellation/retry, force/migrate, controlled failure, and generated-workspace baseline evidence remains incomplete.",
+    "Exact behavioral failure-scenario count is not derivable from assertion/pattern counts; old-check block inventory is not-yet-mapped.",
+    "Coverage checker consolidation/name and changed-line ingestion remain unresolved.",
+    "Documentation existence is observed only for README/docs; CONTRIBUTING.md and docs/architecture.md were not found in the inspected shallow inventory.",
+    "Fixture executable modes and full generated workspace file metadata were not captured.",
+    "No source movement or responsibility extraction is authorized by T1 evidence task."
+  ],
+  "validation": {
+    "schema_checks": ["valid JSON", "required top-level keys present", "source_movement_performed=false", "baseline evidence paths recorded"],
+    "artifact_path": "docs/phase-0-issue-97-inventory.json",
+    "diff_scope": "new authorized inventory artifact plus pre-existing untracked plan only"
+  }
+}

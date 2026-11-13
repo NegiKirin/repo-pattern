@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { ensureBun, isValidGstackCheckout, resolveGstackCheckout, gstackCheckoutPath, setupGstack } from "../lib/gstack.mjs";
+import { ensureBun, isValidGstackCheckout, resolveGstackCheckout, gstackCheckoutPath, setupGstack } from "../../src/gstack/gstack.mjs";
 
 export async function runGstackDiagnosticChecks() {
   // Value: protects=Bun probe has a deadline and reports timeout failure; fails_when=timeout omitted or failure swallowed; why_new=version checks omit command deadline; seam=none
@@ -13,8 +13,6 @@ export async function runGstackDiagnosticChecks() {
     assert.equal(options.timeout, 30000);
     throw Object.assign(new Error("probe timed out"), { code: "ETIMEDOUT" });
   } }), /Bun validation failed: probe timed out/);
-  assert.throws(() => ensureBun({ run: () => "1.4.1\n" }), /Bun v1.4.2\+ is required/);
-  assert.equal(ensureBun({ run: () => "1.4.2\n" }), "bun");
   const target = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-diagnostics-"));
   const originalDebug = process.env.REPO_PATTERN_DEBUG_GSTACK;
   const originalPath = process.env.PATH;

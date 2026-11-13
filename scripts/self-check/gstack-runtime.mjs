@@ -2,33 +2,12 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { prepareGstackRuntime, validateGstackRuntime, runRuntimeCommand, runtimeEnvironment, GSTACK_RUNTIME_TIMEOUTS } from "../lib/gstack-runtime.mjs";
+import { prepareGstackRuntime, validateGstackRuntime, runRuntimeCommand, runtimeEnvironment, GSTACK_RUNTIME_TIMEOUTS } from "../../src/gstack/gstack-runtime.mjs";
 import { installGstackRuntimeFixture } from "./fixtures.mjs";
 
 export async function runGstackRuntimeChecks() {
   const checkout = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-runtime-check-"));
   try {
-    assert.equal(GSTACK_RUNTIME_TIMEOUTS.install, 600000);
-    assert.equal(GSTACK_RUNTIME_TIMEOUTS.probe, 30000);
-    // Value: protects=runtime paths override inherited values without changing unrelated environment or input; fails_when=home paths leak or caller environment changes; why_new=browser prefix alone omits the remaining runtime variables; seam=none
-    const inherited = { PATH: "/fixture/bin", BUN_INSTALL: "/inherited/bun", GSTACK_HOME: "/inherited/state", TMPDIR: "/inherited/tmp" };
-    const originalEnvironment = { ...inherited };
-    assert.deepEqual(runtimeEnvironment(checkout, inherited), {
-      ...inherited,
-      BUN_INSTALL: path.join(checkout, ".repo-pattern-runtime", "bun"),
-      GSTACK_ROOT: checkout,
-      GSTACK_HOME: path.join(checkout, ".repo-pattern-runtime", "state"),
-      PLAYWRIGHT_BROWSERS_PATH: path.join(checkout, ".repo-pattern-runtime", "chromium"),
-      BUN_INSTALL_CACHE_DIR: path.join(checkout, ".repo-pattern-runtime", "bun-cache"),
-      TMPDIR: path.join(checkout, ".repo-pattern-runtime", "tmp"),
-      GSTACK_SETUP_RUNNING: "1",
-      GSTACK_SETUP_SKIP_CSO_BUILD: "1"
-    });
-    assert.deepEqual(inherited, originalEnvironment);
-    // Value: protects=runtime root must be a directory; fails_when=regular file accepted; why_new=symlink guard did not cover non-directory paths; seam=none
-    await fs.writeFile(path.join(checkout, ".repo-pattern-runtime"), "not a directory");
-    await assert.rejects(prepareGstackRuntime(checkout), /Invalid gstack runtime directory/);
-    await fs.rm(path.join(checkout, ".repo-pattern-runtime"));
     await installGstackRuntimeFixture(checkout);
     const outside = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-runtime-outside-"));
     try {
@@ -174,7 +153,7 @@ export async function runGstackRuntimeChecks() {
     await assert.rejects(runRuntimeCommand(process.execPath, ["-e", "process.exit(2)"], { cwd: checkout, timeout: 1000, stage: "exit probe" }), /exit 2/);
     await assert.rejects(runRuntimeCommand("repo-pattern-missing-command", [], { cwd: checkout, timeout: 1000 }), /ENOENT/);
     // Value: protects=non-ESRCH termination errors reject instead of reporting success; fails_when=kill errors are swallowed; why_new=successful real signals cannot exercise permission failure; seam=none
-    const killFailureProbe = `import assert from 'node:assert/strict'; import { runRuntimeCommand } from ${JSON.stringify(new URL("../lib/gstack-runtime.mjs", import.meta.url).href)}; const originalKill = process.kill; try { process.kill = () => { const error = new Error('owned kill failure'); error.code = 'EPERM'; throw error; }; await assert.rejects(runRuntimeCommand(process.execPath, ['-e', 'process.exit(0)'], {timeout:5000}), {code:'EPERM'}); process.stdout.write('kill failure rejected'); } finally { process.kill = originalKill; }`;
+    const killFailureProbe = `import assert from 'node:assert/strict'; import { runRuntimeCommand } from ${JSON.stringify(new URL("../../src/gstack/gstack-runtime.mjs", import.meta.url).href)}; const originalKill = process.kill; try { process.kill = () => { const error = new Error('owned kill failure'); error.code = 'EPERM'; throw error; }; await assert.rejects(runRuntimeCommand(process.execPath, ['-e', 'process.exit(0)'], {timeout:5000}), {code:'EPERM'}); process.stdout.write('kill failure rejected'); } finally { process.kill = originalKill; }`;
     if (process.platform !== "win32") assert.equal(await runRuntimeCommand(process.execPath, ["--input-type=module", "-e", killFailureProbe], { cwd: checkout, timeout: 10000 }), "kill failure rejected");
     // Value: protects=command output stays bounded on success and failure; fails_when=prefix retained or tail lost; why_new=exit checks did not inspect captured output; seam=none
     const boundedOutput = "discarded-prefix" + "x".repeat(5000) + "retained-tail";

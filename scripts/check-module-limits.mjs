@@ -16,15 +16,15 @@ async function listModules(directory) {
 
 function limitFor(file, projectRoot) {
   const relative = path.relative(projectRoot, file).split(path.sep).join("/");
-  if (relative === "scripts/lib/rules.mjs") return 300;
-  if (relative === "scripts/lib/ecc-sync-transaction.mjs") return 600;
-  if (relative.startsWith("scripts/lib/ecc-") && relative.endsWith(".mjs")) return 300;
+  if (relative === "src/ecc/rules.mjs") return 300;
+  if (relative === "src/ecc/ecc-sync-transaction.mjs") return 600;
+  if (relative.startsWith("src/ecc/ecc-") && relative.endsWith(".mjs")) return 300;
   if (relative === "scripts/self-check.mjs" || relative.startsWith("scripts/self-check/")) return 400;
   return null;
 }
 
 export async function checkModuleLimits({ projectRoot = root } = {}) {
-  const candidates = [path.join(projectRoot, "scripts", "lib", "rules.mjs"), ...await listModules(path.join(projectRoot, "scripts", "lib")), path.join(projectRoot, "scripts", "self-check.mjs"), ...await listModules(path.join(projectRoot, "scripts", "self-check"))];
+  const candidates = [path.join(projectRoot, "src", "ecc", "rules.mjs"), ...await listModules(path.join(projectRoot, "src", "ecc")), path.join(projectRoot, "scripts", "self-check.mjs"), ...await listModules(path.join(projectRoot, "scripts", "self-check"))];
   const failures = [];
   for (const file of new Set(candidates)) {
     const relative = path.relative(projectRoot, file).split(path.sep).join("/");

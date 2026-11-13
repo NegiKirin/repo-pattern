@@ -44,7 +44,7 @@ export async function runInteractiveSetupCase({ root, name, settings, choice, ex
     process.env.HOME = home; process.env.PATH = home + "/bin:" + process.env.PATH;
     delete process.env.CI; delete process.env.CONTINUOUS_INTEGRATION;
     for (const key of Object.keys(process.env)) if (key.startsWith("CI_")) delete process.env[key];
-    const { setupProject } = await import(pathToFileURL(repo + "/scripts/lib/setup.mjs"));
+    const { setupProject } = await import(pathToFileURL(repo + "/src/setup/setup.mjs"));
     let display = "";
     output.write = (chunk, ...args) => { display = (display + chunk.toString()).slice(-12000); return nativeWrite(chunk, ...args); };
     const handled = new Set();

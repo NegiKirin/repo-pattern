@@ -68,10 +68,10 @@ export function regressionChecks() {
   assert.equal(measureFile("function f(){\n x();\n}", new Set([2]), []).lines[0].covered, false, "missing source coverage is uncovered");
   assert.equal(missingSourceCoverage("file:///source.mjs", []), true, "missing V8 source reports are detected");
   assert.equal(missingSourceCoverage("file:///source.mjs", ["file:///source.mjs"]), false, "present V8 source reports are accepted");
-  assert.equal(["scripts/lib/new.mjs", "scripts/self-check/new.mjs"].filter((file) => /^scripts\/lib\/.*\.m?js$/.test(file)).length, 1, "only untracked production lib sources enter scope");
+  assert.equal(["src/new.mjs", "scripts/self-check/new.mjs"].filter((file) => /^src\/.*\.m?js$/.test(file)).length, 1, "only untracked production sources enter scope");
   assert.equal(measureFile("function f(){\n x();\n}", null, [[{ ranges: [{ startOffset: 0, endOffset: 28, count: 1 }] }, { ranges: [{ startOffset: 0, endOffset: 28, count: 1 }] }]]).lines.filter((line) => line.covered).length, 2, "duplicate reports do not duplicate source lines");
   assert.equal(measureFile("function f(){\n x();\n}", new Set([2]), [[{ isBlockCoverage: true, ranges: [{ startOffset: 0, endOffset: 28, count: 1 }, { startOffset: 14, endOffset: 20, count: 0 }] }]]).branches[0], false, "fn.isBlockCoverage identifies V8 block ranges");
-  assert.equal(["scripts/lib/new.mjs"].filter((file) => /^scripts\/lib\/.*\.m?js$/.test(file)).length, 1, "new production files are in scope");
+  assert.equal(["src/new.mjs"].filter((file) => /^src\/.*\.m?js$/.test(file)).length, 1, "new production files are in scope");
   assert.equal(coveragePasses({ lines: [{ covered: false }] }), false, "below-threshold line coverage fails");
 }
 
@@ -88,7 +88,7 @@ if (directExecution) {
   const changed = new Map();
   const status = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: root, encoding: "utf8" });
   const untracked = status.split(/\r?\n/).filter((line) => line.startsWith("?? ")).map((line) => line.slice(3).replaceAll("\\", "/"));
-  const diff = execFileSync("git", ["diff", "--no-ext-diff", "--unified=0", base, "--", "scripts/lib"], { cwd: root, encoding: "utf8" });
+  const diff = execFileSync("git", ["diff", "--no-ext-diff", "--unified=0", base, "--", "src", "bin"], { cwd: root, encoding: "utf8" });
   let current;
   for (const line of diff.split(/\r?\n/)) {
     if (line.startsWith("+++ b/")) {
@@ -99,7 +99,7 @@ if (directExecution) {
       if (match) for (let n = Number(match[1]), end = n + Number(match[2] ?? 1); n < end; n++) changed.get(current).add(n);
     }
   }
-  for (const file of untracked) if (/^scripts\/lib\/.*\.m?js$/.test(file)) changed.set(file, null);
+  for (const file of untracked) if (/^(?:src|bin)\/.*\.m?js$/.test(file)) changed.set(file, null);
   const reportsByFile = new Map();
   for (const report of await fs.readdir(coverageDirectory)) {
     const data = JSON.parse(await fs.readFile(path.join(coverageDirectory, report), "utf8"));
@@ -115,7 +115,7 @@ if (directExecution) {
   }
   const result = [];
   for (const [file, changedLines] of changed) {
-    if (!/^scripts\/lib\/.*\.m?js$/.test(file)) continue;
+    if (!/^(?:src|bin)\/.*\.m?js$/.test(file)) continue;
     const source = await fs.readFile(path.join(root, file), "utf8");
     const reports = reportsByFile.get(file) || [];
     if (!reports.length) throw new Error(`Missing V8 coverage report for changed production source ${file}.`);
@@ -131,6 +131,6 @@ if (directExecution) {
   const allBranches = result.flatMap((entry) => entry.branches);
   const covered = allLines.filter((line) => line.covered).length;
   const branchesCovered = allBranches.filter(Boolean).length;
-  console.log(`scripts/lib aggregate: first-token changed source lines ${covered}/${allLines.length} (${allLines.length ? (100 * covered / allLines.length).toFixed(1) : "n/a"}%); V8 block ranges ${branchesCovered}/${allBranches.length} (${allBranches.length ? (100 * branchesCovered / allBranches.length).toFixed(1) : "n/a"}%). V8 block ranges are not syntactic branch coverage.`);
+  console.log(`src aggregate: first-token changed source lines ${covered}/${allLines.length} (${allLines.length ? (100 * covered / allLines.length).toFixed(1) : "n/a"}%); V8 block ranges ${branchesCovered}/${allBranches.length} (${allBranches.length ? (100 * branchesCovered / allBranches.length).toFixed(1) : "n/a"}%). V8 block ranges are not syntactic branch coverage.`);
   if (result.some((entry) => !coveragePasses(entry))) process.exitCode = 1;
 }

@@ -1,0 +1,49 @@
+repo-pattern — minimal Claude Code setup
+
+Usage:
+  repo-pattern help
+  repo-pattern version  # also: -V, --version
+  repo-pattern setup
+  repo-pattern setup --mcp context7 --mcp tavily --mcp gitnexus --setup-pipeline ecc --yes
+  repo-pattern setup --mcp context7 --mcp tavily --setup-pipeline gstack --yes
+  repo-pattern setup --mcp context7 --mcp tavily --setup-pipeline gstack --with-plan-tune-hooks --yes
+  repo-pattern setup --mcp context7 --mcp tavily --setup-pipeline both --yes
+  repo-pattern setup --mcp context7 --mcp tavily --setup-pipeline none --yes
+  repo-pattern setup --mcp context7 --mcp tavily --migrate --yes
+  repo-pattern setup --with-skill taste --yes
+  repo-pattern setup --with-skill ui-ux-pro-max --yes  # requires Python 3.x
+  repo-pattern setup --with-skill nextjs-pattern --yes
+  repo-pattern setup --with-skills nextjs-pattern,fastapi-pattern --yes
+
+Advanced:
+  repo-pattern mcp --mcp context7 --mcp tavily
+  repo-pattern rules
+  repo-pattern audit
+  repo-pattern doctor [--target <path>] [--verbose]
+  repo-pattern upgrade-gstack
+  repo-pattern cleanup
+
+Options:
+  --target <path>                  Target project path. Default: .
+  --mcp <name>                     Enable an MCP server. Repeat for multiple servers.
+                                  Defaults to context7, tavily, gitnexus with --yes.
+  --setup-pipeline <ecc|gstack|both|none>
+                                  Setup pipeline. Default: ecc
+                                  ecc: project-scoped ECC
+                                  gstack: project-local at .claude/skills/gstack
+                                  both: project-scoped ECC + project-local gstack
+                                  none: base project metadata only
+  --with-plan-tune-hooks          Add gstack PreToolUse/PostToolUse hooks to .claude/settings.json
+                                  Requires --setup-pipeline gstack or both. Default: not installed
+
+Setup UI:
+  setup uses ↑/↓ to move, Space to toggle MCP/rules choices, Enter to confirm, Esc/Ctrl+C to cancel
+  --verbose                     Show successful doctor checks
+  --dry-run      Print actions without writing
+  --migrate      Take over legacy/local Claude runtime surfaces
+  --force        Reapply setup over repo-pattern-managed state
+  --with-rules               Install auto-detected project-local ECC rules on any pipeline
+                             ECC/both install rules by default; gstack/none opt in with this flag
+  --with-skill <name>        Opt in to external skills/plugins (taste, document-specialist, ui-ux-pro-max, impeccable, huashu-design, nextjs-pattern, fastapi-pattern, herdr)
+  --with-skills <a,b>        Comma-separated optional skills
+  --yes                      Run setup non-interactively

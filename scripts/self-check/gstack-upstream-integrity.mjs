@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { manifestForPaths, verifyUpstreamManifest, runUpstreamLocalSetup, GSTACK_UPSTREAM_OWNER } from "../lib/gstack-upstream.mjs";
+import { manifestForPaths, verifyUpstreamManifest, runUpstreamLocalSetup, GSTACK_UPSTREAM_OWNER } from "../../src/gstack/gstack-upstream.mjs";
 
 const target = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-upstream-integrity-"));
 try {

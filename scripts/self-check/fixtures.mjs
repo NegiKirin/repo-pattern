@@ -6,6 +6,12 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const gstackSafetyFixture = path.join(repoRoot, "self-check", "fixtures", "gstack-safety");
 
+async function writeNodeScript(file, source) {
+  const quote = (value) => `'${value.replaceAll("'", "'\\\"'\\\"'")}'`;
+  await fs.writeFile(`${file}.mjs`, source);
+  await fs.writeFile(file, `#!/bin/sh\nDIR=\${0%/*}\n[ "$DIR" = "$0" ] && DIR=.\nexec ${quote(process.execPath)} "$DIR/${path.basename(`${file}.mjs`)}" "$@"\n`, { mode: 0o755 });
+}
+
 export async function installGstackSafetyFixture(checkout) {
   for (const entry of ["careful", "freeze", "guard", "bin/gstack-paths"]) {
     const source = path.join(gstackSafetyFixture, entry);
@@ -19,19 +25,20 @@ export async function installGstackSafetyFixture(checkout) {
 
 export async function installGstackRuntimeFixture(checkout) {
   await fs.writeFile(path.join(checkout, "package.json"), JSON.stringify({ type: "module", scripts: { build: "bun fixture-build.mjs" } }));
-  await fs.writeFile(path.join(checkout, "fixture-build.mjs"), `import fs from 'node:fs/promises'; import path from 'node:path'; for(const file of ['browse/dist/browse','browse/dist/find-browse','design/dist/design','make-pdf/dist/pdf']) { await fs.mkdir(path.dirname(file),{recursive:true}); await fs.writeFile(file,'#!/bin/sh\\nexit 0\\n',{mode:0o755}); } await fs.mkdir('node_modules/playwright',{recursive:true}); await fs.writeFile('node_modules/playwright/package.json',JSON.stringify({type:'module',exports:'./index.mjs'})); await fs.writeFile('node_modules/playwright/index.mjs',"export const chromium={launch:async()=>({newPage:async()=>({goto:async()=>{},textContent:async()=> 'repo-pattern-ready'}),close:async()=>{}})}"); await fs.writeFile('node_modules/playwright/cli.js','');`);
+  const buildFile = path.join(checkout, "fixture-build.mjs");
+  await fs.writeFile(buildFile, `import fs from 'node:fs/promises'; import path from 'node:path'; const node = ${JSON.stringify(process.execPath)}; const quote = (value) => "'" + value.replaceAll("'", "'\\\"'\\\"'") + "'"; for(const file of ['browse/dist/browse','browse/dist/find-browse','design/dist/design','make-pdf/dist/pdf']) { const implementation = file + '.mjs'; await fs.mkdir(path.dirname(file),{recursive:true}); await fs.writeFile(implementation, 'process.exit(0);\\n'); await fs.writeFile(file, '#!/bin/sh\\nDIR=\${0%/*}\\n[ "$DIR" = "$0" ] && DIR=.\\nexec ' + quote(node) + ' "$DIR/' + path.basename(implementation) + '" "$@"\\n',{mode:0o755}); } await fs.mkdir('node_modules/playwright',{recursive:true}); await fs.writeFile('node_modules/playwright/package.json',JSON.stringify({type:'module',exports:'./index.mjs'})); await fs.writeFile('node_modules/playwright/index.mjs',"export const chromium={launch:async()=>({newPage:async()=>({goto:async()=>{},textContent:async()=> 'repo-pattern-ready'}),close:async()=>{}})}"); await fs.writeFile('node_modules/playwright/cli.js','');`);
+  const build = spawnSync(process.execPath, [buildFile], { cwd: checkout, encoding: "utf8" });
+  if (build.status !== 0) throw new Error(build.stderr || "Cannot build gstack runtime fixture");
 }
 
 export async function installGstackUpstreamSetupFixture(checkout, { failOnHookSymlink = false, failAfterPublish = false } = {}) {
   await fs.mkdir(path.join(checkout, "bin"), { recursive: true });
-  await fs.writeFile(path.join(checkout, "setup"), `#!/usr/bin/env node
-import fs from "node:fs/promises";
+  await writeNodeScript(path.join(checkout, "setup"), `import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-
 const source = path.dirname(fileURLToPath(import.meta.url));
-const build = spawnSync("bun", ["run", "build"], { cwd: source, stdio: "inherit" });
+const build = spawnSync(process.execPath, [path.join(source, "fixture-build.mjs")], { cwd: source, stdio: "inherit" });
 if (build.status !== 0) process.exit(build.status || 1);
 const args = process.argv.slice(2);
 if (!args.includes("--local")) process.exit(8);
@@ -64,19 +71,17 @@ if (await fs.access(rootSkill).then(() => true, () => false)) await fs.copyFile(
 await fs.mkdir(path.join(target, ".repo-pattern-runtime", "renders"), { recursive: true });
 await fs.writeFile(path.join(target, ".repo-pattern-runtime", "renders", "upstream-render.txt"), "upstream local render\\n");
 if (${failAfterPublish ? "true" : "false"}) process.exit(9);
-`, { mode: 0o755 });
+`);
 }
 
 export async function installGstackRenderedUpstreamSetupFixture(checkout) {
   await installGstackUpstreamSetupFixture(checkout);
-  await fs.writeFile(path.join(checkout, "setup"), `#!/usr/bin/env node
-import fs from "node:fs/promises";
+  await writeNodeScript(path.join(checkout, "setup"), `import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-
 const source = path.dirname(fileURLToPath(import.meta.url));
-const build = spawnSync("bun", ["run", "build"], { cwd: source, stdio: "inherit" });
+const build = spawnSync(process.execPath, [path.join(source, "fixture-build.mjs")], { cwd: source, stdio: "inherit" });
 if (build.status !== 0) process.exit(build.status || 1);
 const args = process.argv.slice(2);
 if (!args.includes("--local")) process.exit(8);
@@ -105,7 +110,7 @@ const rootSkill = path.join(source, "SKILL.md");
 if (await fs.access(rootSkill).then(() => true, () => false)) await fs.symlink(rootSkill, path.join(skillsRoot, "_gstack-command", "SKILL.md"));
 await fs.mkdir(path.join(renderRoot, "autoplan", "hooks"), { recursive: true });
 await fs.writeFile(path.join(renderRoot, "autoplan", "hooks", "published-hook"), path.join(source, "hosts", "claude", "hooks", "question-log-hook") + "\\n");
-`, { mode: 0o755 });
+`);
 }
 
 export function commitGstackFixture(checkout) {

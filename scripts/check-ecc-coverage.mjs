@@ -10,7 +10,7 @@ function sourcePath(url) {
 
 function isScopedFile(file, projectRoot) {
   const relative = path.relative(projectRoot, file).split(path.sep).join("/");
-  return relative === "scripts/lib/rules.mjs" || /^scripts\/lib\/ecc-.*\.mjs$/.test(relative);
+  return /^src\/.*\.m?js$/.test(relative) || /^bin\/.*\.m?js$/.test(relative);
 }
 
 function rangesFor(functions, select) {
@@ -50,9 +50,17 @@ function lineCounts(source, functions) {
 }
 
 async function scopedFiles(projectRoot) {
-  const lib = path.join(projectRoot, "scripts", "lib");
-  const entries = await fs.readdir(lib, { withFileTypes: true }).catch(() => []);
-  return entries.filter((entry) => entry.isFile() && isScopedFile(path.join(lib, entry.name), projectRoot)).map((entry) => path.join(lib, entry.name));
+  const files = [];
+  async function visit(directory) {
+    const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      const file = path.join(directory, entry.name);
+      if (entry.isDirectory()) await visit(file);
+      else if (entry.isFile() && isScopedFile(file, projectRoot)) files.push(file);
+    }
+  }
+  await Promise.all([visit(path.join(projectRoot, "src")), visit(path.join(projectRoot, "bin"))]);
+  return files.sort();
 }
 
 export async function summarizeEccCoverage({ coverageDirectory, projectRoot }) {

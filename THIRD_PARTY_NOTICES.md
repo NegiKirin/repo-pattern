@@ -82,7 +82,7 @@ Apache-2.0:
 
 - Script: https://github.com/ogulcancelik/herdr/blob/c5051933f812a07e8014cd11dde2e2caac3af84c/src/integration/assets/claude/herdr-agent-state.sh
 - License: https://github.com/ogulcancelik/herdr/blob/c5051933f812a07e8014cd11dde2e2caac3af84c/LICENSE
-- Repository-owned copies: `scripts/vendor/herdr/herdr-agent-state.sh` and `scripts/vendor/herdr/LICENSE`.
+- Repository-owned copies: `src/vendor/herdr/herdr-agent-state.sh` and `src/vendor/herdr/LICENSE`.
 - Verified on 2026-10-03 against the authoritative upstream files; both copies are byte-identical. No root upstream `NOTICE` file exists at that revision.
 
 Fresh setup selecting Herdr copies the script to `.claude/hooks/herdr-agent-state.sh`

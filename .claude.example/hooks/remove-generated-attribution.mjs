@@ -41,7 +41,8 @@ async function removeFileAttribution(file) {
   let temporary;
   let created = false;
   try {
-    const details = await fs.stat(file);
+    const details = await fs.lstat(file);
+    if (details.isSymbolicLink() || !details.isFile()) return false;
     if (details.size > MAX_ATTRIBUTION_FILE_BYTES) return false;
     const text = await fs.readFile(file, "utf8");
     const cleaned = removeGeneratedAttribution(text);

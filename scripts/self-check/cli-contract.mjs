@@ -1,25 +1,28 @@
 import assert from "node:assert/strict";
+import React from "react";
+import { render as renderInk } from "ink-testing-library";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import packageJson from "../../package.json" with { type: "json" };
-import { auditProject, printAudit } from "../lib/audit.mjs";
-import { cleanupProject } from "../lib/cleanup.mjs";
-import { doctorProject } from "../lib/doctor.mjs";
-import { ECC_PLUGIN, applyEccPluginSettings, setupEcc } from "../lib/ecc.mjs";
-import { applyMcpValues, generateMcp, mcpSecretPrompt, persistedMcpValues, readGeneratedMcpValues, validateRelativeMcpPath } from "../lib/mcp.mjs";
-import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, provisionProject, reconcileLocalPluginSettings, setupPipelineScope, updateClaudePermissions } from "../lib/provision.mjs";
-import { writePrivateJson } from "../lib/fs-utils.mjs";
-import { printSummary, renderLogo, style } from "../lib/prompt.mjs";
-import { needsLocalSettingsPrompt, setupProject, setupRetryOptions } from "../lib/setup.mjs";
-import { applyEccRules, buildAgentManifest, clearEccRules, formatEccCloneError, hasGitUpstream, validateAgentManifest } from "../lib/rules.mjs";
-import { applyOptionalSkills, applyPluginSkillSettings, expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills, OPTIONAL_SKILLS } from "../lib/skills.mjs";
+import { auditProject, printAudit } from "../../src/audit.mjs";
+import { cleanupProject } from "../../src/cleanup.mjs";
+import { doctorProject } from "../../src/doctor.mjs";
+import { ECC_PLUGIN, applyEccPluginSettings, setupEcc } from "../../src/ecc/ecc.mjs";
+import { applyMcpValues, generateMcp, mcpSecretPrompt, persistedMcpValues, readGeneratedMcpValues, validateRelativeMcpPath } from "../../src/mcp.mjs";
+import { provisionProject, setupPipelineScope } from "../../src/setup/provision.mjs";
+import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, reconcileLocalPluginSettings, updateClaudePermissions } from "../../src/setup/settings.mjs";
+import { writePrivateJson } from "../../src/shared/fs-utils.mjs";
+import { askEffortLevel, askPassword, askText, nextEffortIndex, printBox, printLogo, printSection, printSummary, promptTestComponents, renderEffortPicker, renderLogo, resolveTextValue, selectMany, style, withPromptRenderer, withSpinner } from "../../src/ui/prompt.mjs";
+import { setupProject, setupRetryOptions } from "../../src/setup/setup.mjs";
+import { needsLocalSettingsPrompt } from "../../src/ui/setup-interaction.mjs";
+import { applyEccRules, buildAgentManifest, clearEccRules, formatEccCloneError, hasGitUpstream, validateAgentManifest } from "../../src/ecc/rules.mjs";
+import { applyOptionalSkills, applyPluginSkillSettings, expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills, OPTIONAL_SKILLS } from "../../src/skills.mjs";
 import { writeEccGitFixture } from "./fixtures.mjs";
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.dirname(path.dirname(cliDir));
-const cliPath = path.join(cliDir, "..", "repo-pattern.mjs");
+const cliPath = path.join(repoRoot, "bin", "repo-pattern.mjs");
 const secretSentinel = "do-not-persist-anthropic-token";
 
 export async function runCliContractChecks() {
@@ -81,75 +84,96 @@ try {
   process.stdout.isTTY = originalStdoutIsTty;
 }
 
+// protects=non-interactive prompt fallback, summary wrapping, section output, and spinner passthrough; fails_when=CI/non-TTY execution enters Ink or long values lose wrapping; no_claim=physical TTY prompt behavior.
+assert.equal(await askEffortLevel({ input: { isTTY: false }, output: { isTTY: false } }), "medium");
+const sectionLogs = [];
+const originalSectionLog = console.log;
+console.log = (message = "") => sectionLogs.push(String(message));
+try {
+  printSection("Prompt checks");
+  printSummary("Wrapped", [["Value", "x".repeat(80)]]);
+} finally {
+  console.log = originalSectionLog;
+}
+assert.equal(sectionLogs[0], "\n== Prompt checks ==");
+const summaryText = sectionLogs.slice(1).join("\n");
+assert.equal((summaryText.match(/x/g) || []).length, 80);
+assert.equal(sectionLogs.slice(1).every((line) => line.length <= 79), true);
+assert.equal(await withSpinner("ignored", () => "passed"), "passed");
+
+// protects=prompt wrapper renderer injection, fallback restoration, and error propagation; fails_when=wrappers bypass the renderer, leak it after completion, or swallow render errors; no_claim=production Ink renderer internals.
+const virtualRenderer = () => ({ unmount() {} });
+await withPromptRenderer(virtualRenderer, async () => {
+  askText("Name").catch(() => {});
+  askPassword("Token").catch(() => {});
+  selectMany({ message: "Pick", options: ["one"], initialValues: ["one"] }).catch(() => {});
+  askEffortLevel({ input: { isTTY: true }, output: { isTTY: true } }).catch(() => {});
+});
+await assert.rejects(() => withPromptRenderer(() => { throw new Error("renderer failed"); }, () => askText("Name")), /renderer failed/);
+const originalPromptStdinIsTty = process.stdin.isTTY;
+const originalPromptStdoutIsTty = process.stdout.isTTY;
+const originalCI = process.env.CI;
+try {
+  process.stdin.isTTY = true;
+  process.stdout.isTTY = true;
+  delete process.env.CI;
+  await withPromptRenderer((tree) => renderInk(tree), () => printLogo());
+  await assert.rejects(() => withPromptRenderer(() => { throw new Error("logo renderer failed"); }, () => printLogo()), /logo renderer failed/);
+} finally {
+  process.stdin.isTTY = originalPromptStdinIsTty;
+  process.stdout.isTTY = originalPromptStdoutIsTty;
+  if (originalCI === undefined) delete process.env.CI;
+  else process.env.CI = originalCI;
+}
+
+// protects=deterministic Ink prompt keyboard behavior and rendering; fails_when=prompt submission, cancellation, validation, selection, masking, or effort movement changes; no_claim=physical terminal rendering or render-error injection.
+const promptCases = [
+  ["text", promptTestComponents.TextPrompt, { message: "Name", validate: (value) => value === "ok" || "Use ok" }, ["bad", "\r", "\u001b", "ok", "\r"], /Use ok/],
+  ["password", promptTestComponents.TextPrompt, { message: "Token", initial: "saved", mask: true }, ["\r"], /•••••/],
+  ["confirm", promptTestComponents.ConfirmPrompt, { message: "Continue", defaultYes: true }, ["n", "\r"], /No/],
+  ["select", promptTestComponents.SelectPrompt, { message: "Pick", options: ["one", { value: "two", title: "Two", hint: "second" }], initialValue: "one" }, ["\u001b[B", "\r"], /Two/],
+  ["many", promptTestComponents.SelectPrompt, { message: "Pick many", many: true, options: [{ value: "one", selected: true }, "two"] }, [" ", "\u001b[B", " ", "\r"], /◉ one/],
+  ["effort", promptTestComponents.EffortPrompt, {}, ["\u001b[C", "\r"], /high/]
+];
+for (const [, Component, props, inputs, expected] of promptCases) {
+  const renderedPrompt = renderInk(React.createElement(Component, { ...props, done: () => {} }));
+  for (const input of inputs) {
+    renderedPrompt.stdin.write(input);
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.match(renderedPrompt.lastFrame(), expected);
+  renderedPrompt.unmount();
+}
+const cancelledPrompt = renderInk(React.createElement(promptTestComponents.ConfirmPrompt, { message: "Cancel", defaultYes: true, done: () => {} }));
+cancelledPrompt.stdin.write("\u001b");
+assert.match(cancelledPrompt.lastFrame(), /Cancel/);
+cancelledPrompt.unmount();
+assert.equal(resolveTextValue("", { initial: "saved", placeholder: "hint" }), "saved");
+assert.equal(resolveTextValue("", { placeholder: "hint" }), "hint");
+assert.equal(nextEffortIndex(2, "left"), 1);
+assert.equal(nextEffortIndex(2, "right"), 3);
+assert.equal(nextEffortIndex(2, "other"), 2);
+assert.equal(renderEffortPicker("medium", { columns: 79, color: false }), "Effort: [medium] recommended · ←/→ · Enter");
+assert.match(renderEffortPicker("medium", { columns: 80, color: false }), /low ─ \[medium\]/);
+const boxLogs = [];
+console.log = (message = "") => boxLogs.push(String(message));
+try {
+  printBox("Prompt box", ["line"]);
+  printLogo();
+} finally {
+  console.log = originalSectionLog;
+}
+assert.deepEqual(boxLogs.slice(0, 2), ["\n== Prompt box ==", "line"]);
+
 function runCli(args, cwd = repoRoot) {
   return spawnSync(process.execPath, [cliPath, ...args], { cwd, encoding: "utf8" });
 }
 
 let result;
-for (const args of [["version"], ["-V"], ["--version"]]) {
-  result = runCli(args);
-  assert.equal(result.status, 0);
-  assert.equal(result.stdout.trim(), `repo-pattern ${packageJson.version}`);
-}
-
-result = runCli(["help"]);
-assert.equal(result.status, 0);
-assert.match(result.stdout, /repo-pattern help/);
-assert.match(result.stdout, /repo-pattern version/);
-assert.match(result.stdout, /doctor \[--target <path>\] \[--verbose\]/);
-assert.doesNotMatch(result.stdout, /repo-pattern ecc/);
-
-result = runCli(["ecc"]);
-assert.equal(result.status, 2);
-assert.match(result.stderr, /Unknown command: ecc/);
-
-result = runCli(["doctor", "--bogus"]);
-assert.equal(result.status, 2);
-assert.match(result.stderr, /Unknown argument: --bogus/);
-
-result = runCli(["setup", "--target"]);
-assert.equal(result.status, 2);
-assert.match(result.stderr, /Missing value for --target/);
-
-result = runCli(["setup", "--with-skill", "nope"]);
-assert.equal(result.status, 2);
-assert.match(result.stderr, /Unknown optional skill\(s\): nope/);
-
-result = runCli(["setup", "--setup-pipeline", "nope", "--yes"]);
-assert.equal(result.status, 2);
-assert.match(result.stderr, /Unknown setup pipeline: nope\. Available: ecc, gstack/);
-
-result = runCli(["setup", "--setup-pipeline", "ecc", "--with-plan-tune-hooks", "--yes"]);
-assert.equal(result.status, 2);
-assert.match(result.stderr, /--with-plan-tune-hooks requires --setup-pipeline gstack or both/);
-
-result = runCli(["help"]);
-assert.equal(result.status, 0);
-assert.match(result.stdout, /--setup-pipeline <ecc\|gstack\|both\|none>/);
-assert.match(result.stdout, /ecc: project-scoped ECC/);
-assert.match(result.stdout, /gstack: project-local at \.claude\/skills\/gstack/);
-assert.match(result.stdout, /both: project-scoped ECC \+ project-local gstack/);
-assert.match(result.stdout, /none: base project metadata only/);
-assert.match(result.stdout, /--with-plan-tune-hooks/);
-assert.match(result.stdout, /--with-skill <name>/);
-assert.match(result.stdout, /ui-ux-pro-max/);
-assert.match(result.stdout, /impeccable/);
-assert.match(result.stdout, /huashu-design/);
-assert.match(result.stdout, /nextjs-pattern/);
-assert.match(result.stdout, /fastapi-pattern/);
-assert.match(result.stdout, /herdr/);
 
 result = runCli(["audit"]);
 assert.equal(result.status, 0);
 assert.match(result.stdout, /Target\s+.*repo-pattern/);
-
-result = runCli(["mcp", "--profile", "minimal", "--yes", "--dry-run"]);
-assert.equal(result.status, 2);
-assert.match(result.stderr, /Unknown argument: --profile/);
-
-result = runCli(["mcp", "--mcp", "nope", "--yes"]);
-assert.equal(result.status, 2);
-assert.match(result.stderr, /Unknown MCP server\(s\): nope\. Available: .*context7.*shadcn-studio/);
 
 const mcpReuseTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-mcp-reuse-"));
 try {
