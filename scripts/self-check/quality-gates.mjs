@@ -13,7 +13,7 @@ function functionRange(startOffset, endOffset, count, blocks = []) {
 
 async function coverageFixture(name, functions, { spaced = false, extraScoped = false } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-coverage-"));
-  const lib = path.join(root, "scripts", "lib");
+  const lib = path.join(root, "src", "ecc");
   const coverage = path.join(root, "coverage");
   const file = path.join(lib, spaced ? "ecc-fixture space.mjs" : "ecc-fixture.mjs");
   await Promise.all([fs.mkdir(lib, { recursive: true }), fs.mkdir(coverage, { recursive: true })]);

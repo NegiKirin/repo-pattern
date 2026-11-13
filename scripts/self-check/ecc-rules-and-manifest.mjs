@@ -3,22 +3,47 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { auditProject } from "../lib/audit.mjs";
-import { doctorProject } from "../lib/doctor.mjs";
-import { ECC_RULE_PACKS, explainRules, invalidEccRules, normalizeEccRules, selectEccRules } from "../lib/ecc-rules.mjs";
-import { applyEccRules, buildAgentManifest, clearEccRules, validateAgentManifest } from "../lib/rules.mjs";
+import { auditProject } from "../../src/audit.mjs";
+import { doctorProject } from "../../src/doctor.mjs";
+import { applyEccRules, buildAgentManifest, clearEccRules, validateAgentManifest } from "../../src/ecc/rules.mjs";
+import { explainRules } from "../../src/ecc/ecc-rules.mjs";
 
 const originalDoctorLog = console.log;
 
 export async function runEccRulesAndManifestChecks() {
-  assert.match(explainRules({}, ["common"]), /Selected ECC rules/);
-  assert.match(explainRules({}, ["common"]), /Detected stack/);
-  assert.deepEqual(normalizeEccRules(["python", "common", "python", "unknown"]), ["python", "common"]);
-  assert.deepEqual(invalidEccRules(["common", "unknown", "unknown"]), ["unknown"]);
-  assert.deepEqual(selectEccRules({ languages: ["python", "typescript"], frameworks: ["nuxt"], tools: [], repoType: "fullstack" }), ["common", "nuxt", "python", "typescript", "vue", "web"]);
-  assert.equal(ECC_RULE_PACKS[0], "common");
-  assert.equal(ECC_RULE_PACKS.at(-1), "web");
-
+// protects=ECC stack explanation formatting for populated and empty detection fields; fails_when=explanation omits normalized fallback values or selected rules; no_claim=live ECC availability or provisioning transactions.
+assert.equal(explainRules({
+  repoType: "fullstack",
+  languages: ["javascript", "typescript"],
+  frameworks: ["react"],
+  tools: ["eslint"],
+  packageManager: "npm",
+  monorepo: true
+}, ["common", "typescript"]), [
+  "Detected stack:",
+  "- repo type: fullstack",
+  "- languages: javascript, typescript",
+  "- frameworks: react",
+  "- tools: eslint",
+  "- package manager: npm",
+  "- monorepo: yes",
+  "",
+  "Selected ECC rules:",
+  "- common",
+  "- typescript"
+].join("\n"));
+assert.equal(explainRules({}, ["common"]), [
+  "Detected stack:",
+  "- repo type: generic",
+  "- languages: none detected",
+  "- frameworks: none detected",
+  "- tools: none detected",
+  "- package manager: unknown",
+  "- monorepo: no",
+  "",
+  "Selected ECC rules:",
+  "- common"
+].join("\n"));
 async function writeDoctorFixture(target, { appliedRules = ["typescript"], createRuleDirs = true } = {}) {
   await fs.mkdir(path.join(target, ".claude"), { recursive: true });
   await fs.mkdir(path.join(target, ".repo-pattern"), { recursive: true });

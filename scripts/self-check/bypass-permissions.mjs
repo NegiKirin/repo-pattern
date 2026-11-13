@@ -4,11 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { runInteractiveSetupCase } from "./bypass-permissions-interactive.mjs";
-import { claudeVersionSupportsUserScope, setUserBypassPermission } from "../lib/bypass-permissions.mjs";
-import { auditProject } from "../lib/audit.mjs";
-import { doctorProject } from "../lib/doctor.mjs";
-import { provisionProject } from "../lib/provision.mjs";
-import { choosePermissionConfig, localSettingsPromptOptions, setupOptionsFromLock, setupRetryOptions } from "../lib/setup.mjs";
+import { claudeVersionSupportsUserScope, setUserBypassPermission } from "../../src/setup/bypass-permissions.mjs";
+import { auditProject } from "../../src/audit.mjs";
+import { doctorProject } from "../../src/doctor.mjs";
+import { provisionProject } from "../../src/setup/provision.mjs";
+import { setupOptionsFromLock, setupRetryOptions } from "../../src/setup/setup.mjs";
+import { choosePermissionConfig, localSettingsPromptOptions } from "../../src/ui/setup-interaction.mjs";
 
 export async function runBypassPermissionChecks() {
   // Value: protects=simulated-TTY setup routing for new-install and legacy bypass acceptance, decline, and malformed-settings rejection; fails_when=setup writes bypass to the wrong scope, loses legacy intent on decline, or overwrites malformed settings; why_new=direct helper checks cannot cover actual setup/wizard routing; seam=none; no_claim=physical TTY behavior and real operator HOME are not exercised.
@@ -98,7 +99,7 @@ export async function runBypassPermissionChecks() {
   for (const version of ["2.1.256", "2.1.257"]) {
     const promptCheck = spawnSync(process.execPath, ["--input-type=module", "-e", `
       import assert from "node:assert/strict";
-      import { choosePermissionConfig } from ${JSON.stringify(new URL("../lib/setup.mjs", import.meta.url).href)};
+      import { choosePermissionConfig } from ${JSON.stringify(new URL("../../src/setup/setup.mjs", import.meta.url).href)};
       const { PassThrough } = await import("node:stream");
       const terminal = new PassThrough();
       terminal.isTTY = true;
@@ -122,7 +123,7 @@ export async function runBypassPermissionChecks() {
   for (const legacyBypass of [false, true]) {
     const promptDryRunCheck = spawnSync(process.execPath, ["--input-type=module", "-e", `
       import assert from "node:assert/strict";
-      import { choosePermissionConfig } from ${JSON.stringify(new URL("../lib/setup.mjs", import.meta.url).href)};
+      import { choosePermissionConfig } from ${JSON.stringify(new URL("../../src/setup/setup.mjs", import.meta.url).href)};
       import { PassThrough } from "node:stream";
       const terminal = new PassThrough();
       terminal.isTTY = true;
@@ -172,7 +173,7 @@ export async function runBypassPermissionChecks() {
 
   const promptLiveCheck = spawnSync(process.execPath, ["--input-type=module", "-e", `
     import assert from "node:assert/strict";
-    import { choosePermissionConfig } from ${JSON.stringify(new URL("../lib/setup.mjs", import.meta.url).href)};
+    import { choosePermissionConfig } from ${JSON.stringify(new URL("../../src/setup/setup.mjs", import.meta.url).href)};
     import { PassThrough } from "node:stream";
     const terminal = new PassThrough();
     terminal.isTTY = true;

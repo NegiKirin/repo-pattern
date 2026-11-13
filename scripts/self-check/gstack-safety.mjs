@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { installGstackRuntimeFixture, installGstackUpstreamSetupFixture } from "./fixtures.mjs";
-import { GSTACK_REVIEW_SIDECARS, gstackCheckoutPath, resolveGstackCheckout, setupGstack, validateProjectGstack } from "../lib/gstack.mjs";
+import { GSTACK_REVIEW_SIDECARS, gstackCheckoutPath, resolveGstackCheckout, setupGstack, validateProjectGstack } from "../../src/gstack/gstack.mjs";
 
 export async function runGstackSafetyChecks() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-safety-"));
@@ -61,13 +61,8 @@ export async function runGstackSafetyChecks() {
       assert.equal(spawnSync("git", ["init"], { cwd: checkout, stdio: "ignore" }).status, 0);
       assert.equal(spawnSync("git", ["add", "."], { cwd: checkout, stdio: "ignore" }).status, 0);
       assert.equal(spawnSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "Fixture baseline"], { cwd: checkout, stdio: "ignore" }).status, 0);
-      const projectManifest = JSON.stringify({ private: true, workspaces: [".claude/skills/**"], dependencies: { "must-not-install": "file:missing" } });
-      await fs.writeFile(path.join(target, "package.json"), projectManifest);
-      await fs.writeFile(path.join(target, "bun.lock"), "preserve project lockfile\n");
       const result = await setupGstack({ target, silent: true });
       assert.equal(result.status, "installed", result.error);
-      assert.equal(await fs.readFile(path.join(target, "package.json"), "utf8"), projectManifest);
-      assert.equal(await fs.readFile(path.join(target, "bun.lock"), "utf8"), "preserve project lockfile\n");
       await assert.rejects(fs.lstat(path.join(target, "node_modules")), { code: "ENOENT" });
       assert(!(await fs.readdir(path.dirname(checkout))).some((entry) => entry.startsWith(".gstack-")));
       const upgradeSkill = await fs.readFile(path.join(target, ".claude", "skills", "gstack-upgrade", "SKILL.md"), "utf8");

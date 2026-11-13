@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { setupGstack, validateProjectGstack, GSTACK_REVIEW_SIDECARS } from "../lib/gstack.mjs";
+import { setupGstack, validateProjectGstack, GSTACK_REVIEW_SIDECARS } from "../../src/gstack/gstack.mjs";
 import { installGstackSafetyFixture, installGstackRenderedUpstreamSetupFixture, commitGstackFixture } from "./fixtures.mjs";
 
 // Protects real upstream publication, not merely invoking setup before rewriting its output.

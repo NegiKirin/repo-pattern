@@ -2,7 +2,18 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { provisionProject } from "../lib/provision.mjs";
+import { provisionProject } from "../../src/setup/provision.mjs";
+import { printSummary, style } from "../../src/ui/prompt.mjs";
+import { printAudit } from "../../src/audit.mjs";
+import { createSetupProgress } from "../../src/ui/progress.mjs";
+
+function injectedAdapters() {
+  const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY && !process.env.CI);
+  return {
+    output: { summary: printSummary, audit: printAudit, style, warn: console.warn },
+    progressAdapter: { create: (plan, options) => createSetupProgress(plan, { ...options, interactive, ansi: interactive && !process.env.NO_COLOR && process.env.TERM !== "dumb" }) }
+  };
+}
 
 function withInteractiveTerminal(callback, { stdinTTY = true, stdoutTTY = true, env = { CI: "" } } = {}) {
   const originalLog = console.log;
@@ -51,7 +62,8 @@ export async function runInteractiveProvisionChecks(repoRoot) {
         setupPipeline: "none",
         dryRun: true,
         mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
-        interactiveSetup: true
+        interactiveSetup: true,
+        ...injectedAdapters()
       });
       const rendered = output.join("");
       const labels = ["ECC & gstack", "Extended skills", "Setup"];
@@ -83,7 +95,8 @@ export async function runInteractiveProvisionChecks(repoRoot) {
         optionalSkills: ["taste"],
         dryRun: true,
         mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
-        interactiveSetup: true
+        interactiveSetup: true,
+        ...injectedAdapters()
       });
       const rendered = output.join("");
       assert.match(rendered, /Extended skills completed/);
@@ -106,7 +119,8 @@ export async function runInteractiveProvisionChecks(repoRoot) {
         optionalSkills: ["document-specialist"],
         dryRun: true,
         mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
-        interactiveSetup: true
+        interactiveSetup: true,
+        ...injectedAdapters()
       });
       const rendered = output.join("");
       for (const label of ["ECC & gstack", "Extended skills", "Setup"]) assert.match(rendered, new RegExp(label));
@@ -136,7 +150,8 @@ export async function runInteractiveProvisionChecks(repoRoot) {
           setupPipeline: "none",
           dryRun: true,
           mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
-          interactiveSetup: true
+          interactiveSetup: true,
+          ...injectedAdapters()
         });
         const rendered = output.join("");
         assert.doesNotMatch(rendered, /\x1b\[/);
@@ -159,6 +174,7 @@ export async function runInteractiveProvisionChecks(repoRoot) {
           dryRun: true,
           mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
           interactiveSetup: true,
+          ...injectedAdapters(),
           onBeforeSuccessSummary: async () => {
             throw new Error("setup status persistence failed");
           }
@@ -187,7 +203,8 @@ export async function runInteractiveProvisionChecks(repoRoot) {
         mcpServers: ["context7", "tavily", "gitnexus"],
         setupPipeline: "none",
         dryRun: true,
-        interactiveSetup: true
+        interactiveSetup: true,
+        ...injectedAdapters()
       });
       const rendered = output.join("");
       assert.match(rendered, /Warnings\s+MCP values pending: CONTEXT7_API_KEY, TAVILY_API_KEY/);
@@ -211,7 +228,8 @@ export async function runInteractiveProvisionChecks(repoRoot) {
             mcpServers: ["context7", "tavily", "gitnexus"],
             setupPipeline: "gstack",
             mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
-            interactiveSetup: true
+            interactiveSetup: true,
+          ...injectedAdapters()
           }),
           (error) => {
             output.push(`\nERROR: ${error.message}\n`);
@@ -245,6 +263,7 @@ export async function runInteractiveProvisionChecks(repoRoot) {
         mcpServers: ["context7", "tavily", "gitnexus"],
         setupPipeline: "gstack",
         mcpValues: { CONTEXT7_API_KEY: "interactive-test-key", TAVILY_API_KEY: "interactive-tavily-key" },
+        ...injectedAdapters(),
         resolveGstackCheckout: async () => {
           throw Object.assign(new Error("clone failed"), { gstackCloneFailure: true, stderr: "fatal: network unavailable" });
         }
@@ -275,6 +294,7 @@ export async function runInteractiveProvisionChecks(repoRoot) {
           mcpServers: ["context7", "tavily", "gitnexus"],
           setupPipeline: "none",
           interactiveSetup: true,
+          ...injectedAdapters(),
           optionalSkills: ["nope"]
         }),
         (error) => {

@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { commitGstackFixture, installGstackSafetyFixture, installGstackUpstreamSetupFixture } from "./fixtures.mjs";
-import { gstackCheckoutPath, setupGstack } from "../lib/gstack.mjs";
+import { gstackCheckoutPath, setupGstack } from "../../src/gstack/gstack.mjs";
 
 export async function runGstackRollbackChecks() {
   const hookSymlinkTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-hook-symlink-"));

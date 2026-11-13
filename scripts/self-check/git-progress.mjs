@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { parseGitProgress, runGitWithProgress } from "../lib/git-progress.mjs";
+import { parseGitProgress, runGitWithProgress } from "../../src/shared/git-progress.mjs";
 
 function fakeChild({ stdout = [], stderr = [], status = 0, error = null }) {
   const child = new EventEmitter();

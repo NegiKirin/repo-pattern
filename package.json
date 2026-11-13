@@ -4,13 +4,13 @@
   "description": "Minimal ECC-first Claude Code project setup and migrator",
   "type": "module",
   "bin": {
-    "repo-pattern": "scripts/repo-pattern.mjs"
+    "repo-pattern": "bin/repo-pattern.mjs"
   },
   "scripts": {
-    "audit": "node scripts/repo-pattern.mjs audit --target .",
-    "doctor": "node scripts/repo-pattern.mjs doctor --target .",
-    "mcp:core": "node scripts/repo-pattern.mjs mcp --target . --mcp context7 --mcp tavily --mcp gitnexus",
-    "test": "node scripts/self-check.mjs",
+    "audit": "node bin/repo-pattern.mjs audit --target .",
+    "doctor": "node bin/repo-pattern.mjs doctor --target .",
+    "mcp:core": "node bin/repo-pattern.mjs mcp --target . --mcp context7 --mcp tavily --mcp gitnexus",
+    "test": "node --test --test-concurrency=1 test/cli/cli-contract.test.mjs scripts/phase-1-characterization.test.mjs test/setup/setup-contract.test.mjs test/ecc/ecc-contract.test.mjs test/gstack/gstack-contract.test.mjs test/ui/ui-contract.test.mjs test/shared/shared-contract.test.mjs test/setup/mcp-attribution-contract.test.mjs && node scripts/self-check.mjs",
     "test:coverage": "node scripts/test-coverage.mjs",
     "check:module-limits": "node scripts/check-module-limits.mjs",
     "measure:test-duration": "node scripts/measure-test-duration.mjs",
@@ -51,18 +51,19 @@
     "node": ">=20"
   },
   "files": [
-    "scripts/",
+    "bin/repo-pattern.mjs",
+    "src/",
     ".claude.example/CLAUDE.md",
     ".claude.example/settings.example.json",
     ".claude.example/settings.local.example.json",
     ".claude.example/hooks/remove-generated-attribution.mjs",
-    "docs/",
-    "mcp/",
+    "docs/gstack-managed-documents.md",
+    "docs/repo-pattern/setup-guide.md",
+    "mcp/servers/",
     ".repo-pattern.example.json",
     "README.md",
     "LICENSE",
-    "THIRD_PARTY_NOTICES.md",
-    ".github/workflows/"
+    "THIRD_PARTY_NOTICES.md"
   ],
   "publishConfig": {
     "access": "public"

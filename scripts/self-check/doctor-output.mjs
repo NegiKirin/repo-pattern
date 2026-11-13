@@ -3,12 +3,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { doctorProject } from "../lib/doctor.mjs";
+import { doctorProject } from "../../src/doctor.mjs";
 
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
-const cliPath = path.join(repoRoot, "scripts", "repo-pattern.mjs");
+const cliPath = path.join(repoRoot, "bin", "repo-pattern.mjs");
 
 function runCli(args, env = process.env) {
   return spawnSync(process.execPath, [cliPath, ...args], { cwd: repoRoot, env, encoding: "utf8" });

@@ -1,23 +1,25 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ECC_PLUGIN, applyEccPluginSettings, setupEcc } from "../lib/ecc.mjs";
-import { applyMcpValues, generateMcp, mcpSecretPrompt, persistedMcpValues, readGeneratedMcpValues, validateRelativeMcpPath } from "../lib/mcp.mjs";
-import { applyAttributionSetting, applyLocalSettings, applyPermissionSettings, provisionProject, reconcileLocalPluginSettings, setupPipelineScope, updateClaudeAttribution, updateClaudePermissions } from "../lib/provision.mjs";
-import { writePrivateJson } from "../lib/fs-utils.mjs";
-import { printSummary, renderLogo, resolveTextValue, style } from "../lib/prompt.mjs";
-import { interactiveSetupPipeline, localSettingsPromptOptions, needsLocalSettingsPrompt, setupProject, setupRetryOptions } from "../lib/setup.mjs";
-import { applyEccRules, buildAgentManifest, clearEccRules, formatEccCloneError, hasGitUpstream, validateAgentManifest } from "../lib/rules.mjs";
-import { applyOptionalSkills, applyPluginSkillSettings, expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills, OPTIONAL_SKILLS } from "../lib/skills.mjs";
+import { ECC_PLUGIN, applyEccPluginSettings, setupEcc } from "../../src/ecc/ecc.mjs";
+import { generateMcp, mcpSecretPrompt, readGeneratedMcpValues, validateRelativeMcpPath } from "../../src/mcp.mjs";
+import { provisionProject, setupPipelineScope } from "../../src/setup/provision.mjs";
+import { applyPermissionSettings, reconcileLocalPluginSettings, updateClaudeAttribution, updateClaudePermissions } from "../../src/setup/settings.mjs";
+import { writePrivateJson } from "../../src/shared/fs-utils.mjs";
+import { printSummary, renderLogo, resolveTextValue, style } from "../../src/ui/prompt.mjs";
+import { interactiveSetupPipeline, setupProject, setupRetryOptions } from "../../src/setup/setup.mjs";
+import { localSettingsPromptOptions, needsLocalSettingsPrompt } from "../../src/ui/setup-interaction.mjs";
+import { applyEccRules, buildAgentManifest, clearEccRules, formatEccCloneError, hasGitUpstream, validateAgentManifest } from "../../src/ecc/rules.mjs";
+import { applyOptionalSkills, applyPluginSkillSettings, expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills, OPTIONAL_SKILLS } from "../../src/skills.mjs";
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.dirname(path.dirname(cliDir));
-const cliPath = path.join(cliDir, "..", "repo-pattern.mjs");
+const cliPath = path.join(repoRoot, "bin", "repo-pattern.mjs");
 const secretSentinel = "do-not-persist-anthropic-token";
 const sharedSettingsTemplate = JSON.parse(await fs.readFile(path.join(repoRoot, ".claude.example", "settings.example.json"), "utf8"));
 const localSettingsTemplate = JSON.parse(await fs.readFile(path.join(repoRoot, ".claude.example", "settings.local.example.json"), "utf8"));
-
 export async function runMcpAndSettingsChecks() {
 assert.deepEqual(sharedSettingsTemplate.attribution, { commit: "", pr: "" });
 assert.equal("enabledPlugins" in sharedSettingsTemplate, false);
@@ -66,55 +68,6 @@ assert.equal(
   "MCP secret — tavily: TAVILY_API_KEY (get key: https://app.tavily.com/home)"
 );
 
-assert.deepEqual(applyMcpValues(mcpServers, {
-  CONTEXT7_API_KEY: "redacted-key"
-}), {
-  context7: {
-    command: "npx",
-    args: ["-y", "@upstash/context7-mcp"],
-    env: { CONTEXT7_API_KEY: "redacted-key" }
-  },
-  tavily: {
-    command: "npx",
-    args: ["-y", "tavily-mcp"],
-    env: { TAVILY_API_KEY: "${TAVILY_API_KEY}" }
-  }
-});
-
-assert.equal(applyMcpValues(mcpServers).tavily.env.TAVILY_API_KEY, "${TAVILY_API_KEY}");
-assert.deepEqual(applyMcpValues({
-  unexpected: { env: { ANTHROPIC_AUTH_TOKEN: "${ANTHROPIC_AUTH_TOKEN}" } }
-}, {
-  ANTHROPIC_AUTH_TOKEN: secretSentinel
-}), {
-  unexpected: { env: { ANTHROPIC_AUTH_TOKEN: "${ANTHROPIC_AUTH_TOKEN}" } }
-});
-assert.deepEqual(persistedMcpValues({
-  CONTEXT7_API_KEY: "context7-key",
-  TAVILY_API_KEY: "tavily-key",
-  ANTHROPIC_AUTH_TOKEN: secretSentinel,
-  OTHER_API_KEY: "other-key"
-}), {
-  CONTEXT7_API_KEY: "context7-key",
-  TAVILY_API_KEY: "tavily-key"
-});
-assert.deepEqual(applyLocalSettings({ env: {
-  EXISTING: "kept",
-  CONTEXT7_API_KEY: "stale-context7-key"
-} }, {
-  ANTHROPIC_BASE_URL: "https://example.com/v1",
-  ANTHROPIC_AUTH_TOKEN: secretSentinel,
-  TAVILY_API_KEY: "stale-tavily-key"
-}), {
-  env: {
-    EXISTING: "kept",
-    ANTHROPIC_BASE_URL: "https://example.com/v1",
-    ANTHROPIC_AUTH_TOKEN: secretSentinel
-  }
-});
-assert.deepEqual(applyAttributionSetting({ hooks: {} }, { mode: "off" }), { hooks: {}, attribution: { commit: "", pr: "" } });
-assert.deepEqual(applyAttributionSetting({ attribution: { commit: "old", pr: "old" } }, { mode: "on" }), { attribution: { commit: "", pr: "" } });
-assert.deepEqual(applyAttributionSetting({ attribution: { pr: "PR" } }, { mode: "custom", commit: "Custom" }), { attribution: { commit: "Custom", pr: "" } });
 assert.deepEqual(reconcileLocalPluginSettings({
   env: { ANTHROPIC_AUTH_TOKEN: secretSentinel },
   custom: true,
@@ -138,6 +91,32 @@ assert.deepEqual(applyPermissionSettings({ permissions: { deny: ["Read(.env)"] }
 assert.deepEqual(applyPermissionSettings({ permissions: { defaultMode: "bypassPermissions" } }, { bypass: "deny" }), {
   permissions: { defaultMode: "default", disableBypassPermissionsMode: "disable" }
 });
+// protects=attribution settings merge, generated hook copy, gitignore ownership, and tracked-file rejection; fails_when=existing settings, template defaults, hooks, or safety rejection change; no_claim=live Claude execution or upstream availability.
+const attributionTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-attribution-settings-"));
+try {
+  await fs.mkdir(path.join(attributionTarget, ".claude"), { recursive: true });
+  await fs.writeFile(path.join(attributionTarget, ".claude", "settings.json"), JSON.stringify({ hooks: {}, custom: true }), "utf8");
+  await updateClaudeAttribution({ sourceRoot: repoRoot, target: attributionTarget, attributionConfig: { mode: "custom", commit: "Custom attribution" }, dryRun: false });
+  const attributionSettings = JSON.parse(await fs.readFile(path.join(attributionTarget, ".claude", "settings.json"), "utf8"));
+  assert.equal(attributionSettings.custom, true);
+  assert.deepEqual(attributionSettings.attribution, { commit: "Custom attribution", pr: "" });
+  assert.match(JSON.stringify(attributionSettings.hooks), /remove-generated-attribution/);
+  await fs.access(path.join(attributionTarget, ".claude", "hooks", "remove-generated-attribution.mjs"));
+  assert.match(await fs.readFile(path.join(attributionTarget, ".gitignore"), "utf8"), /\.claude\//);
+} finally {
+  await fs.rm(attributionTarget, { recursive: true, force: true });
+}
+const trackedAttributionTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-attribution-tracked-"));
+try {
+  await fs.mkdir(path.join(trackedAttributionTarget, ".claude"), { recursive: true });
+  await fs.writeFile(path.join(trackedAttributionTarget, ".claude", "settings.json"), "{}", "utf8");
+  await fs.writeFile(path.join(trackedAttributionTarget, ".gitignore"), "", "utf8");
+  spawnSync("git", ["init"], { cwd: trackedAttributionTarget, stdio: "ignore" });
+  spawnSync("git", ["add", ".claude/settings.json"], { cwd: trackedAttributionTarget, stdio: "ignore" });
+  await assert.rejects(() => updateClaudeAttribution({ sourceRoot: repoRoot, target: trackedAttributionTarget, attributionConfig: { mode: "off" }, dryRun: false }), /tracked/);
+} finally {
+  await fs.rm(trackedAttributionTarget, { recursive: true, force: true });
+}
 assert.deepEqual(setupRetryOptions({
   action: "setup",
   setupPipeline: "gstack",
@@ -392,7 +371,6 @@ try {
   console.log = originalSkillLog;
   await fs.rm(dryRunRootCopyTarget, { recursive: true, force: true });
 }
-
 const herdrSkill = OPTIONAL_SKILLS.find((skill) => skill.value === "herdr");
 assert.deepEqual(herdrSkill.includePaths, ["SKILL.md"]);
 assert.equal(herdrSkill.destName, "herdr");

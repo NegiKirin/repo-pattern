@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { GSTACK_REVIEW_SIDECARS, resolveGstackCheckout, setupGstack, validateProjectGstack } from "../lib/gstack.mjs";
+import { GSTACK_REVIEW_SIDECARS, resolveGstackCheckout, setupGstack, validateProjectGstack } from "../../src/gstack/gstack.mjs";
 import { installGstackSafetyFixture, installGstackUpstreamSetupFixture, commitGstackFixture } from "./fixtures.mjs";
 
 const root = await fs.mkdtemp(path.resolve(".gstack-lifecycle-test-"));
@@ -40,7 +40,7 @@ try {
   // Redirect only the upstream clone; every other Git operation uses the real executable.
   await fs.writeFile(path.join(tools, "git"), `#!/usr/bin/env node\nimport {spawnSync} from 'node:child_process';const args=process.argv.slice(2).map(a=>a==='https://github.com/garrytan/gstack.git'?process.env.FIXTURE_UPSTREAM:a);const r=spawnSync(${JSON.stringify(realGit)},args,{stdio:'inherit'});process.exit(r.status??1);\n`, { mode: 0o755 });
   const env = { ...process.env, HOME: home, PATH: `${tools}${path.delimiter}${process.env.PATH}`, FIXTURE_UPSTREAM: upstream, GSTACK_SKIP_PLAYWRIGHT: "1", REPO_PATTERN_DEBUG_GSTACK: "1" };
-  const cli = (...args) => spawnSync(process.execPath, [path.resolve("scripts/repo-pattern.mjs"), ...args, "--target", target], { env, encoding: "utf8", timeout: 120000 });
+  const cli = (...args) => spawnSync(process.execPath, [path.resolve("bin/repo-pattern.mjs"), ...args, "--target", target], { env, encoding: "utf8", timeout: 120000 });
   const setup = cli("setup", "--setup-pipeline", "gstack", "--mcp", "context7", "--yes");
   assert.equal(setup.status, 0, setup.stdout + setup.stderr);
   assert.deepEqual(await fs.readdir(home), []);

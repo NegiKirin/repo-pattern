@@ -1,0 +1,120 @@
+
+== Provisioning target ==
+Target  /tmp/repo-pattern-phase0-97-sfi1AH
+
+== Audit ==
+Target  /tmp/repo-pattern-phase0-97-sfi1AH
+State   EMPTY
+Setup 0% · preparing resources
+Backing up workspace 0%
+Backing up workspace 100% · preview
+Setup 25% · Backing up workspace
+Generating workspace 0%
+[dry-run] mkdir -p /tmp/repo-pattern-phase0-97-sfi1AH/.claude
+[dry-run] write if missing /tmp/repo-pattern-phase0-97-sfi1AH/CLAUDE.md
+[dry-run] append # OS to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append .DS_Store to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append Thumbs.db to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append Desktop.ini to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append # Environment variables and secrets to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append .env to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append .env.* to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append !.env.example to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append !.env.*.example to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append # Coding agents: generated or project-local configuration to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append .claude/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append .mcp.json to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append CLAUDE.md to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append AGENTS.md to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append .playwright-mcp/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append .repo-pattern-runtime/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append .gstack/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append .impeccable/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append # Local databases to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append *.sqlite to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append *.sqlite3 to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append *.db to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append # Node.js to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append node_modules/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append dist/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append build/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append .next/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append .nuxt/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append .vite/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append .turbo/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append *.tsbuildinfo to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append # Python to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append __pycache__/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append *.py[cod] to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append .pytest_cache/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append .mypy_cache/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append .ruff_cache/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append .venv/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append venv/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append # Java / JVM to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append .gradle/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append target/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append *.class to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append # Go to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append bin/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append *.test to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append coverage.out to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append # Rust to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] append target/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] copy /home/kirin/Code/my-hobby/repo-pattern/.claude.example/CLAUDE.md -> /tmp/repo-pattern-phase0-97-sfi1AH/.claude/CLAUDE.md
+Generating workspace 25% · Copying workspace template
+[dry-run] write JSON /tmp/repo-pattern-phase0-97-sfi1AH/.claude/settings.json
+[dry-run] copy /home/kirin/Code/my-hobby/repo-pattern/.claude.example/hooks/remove-generated-attribution.mjs -> /tmp/repo-pattern-phase0-97-sfi1AH/.claude/hooks/remove-generated-attribution.mjs
+Generating workspace 50% · Writing Claude settings
+Setup 50% · Generating workspace
+[dry-run] append .claude/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+[dry-run] write JSON /tmp/repo-pattern-phase0-97-sfi1AH/.claude/settings.local.json
+[dry-run] append .claude/ to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+Generating workspace 75% · Writing local settings
+[dry-run] write if missing /tmp/repo-pattern-phase0-97-sfi1AH/.repo-pattern/.gitignore
+Setup 75% · Generating workspace
+Generating MCP workspace 0%
+[dry-run] mkdir -p /tmp/repo-pattern-phase0-97-sfi1AH
+[dry-run] write JSON /tmp/repo-pattern-phase0-97-sfi1AH/.mcp.json
+[dry-run] append .mcp.json to /tmp/repo-pattern-phase0-97-sfi1AH/.gitignore
+Generating MCP workspace 25% · Writing .mcp.json
+[dry-run] write JSON /tmp/repo-pattern-phase0-97-sfi1AH/.claude/settings.json
+Generating MCP workspace 50% · Enabling MCP servers
+[dry-run] write if missing /tmp/repo-pattern-phase0-97-sfi1AH/.repo-pattern/.gitignore
+Generating MCP workspace 75% · Writing workspace state
+[dry-run] write JSON /tmp/repo-pattern-phase0-97-sfi1AH/.repo-pattern/.repo-pattern.lock.json
+Generating MCP workspace 100% · preview
+Setup 99% · Generating MCP workspace
+
+== MCP generated ==
+Enabled servers  context7, tavily, gitnexus
+Claude enabled   context7, tavily, gitnexus
+Generating workspace 100% · preview
+Setup 99% · Generating workspace
+[dry-run] write JSON /tmp/repo-pattern-phase0-97-sfi1AH/.repo-pattern/.repo-pattern.json
+Backing up local skills 0%
+Backing up local skills 100% · preview
+Setup 99% · Backing up local skills
+[dry-run] rm -rf /tmp/repo-pattern-phase0-97-sfi1AH/.repo-pattern/cache
+[dry-run] rmdir /tmp/repo-pattern-phase0-97-sfi1AH/.repo-pattern if empty
+[dry-run] write JSON /tmp/repo-pattern-phase0-97-sfi1AH/.repo-pattern/.repo-pattern.json
+[dry-run] write if missing /tmp/repo-pattern-phase0-97-sfi1AH/.repo-pattern/.gitignore
+[dry-run] write JSON /tmp/repo-pattern-phase0-97-sfi1AH/.repo-pattern/.repo-pattern.lock.json
+
+== Applied optional skills ==
+Plugin settings   none
+Local skill path  none
+Skills            none
+[dry-run] write JSON /tmp/repo-pattern-phase0-97-sfi1AH/.repo-pattern/.repo-pattern.lock.json
+[dry-run] write if missing /tmp/repo-pattern-phase0-97-sfi1AH/.repo-pattern/.gitignore
+Setup 100% · preview
+
+== Setup complete ==
+Status          preview only; MCP values pending
+Target          /tmp/repo-pattern-phase0-97-sfi1AH
+Setup pipeline  none
+Pipeline scope  writes only base project metadata
+Would write     CLAUDE.md (if missing), .claude/, .mcp.json,
+                .repo-pattern/.repo-pattern.json, .repo-pattern/.repo-pattern.lock.json
+Doctor          skipped (dry-run)
+Next            review output, then rerun without --dry-run

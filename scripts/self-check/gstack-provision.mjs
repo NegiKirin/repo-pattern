@@ -4,10 +4,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { auditProject } from "../lib/audit.mjs";
-import { doctorProject } from "../lib/doctor.mjs";
-import { GSTACK_REVIEW_SIDECARS } from "../lib/gstack.mjs";
-import { provisionProject } from "../lib/provision.mjs";
+import { auditProject } from "../../src/audit.mjs";
+import { doctorProject } from "../../src/doctor.mjs";
+import { GSTACK_REVIEW_SIDECARS } from "../../src/gstack/gstack.mjs";
+import { provisionProject } from "../../src/setup/provision.mjs";
 import { installGstackSafetyFixture, installGstackUpstreamSetupFixture, writeEccGitFixture } from "./fixtures.mjs";
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));

@@ -24,16 +24,17 @@ function runGit(args, cwd) {
 async function makeFixture(root, name) {
   const repo = path.join(root, name);
   const scripts = path.join(repo, "scripts");
-  const lib = path.join(scripts, "lib");
-  await fs.mkdir(lib, { recursive: true });
+  const src = path.join(repo, "src");
+  await fs.mkdir(src, { recursive: true });
+  await fs.mkdir(scripts, { recursive: true });
   await fs.copyFile(cliSource, path.join(scripts, "check-diff-coverage.mjs"));
-  const fixture = path.join(lib, "fixture.mjs");
+  const fixture = path.join(src, "fixture.mjs");
   await fs.writeFile(fixture, "export const answer = 42;\n");
   runGit(["init", "-q"], repo);
-  runGit(["add", "scripts/lib/fixture.mjs", "scripts/check-diff-coverage.mjs"], repo);
+  runGit(["add", "src/fixture.mjs", "scripts/check-diff-coverage.mjs"], repo);
   runGit(["-c", "user.name=Self Check", "-c", "user.email=self-check@example.invalid", "commit", "-qm", "baseline"], repo);
   await fs.writeFile(fixture, "export const answer = 43;\n");
-  const untracked = path.join(lib, "new-fixture.mjs");
+  const untracked = path.join(src, "new-fixture.mjs");
   await fs.writeFile(untracked, "export const newAnswer = 44;\n");
   const coverage = path.join(root, `${name}-coverage`);
   await fs.mkdir(coverage);
@@ -49,8 +50,8 @@ export async function runCoverageCliChecks() {
     const successFixture = await makeFixture(root, "success");
     const success = run(node, ["scripts/check-diff-coverage.mjs", "HEAD"], successFixture.repo, { ...process.env, NODE_V8_COVERAGE: successFixture.coverage });
     assert.equal(success.status, 0, success.stderr);
-    assert.match(success.stdout, /scripts\/lib\/new-fixture\.mjs/);
-    assert.match(success.stdout, /scripts\/lib\/fixture\.mjs/);
+    assert.match(success.stdout, /src\/new-fixture\.mjs/);
+    assert.match(success.stdout, /src\/fixture\.mjs/);
 
     // Value: protects=coverage CLI rejects changed production files with no report; fails_when=missing report succeeds; why_new=helper predicate did not exercise command failure; seam=none
     const missingFixture = await makeFixture(root, "missing");

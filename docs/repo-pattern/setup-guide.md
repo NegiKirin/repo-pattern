@@ -5,7 +5,7 @@
 Run interactive setup when you want to choose workflow, rules, MCP servers, optional skills, provider settings, effort, permissions, and attribution in one terminal wizard. On Claude Code v2.1.257+, enabling bypass permissions requires explicit confirmation. If `~/.claude/settings.json` does not exist, setup creates it with `permissions.defaultMode=bypassPermissions`; this applies to every project, not only the target. Existing user settings are left untouched to avoid overwriting concurrent changes. Add `permissions.defaultMode=bypassPermissions` manually if you want to enable it globally:
 
 ```bash
-node scripts/repo-pattern.mjs setup --target /path/to/project
+node bin/repo-pattern.mjs setup --target /path/to/project
 ```
 
 The MCP page starts with the Core servers selected. It groups choices as:
@@ -21,13 +21,13 @@ Group headings are labels, not selectable choices. Use `↑`/`↓` to move, `Spa
 `setup --yes` is non-interactive. Without any `--mcp` flags, it uses the Core servers:
 
 ```bash
-node scripts/repo-pattern.mjs setup --target /path/to/project --yes
+node bin/repo-pattern.mjs setup --target /path/to/project --yes
 ```
 
 Use repeatable `--mcp` to select exact servers. Repeated names are deduplicated in first-occurrence order.
 
 ```bash
-node scripts/repo-pattern.mjs setup --target /path/to/project \
+node bin/repo-pattern.mjs setup --target /path/to/project \
   --mcp context7 \
   --mcp playwright \
   --mcp shadcn-studio \
@@ -53,7 +53,7 @@ On Linux, Chromium may require system libraries. Setup reports administrator rem
 `mcp` regenerates `.mcp.json` and `.claude/settings.json` MCP approvals from only the listed servers:
 
 ```bash
-node scripts/repo-pattern.mjs mcp --target /path/to/project \
+node bin/repo-pattern.mjs mcp --target /path/to/project \
   --mcp context7 --mcp tavily --mcp gitnexus --yes
 ```
 
@@ -91,10 +91,10 @@ Generated local files are gitignored:
 Inspect an existing project before taking over old Claude runtime surfaces:
 
 ```bash
-node scripts/repo-pattern.mjs audit --target /path/to/project
-node scripts/repo-pattern.mjs setup --target /path/to/project \
+node bin/repo-pattern.mjs audit --target /path/to/project
+node bin/repo-pattern.mjs setup --target /path/to/project \
   --mcp context7 --mcp tavily --mcp gitnexus --migrate --yes
-node scripts/repo-pattern.mjs doctor --target /path/to/project
+node bin/repo-pattern.mjs doctor --target /path/to/project
 ```
 
 Legacy retry or lock state from earlier releases is rejected before setup writes anything. Rerun setup and choose MCP servers explicitly.
@@ -104,7 +104,7 @@ Legacy retry or lock state from earlier releases is rejected before setup writes
 Interactive setup groups optional skills by design/frontend, project patterns, documentation, and terminal workflow. Select them with the wizard or use scriptable flags:
 
 ```bash
-node scripts/repo-pattern.mjs setup --target /path/to/project \
+node bin/repo-pattern.mjs setup --target /path/to/project \
   --with-skills taste,nextjs-pattern,herdr --yes
 ```
 

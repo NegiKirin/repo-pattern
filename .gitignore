@@ -84,9 +84,12 @@ venv/
 target/
 *.class
 # Go
-bin/
+/bin/*
+!/bin/
+!/bin/repo-pattern.mjs
 *.test
 coverage.out
 # Rust
 CLAUDE.md
 .gstack/
+bin/

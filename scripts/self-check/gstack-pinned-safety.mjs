@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { installGstackRuntimeFixture, installGstackUpstreamSetupFixture } from "./fixtures.mjs";
-import { GSTACK_REVIEW_SIDECARS, gstackCheckoutPath, setupGstack } from "../lib/gstack.mjs";
+import { GSTACK_REVIEW_SIDECARS, gstackCheckoutPath, setupGstack } from "../../src/gstack/gstack.mjs";
 
 const hashes = {
   "careful/bin/check-careful.sh": "23dc8fa32afa75ac44a93328157d2e9afc8a286eb41cccfdd6340bbfd72bfed2",
@@ -50,25 +50,25 @@ export async function runGstackPinnedSafetyChecks() {
     assert.equal(installed.status, "installed", installed.error);
     const unmanaged = path.join(root, "unmanaged");
     await fs.mkdir(unmanaged);
-    const rejectedUpgrade = spawnSync(process.execPath, [new URL("../repo-pattern.mjs", import.meta.url).pathname, "upgrade-gstack", "--target", unmanaged, "--dry-run"], { env: { ...process.env, HOME: home }, encoding: "utf8" });
+    const rejectedUpgrade = spawnSync(process.execPath, [new URL("../../bin/repo-pattern.mjs", import.meta.url).pathname, "upgrade-gstack", "--target", unmanaged, "--dry-run"], { env: { ...process.env, HOME: home }, encoding: "utf8" });
     assert.equal(rejectedUpgrade.status, 1, rejectedUpgrade.stderr);
     assert.match(rejectedUpgrade.stderr, /repo-pattern-managed gstack installation is required/);
     assert.deepEqual(await fs.readdir(unmanaged), []);
     const beforeUpgrade = await fs.readFile(path.join(target, ".claude/skills/careful/SKILL.md"), "utf8");
-    const upgradePreview = spawnSync(process.execPath, [new URL("../repo-pattern.mjs", import.meta.url).pathname, "upgrade-gstack", "--target", target, "--dry-run"], { env: { ...process.env, HOME: home }, encoding: "utf8" });
+    const upgradePreview = spawnSync(process.execPath, [new URL("../../bin/repo-pattern.mjs", import.meta.url).pathname, "upgrade-gstack", "--target", target, "--dry-run"], { env: { ...process.env, HOME: home }, encoding: "utf8" });
     assert.equal(upgradePreview.status, 0, upgradePreview.stderr);
     assert.equal(await fs.readFile(path.join(target, ".claude/skills/careful/SKILL.md"), "utf8"), beforeUpgrade);
     const settingsFile = path.join(target, ".claude/settings.json");
     const originalSettings = await fs.readFile(settingsFile, "utf8");
     await fs.writeFile(settingsFile, "{");
-    const invalidSettingsUpgrade = spawnSync(process.execPath, [new URL("../repo-pattern.mjs", import.meta.url).pathname, "upgrade-gstack", "--target", target, "--dry-run"], { env: { ...process.env, HOME: home }, encoding: "utf8" });
+    const invalidSettingsUpgrade = spawnSync(process.execPath, [new URL("../../bin/repo-pattern.mjs", import.meta.url).pathname, "upgrade-gstack", "--target", target, "--dry-run"], { env: { ...process.env, HOME: home }, encoding: "utf8" });
     assert.equal(invalidSettingsUpgrade.status, 1, invalidSettingsUpgrade.stderr);
     assert.ok(invalidSettingsUpgrade.stderr.trim());
     assert.equal(await fs.readFile(settingsFile, "utf8"), "{");
     assert.equal(await fs.readFile(path.join(target, ".claude/skills/careful/SKILL.md"), "utf8"), beforeUpgrade);
     await fs.writeFile(settingsFile, originalSettings);
     await fs.writeFile(path.join(checkout, "local-note.txt"), "preserve local edits");
-    const dirtyUpgrade = spawnSync(process.execPath, [new URL("../repo-pattern.mjs", import.meta.url).pathname, "upgrade-gstack", "--target", target, "--dry-run"], { env: { ...process.env, HOME: home }, encoding: "utf8" });
+    const dirtyUpgrade = spawnSync(process.execPath, [new URL("../../bin/repo-pattern.mjs", import.meta.url).pathname, "upgrade-gstack", "--target", target, "--dry-run"], { env: { ...process.env, HOME: home }, encoding: "utf8" });
     assert.equal(dirtyUpgrade.status, 1, dirtyUpgrade.stderr);
     assert.match(dirtyUpgrade.stderr, /Git checkout operation failed/);
     assert.equal(await fs.readFile(path.join(checkout, "local-note.txt"), "utf8"), "preserve local edits");
