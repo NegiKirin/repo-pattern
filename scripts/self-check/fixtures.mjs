@@ -23,8 +23,9 @@ export async function installGstackRuntimeFixture(checkout) {
 }
 
 export async function installGstackUpstreamSetupFixture(checkout, { failOnHookSymlink = false, failAfterPublish = false } = {}) {
+  const nodeExecutable = process.execPath.replaceAll("\\", "\\\\").replaceAll("`", "\\`");
   await fs.mkdir(path.join(checkout, "bin"), { recursive: true });
-  await fs.writeFile(path.join(checkout, "setup"), `#!/usr/bin/env node
+  await fs.writeFile(path.join(checkout, "setup"), `#!${nodeExecutable}
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,7 +70,8 @@ if (${failAfterPublish ? "true" : "false"}) process.exit(9);
 
 export async function installGstackRenderedUpstreamSetupFixture(checkout) {
   await installGstackUpstreamSetupFixture(checkout);
-  await fs.writeFile(path.join(checkout, "setup"), `#!/usr/bin/env node
+  const nodeExecutable = process.execPath.replaceAll("\\", "\\\\").replaceAll("`", "\\`");
+  await fs.writeFile(path.join(checkout, "setup"), `#!${nodeExecutable}
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

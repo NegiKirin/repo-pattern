@@ -16,6 +16,10 @@ function runCli(args) {
   return spawnSync(process.execPath, [cliPath, ...args], { cwd: repoRoot });
 }
 
+function normalizeDryRun(output, target, sourceRoot) {
+  return output.replaceAll(target, baselineTarget).replaceAll(sourceRoot, "<repo-root>");
+}
+
 async function baselineStreams(name) {
   return {
     stdout: await readFile(path.join(evidenceRoot, `${name}.stdout`)),
@@ -56,9 +60,7 @@ test("noninteractive dry-run output remains byte-identical to the Phase 0 baseli
     const expected = await baselineStreams("dry-run");
     const result = runCli(["setup", "--target", target, "--setup-pipeline", "none", "--yes", "--dry-run"]);
     assert.equal(result.status, 0);
-    const actual = result.stdout.toString().replaceAll(target, baselineTarget).replaceAll(repoRoot, "<repo-root>");
-    const fixture = expected.stdout.toString().replaceAll(repoRoot, "<repo-root>");
-    assert.equal(actual, fixture);
+    assert.equal(normalizeDryRun(result.stdout.toString(), target, repoRoot), normalizeDryRun(expected.stdout.toString(), baselineTarget, repoRoot));
     assert.deepEqual(result.stderr, expected.stderr);
   } finally {
     await rm(target, { recursive: true, force: true });
