@@ -154,7 +154,7 @@ if (process.env.FIXTURE_SETUP_FAIL === '1') process.exit(9);
   const phaseTemplate = "Probe: ~/.claude/skills/gstack/bin/gstack-codex-probe\nClose: ~/.claude/skills/gstack/autoplan/sections/phase-close.md\n```bash\nprintf '%s' $HOME/.claude/skills/gstack/bin/gstack-codex-probe\nprintf '%s' \"$HOME/.claude/skills/gstack/bin/gstack-codex-probe\"\n```\nState: ${GSTACK_HOME:-$HOME/.gstack}\n";
   await fs.writeFile(path.join(renderedCheckout, "autoplan/sections/ceo-phase.md"), phaseTemplate);
   await fs.writeFile(path.join(renderedCheckout, "autoplan/sections/ceo-phase.md.tmpl"), phaseTemplate);
-  const setupFile = path.join(renderedCheckout, "setup");
+  const setupFile = path.join(renderedCheckout, "setup.mjs");
   let renderedSetup = await fs.readFile(setupFile, "utf8");
   renderedSetup = renderedSetup.replace('const build = spawnSync', 'await fs.copyFile(path.join(source, "autoplan/sections/ceo-phase.md.tmpl"), path.join(source, "autoplan/sections/ceo-phase.md"));\nconst build = spawnSync');
   renderedSetup = renderedSetup.replace('await fs.cp(skill, rendered, { recursive: true, force: true });', `await fs.cp(skill, rendered, { recursive: true, force: true });
