@@ -50,8 +50,17 @@ test("invalid command output is diagnostic-only", () => {
 });
 
 test("noninteractive dry-run output remains byte-identical to the Phase 0 baseline", async () => {
-  // protects=none-pipeline dry-run stdout/stderr bytes and exit status under the captured checkout and target paths; fails_when=preview ordering, paths, warnings, streams, or status changes; no_claim=other checkout paths, interactive output, or live upstream output.
-  await assertBaseline("dry-run", ["setup", "--target", baselineTarget, "--setup-pipeline", "none", "--yes", "--dry-run"], 0);
+  // protects=none-pipeline dry-run stdout/stderr bytes and exit status; fails_when=preview ordering, paths, warnings, streams, or status changes; no_claim=interactive output or live upstream output.
+  const target = await mkdtemp(path.join(os.tmpdir(), "repo-pattern-cli-dry-run-"));
+  try {
+    const expected = await baselineStreams("dry-run");
+    const result = runCli(["setup", "--target", target, "--setup-pipeline", "none", "--yes", "--dry-run"]);
+    assert.equal(result.status, 0);
+    assert.deepEqual(result.stdout.toString().replaceAll(target, baselineTarget), expected.stdout.toString());
+    assert.deepEqual(result.stderr, expected.stderr);
+  } finally {
+    await rm(target, { recursive: true, force: true });
+  }
 });
 
 test("conflicting setup flags remain byte-identical to the Phase 1 baseline", async () => {
