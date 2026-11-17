@@ -3,20 +3,41 @@
   "runner": "npm test -- {files}",
   "dependencies": {
     ".gitignore": [],
-    "scripts/check-diff-coverage.mjs": [
-      "test/tooling/coverage-cli.test.mjs"
+    "scripts/lib/**": ["test/shared/shared-contract.test.mjs", "test/shared/filesystem.test.mjs"],
+    "docs/phase-0-issue-97-inventory.json": ["test/setup/setup-contract.test.mjs", "test/setup/setup-characterization.test.mjs"],
+    "package-lock.json": ["test/setup/setup-contract.test.mjs", "test/setup/setup-characterization.test.mjs"],
+    "scripts/check-diff-coverage.mjs": ["test/ui/ui-contract.test.mjs", "test/tooling/coverage-cli.test.mjs"],
+    "scripts/test-coverage.mjs": ["test/tooling/coverage-cli.test.mjs"],
+    "scripts/check-module-limits.mjs": ["test/tooling/quality-gates.test.mjs"],
+    "scripts/check-ecc-coverage.mjs": ["test/tooling/quality-gates.test.mjs"],
+    "scripts/repo-pattern.mjs": ["test/cli/cli-contract.test.mjs"],
+    "src/**": [
+      "test/cli/cli-contract.test.mjs",
+      "test/setup/mcp-attribution-contract.test.mjs",
+      "test/setup/setup-contract.test.mjs",
+      "test/shared/shared-contract.test.mjs",
+      "test/ui/ui-contract.test.mjs",
+      "test/setup/mcp-and-settings.test.mjs",
+      "test/setup/provision-and-pipelines.test.mjs",
+      "test/shared/filesystem.test.mjs",
+      "test/tooling/coverage-cli.test.mjs",
+      "test/tooling/quality-gates.test.mjs",
+      "test/ui/adapter-coverage.test.mjs",
+      "test/ui/doctor-output.test.mjs"
     ],
-    "scripts/test-coverage.mjs": [
-      "test/tooling/coverage-cli.test.mjs"
-    ],
-    "scripts/check-module-limits.mjs": [
+    "src/vendor/herdr/**": ["test/setup/setup-contract.test.mjs", "test/setup/herdr.test.mjs"],
+    "scripts/vendor/herdr/**": ["test/setup/setup-contract.test.mjs", "test/setup/herdr.test.mjs"],
+    "docs/**": ["test/setup/setup-characterization.test.mjs"],
+    "docs/plans/**": ["test/setup/setup-characterization.test.mjs"],
+    "scripts/check-coverage.mjs": ["test/tooling/coverage-cli.test.mjs"],
+    "scripts/select-evals.mjs": ["test/tooling/eval-selector.test.mjs"],
+    "scripts/**": [
+      "test/setup/setup-characterization.test.mjs",
+      "test/gstack/gstack-contract.test.mjs",
+      "test/setup/mcp-and-settings.test.mjs",
+      "test/shared/filesystem.test.mjs",
+      "test/tooling/coverage-cli.test.mjs",
       "test/tooling/quality-gates.test.mjs"
-    ],
-    "scripts/check-ecc-coverage.mjs": [
-      "test/tooling/quality-gates.test.mjs"
-    ],
-    "scripts/repo-pattern.mjs": [
-      "test/cli/cli-contract.test.mjs"
     ]
   }
 }
