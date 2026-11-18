@@ -9,7 +9,6 @@
     "scripts/check-diff-coverage.mjs": ["test/ui/ui-contract.test.mjs", "test/tooling/coverage-cli.test.mjs"],
     "scripts/test-coverage.mjs": ["test/tooling/coverage-cli.test.mjs"],
     "scripts/check-module-limits.mjs": ["test/tooling/quality-gates.test.mjs"],
-    "scripts/check-ecc-coverage.mjs": ["test/tooling/quality-gates.test.mjs"],
     "scripts/repo-pattern.mjs": ["test/cli/cli-contract.test.mjs"],
     "src/**": [
       "test/cli/cli-contract.test.mjs",
