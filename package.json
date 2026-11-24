@@ -10,7 +10,7 @@
     "audit": "node bin/repo-pattern.mjs audit --target .",
     "doctor": "node bin/repo-pattern.mjs doctor --target .",
     "mcp:core": "node bin/repo-pattern.mjs mcp --target . --mcp context7 --mcp tavily --mcp gitnexus",
-    "test": "node --test --test-concurrency=4 test/*/*.test.mjs",
+    "test": "node --test --test-concurrency=1 test/*/*.test.mjs",
     "test:coverage": "node scripts/test-coverage.mjs",
     "check:module-limits": "node scripts/check-module-limits.mjs",
     "measure:test-duration": "node scripts/measure-test-duration.mjs",
