@@ -108,34 +108,35 @@ export function setupInteractionData({ claudeCodeVersion, autoRules, availableMc
   };
 }
 
-export async function choosePermissionConfig({ claudeCodeVersion, migrationChoice, legacyBypass, selectedBypass, retryChoice, dryRun = false, confirm = askConfirm, setUserBypass = setUserBypassPermission }) {
+export async function choosePermissionConfig({ claudeCodeVersion, migrationChoice, legacyBypass, selectedBypass, retryChoice, dryRun = false, confirm = askConfirm, setUserBypass = setUserBypassPermission, output = null }) {
+  const warn = output?.warn ? (message) => output.warn(message) : (message) => console.warn(message);
   const supported = claudeVersionSupportsUserScope(claudeCodeVersion);
   if (retryChoice === "retry") {
     if (["user", "preserve"].includes(selectedBypass)) return { bypass: selectedBypass === "user" && !supported ? "allow" : selectedBypass };
     if (selectedBypass === "deny") return { bypass: "deny" };
   }
   if (dryRun && supported && (legacyBypass && migrationChoice === "yes" || selectedBypass === "allow")) {
-    console.warn("WARN: Dry run does not change user settings; bypass permissions remain unchanged.");
+    warn("WARN: Dry run does not change user settings; bypass permissions remain unchanged.");
     return { bypass: legacyBypass ? "preserve" : "deny" };
   }
   if (supported && legacyBypass && migrationChoice === "yes" && selectedBypass === "allow") {
     const transfer = await confirm("Enable bypassPermissions in user settings? User scope affects every project. Existing settings will not be overwritten; if a settings file exists, you must add this manually.", false);
     if (!transfer) {
-      console.warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
+      warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
       return { bypass: "preserve" };
     }
     const result = await setUserBypass({ accepted: true });
-    console.warn(`WARN: ${result.message}`);
-    if (!result.changed && !result.alreadyEnabled) console.warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
+    warn(`WARN: ${result.message}`);
+    if (!result.changed && !result.alreadyEnabled) warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
     return { bypass: result.changed || result.alreadyEnabled ? "user" : "preserve" };
   }
   if (!supported && legacyBypass) return { bypass: selectedBypass === "deny" ? "deny" : "allow" };
   if (supported && legacyBypass && migrationChoice === "no") {
-    console.warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
+    warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
     return { bypass: "preserve" };
   }
   if (supported && legacyBypass && migrationChoice === "yes" && selectedBypass !== "allow") {
-    console.warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
+    warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
     return { bypass: "preserve" };
   }
   const bypass = selectedBypass ?? await selectOne({
@@ -145,16 +146,16 @@ export async function choosePermissionConfig({ claudeCodeVersion, migrationChoic
   });
   if (!supported || bypass !== "allow") return { bypass };
   if (dryRun) {
-    console.warn("WARN: Dry run does not change user settings; bypass permissions remain unchanged.");
+    warn("WARN: Dry run does not change user settings; bypass permissions remain unchanged.");
     return { bypass: legacyBypass ? "preserve" : "deny" };
   }
   if (!await confirm("Enable bypass permissions in ~/.claude/settings.json? This affects every project.", false)) {
-    if (legacyBypass) console.warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
+    if (legacyBypass) warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
     return { bypass: legacyBypass ? "preserve" : "deny" };
   }
   const result = await setUserBypass({ accepted: true });
-  console.warn(`WARN: ${result.message}`);
-  if (!result.changed && !result.alreadyEnabled && legacyBypass) console.warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
+  warn(`WARN: ${result.message}`);
+  if (!result.changed && !result.alreadyEnabled && legacyBypass) warn("WARN: Project bypassPermissions remains in project settings but is ineffective in Claude Code v2.1.257+.");
   return { bypass: result.changed || result.alreadyEnabled ? "user" : legacyBypass ? "preserve" : "deny" };
 }
 

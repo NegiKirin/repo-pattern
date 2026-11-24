@@ -6,7 +6,7 @@ import { auditProject } from "../audit.mjs";
 import { cleanupProject } from "../cleanup.mjs";
 import { generateMcp } from "../mcp.mjs";
 import { setupEcc } from "../ecc/ecc.mjs";
-import { gstackCheckoutPath, gstackStatePath, setupGstack } from "../gstack/gstack.mjs";
+import { GSTACK_UPSTREAM_COMMIT, gstackCheckoutPath, gstackStatePath, setupGstack } from "../gstack/gstack.mjs";
 import { doctorProject } from "../doctor.mjs";
 import { applyEccRules, clearEccRules } from "../ecc/rules.mjs";
 import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, ensureRepoPatternGitignore, exists, isTracked, readJson, readPrivateJson, readRepoConfig, removePath, repoConfigPath, repoLockPath, writeIfMissing, writePrivateJson } from "../shared/fs-utils.mjs";
@@ -243,7 +243,7 @@ export async function provisionProject({ sourceRoot, target, setupPipeline = "ec
   if (planTuneHooks && !usesGstack(setupPipeline)) throw new Error("--with-plan-tune-hooks requires --setup-pipeline gstack or both.");
   if (!interactiveSetup) presentation.summary?.("Provisioning target", [["Target", target]]);
   await rejectClaudeSymlink(target, { dryRun });
-  const audit = await auditProject(target);
+  const audit = await auditProject(target, { silent: interactiveSetup });
   if (!interactiveSetup) presentation.audit?.(audit);
 
   if (audit.state === "LEGACY_VENDOR" && !migrate) {
@@ -331,7 +331,7 @@ export async function provisionProject({ sourceRoot, target, setupPipeline = "ec
     advanceWorkspace("Writing local settings");
     await ensureRepoPatternGitignore(target, { dryRun, silent: interactiveSetup });
     advanceWorkspace("Writing workspace state");
-    mcpResult = await generateMcp({ sourceRoot, target, mcpServers, mcpValues, dryRun, progress, silent: interactiveSetup });
+    mcpResult = await generateMcp({ sourceRoot, target, mcpServers, mcpValues, dryRun, progress, silent: interactiveSetup, output: { ...presentation, summary: null } });
     if (mcpResult.warnings) setupWarnings.push(...mcpResult.warnings);
     workspace?.complete({ detail: dryRun ? "preview" : "completed" });
     eccStatus = usesEcc(setupPipeline) ? await setupEcc({ sourceRoot, target, dryRun, configurePlugin: false, silent: interactiveSetup, output: presentation }) : null;
@@ -353,7 +353,8 @@ export async function provisionProject({ sourceRoot, target, setupPipeline = "ec
       reconcile: true,
       previousOptionalSkills: previousRepoConfig.optionalSkills,
       progress,
-      silent: interactiveSetup
+      silent: interactiveSetup,
+      output: { ...presentation, summary: null, log: null }
     });
     if (!audit.hasRepoPatternJson && audit.state !== "LEGACY_VENDOR" && optionalSkills.includes("herdr")) {
       await installHerdrIntegration({ target, dryRun, silent: interactiveSetup });
@@ -387,7 +388,7 @@ export async function provisionProject({ sourceRoot, target, setupPipeline = "ec
     }
   }
 
-  if (usesGstack(setupPipeline)) gstackStatus = await setupGstack({ target, dryRun, planTuneHooks, progress, silent: interactiveSetup, ...(resolveGstackCheckout ? { resolveCheckout: resolveGstackCheckout } : {}) });
+  if (usesGstack(setupPipeline)) gstackStatus = await setupGstack({ target, dryRun, planTuneHooks, progress, silent: interactiveSetup, ...(resolveGstackCheckout ? { resolveCheckout: resolveGstackCheckout } : { expectedCommit: GSTACK_UPSTREAM_COMMIT }) });
   const gstackFailed = gstackStatus?.status === "failed";
   if (gstackFailed) {
     progress?.failGroup?.("components", "gstack setup");
@@ -435,7 +436,7 @@ export async function provisionProject({ sourceRoot, target, setupPipeline = "ec
   });
   await ensureRepoPatternGitignore(target, { dryRun, silent: interactiveSetup });
 
-  if (!dryRun) await doctorProject(target, { updateLock: true, dryRun, silent: interactiveSetup });
+  if (!dryRun) await doctorProject(target, { updateLock: true, dryRun, silent: interactiveSetup, output: presentation });
 
   const warnings = [
     ...(eccStatus === "manual-plugin-install-required" ? ["ECC plugin pending: run /plugin install ecc@ecc in Claude Code"] : []),

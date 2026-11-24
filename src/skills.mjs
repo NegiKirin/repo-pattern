@@ -203,7 +203,7 @@ async function rejectSymlinks(root) {
   }
 }
 
-async function syncSkillCache(target, skill, { dryRun = false, progress = null, silent = false } = {}) {
+async function syncSkillCache(target, skill, { dryRun = false, progress = null, silent = false, output = null } = {}) {
   const cacheRoot = path.join(target, ".repo-pattern", "cache", "skills");
   const cacheDir = path.join(cacheRoot, skill.value);
   const cloneArgs = ["clone", "--progress", ...(skill.partialClone ? ["--filter=blob:none"] : []), skill.source, cacheDir];
@@ -229,8 +229,8 @@ async function syncSkillCache(target, skill, { dryRun = false, progress = null, 
 
   if (dryRun) {
     if (!silent) {
-      console.log(`[dry-run] git ${cloneArgs.join(" ")}`);
-      console.log(`[dry-run] git -C ${cacheDir} checkout ${skill.revision}`);
+      output?.log?.(`[dry-run] git ${cloneArgs.join(" ")}`);
+      output?.log?.(`[dry-run] git -C ${cacheDir} checkout ${skill.revision}`);
     }
     operation?.complete({ detail: "preview" });
     return cacheDir;
@@ -252,7 +252,7 @@ async function syncSkillCache(target, skill, { dryRun = false, progress = null, 
   return cacheDir;
 }
 
-async function copySkill(skill, cacheDir, destRoot, { dryRun = false, progress = null, silent = false } = {}) {
+async function copySkill(skill, cacheDir, destRoot, { dryRun = false, progress = null, silent = false, output = null } = {}) {
   const resources = [];
   let installedDirs = [];
   let operation = dryRun
@@ -278,7 +278,7 @@ async function copySkill(skill, cacheDir, destRoot, { dryRun = false, progress =
     const sourceDir = path.join(cacheDir, skill.sourceDir);
     if (!dryRun && !exists(sourceDir)) throw new Error(`${skill.value} source dir not found: ${skill.sourceDir}`);
     if (dryRun) {
-      if (!silent) console.log(`[dry-run] copy ${sourceDir} -> ${destRoot}`);
+      output?.log?.(`[dry-run] copy ${sourceDir} -> ${destRoot}`);
       operation?.complete({ detail: "preview" });
       return [skill.sourceDir];
     }
@@ -293,8 +293,8 @@ async function copySkill(skill, cacheDir, destRoot, { dryRun = false, progress =
     const destination = path.join(destRoot, skill.destName);
     if (dryRun) {
       if (!silent) {
-        console.log(`[dry-run] copy ${cacheDir} -> ${destination}`);
-        console.log(`[dry-run] rm -rf ${path.join(destination, ".git")}`);
+        output?.log?.(`[dry-run] copy ${cacheDir} -> ${destination}`);
+        output?.log?.(`[dry-run] rm -rf ${path.join(destination, ".git")}`);
       }
       operation?.complete({ detail: "preview" });
       return [skill.destName];
@@ -342,19 +342,22 @@ export async function applyOptionalSkills({
   reconcile = false,
   previousOptionalSkills = null,
   progress = null,
-  silent = false
+  silent = false,
+  output = null,
+  skillDefinitions = OPTIONAL_SKILLS
 }) {
+  const known = (value) => skillDefinitions.find((skill) => skill.value === value);
   const selected = normalizeOptionalSkills(skills);
-  const invalid = invalidOptionalSkills(selected);
+  const invalid = selected.filter((skill) => !known(skill));
   if (invalid.length > 0) throw new Error(`Unknown optional skill(s): ${invalid.join(", ")}`);
 
-  const chosen = selected.map(knownSkill);
+  const chosen = selected.map(known);
   const repoConfig = await readRepoConfig(target, {});
   const previousSkills = previousOptionalSkills || repoConfig.optionalSkills || [];
   const desired = reconcile
     ? chosen
     : [...new Set([...previousSkills, ...chosen].map((entry) => entry.name || entry.value))]
-      .map(knownSkill)
+      .map(known)
       .filter(Boolean);
   const pluginSkills = desired.filter((skill) => skill.plugin);
   const localSkills = desired.filter((skill) => !skill.plugin);
@@ -383,8 +386,8 @@ export async function applyOptionalSkills({
       await ensureDir(destRoot, { dryRun, silent });
       await ensureRepoPatternGitignore(target, { dryRun, silent });
       for (const skill of localSkills) {
-        const cacheDir = await syncSkillCache(target, skill, { dryRun, progress, silent });
-        const installedDirs = await copySkill(skill, cacheDir, destRoot, { dryRun, progress, silent });
+        const cacheDir = await syncSkillCache(target, skill, { dryRun, progress, silent, output });
+        const installedDirs = await copySkill(skill, cacheDir, destRoot, { dryRun, progress, silent, output });
         appliedSkills.push({ name: skill.value, source: skill.source, revision: skill.revision, license: skill.license, installedDirs });
       }
     } else if (!dryRun) {
@@ -397,8 +400,8 @@ export async function applyOptionalSkills({
     const repoPatternDir = path.join(target, ".repo-pattern");
     if (dryRun) {
       if (!silent) {
-        console.log(`[dry-run] rm -rf ${path.join(repoPatternDir, "cache")}`);
-        console.log(`[dry-run] rmdir ${repoPatternDir} if empty`);
+        output?.log?.(`[dry-run] rm -rf ${path.join(repoPatternDir, "cache")}`);
+        output?.log?.(`[dry-run] rmdir ${repoPatternDir} if empty`);
       }
     } else {
       await removePath(path.join(repoPatternDir, "cache"), { silent });
@@ -424,13 +427,11 @@ export async function applyOptionalSkills({
   lock.optionalSkills = { appliedSkills, appliedAt: new Date().toISOString() };
   await writeJson(lockPath, lock, { dryRun, silent });
 
-  if (!silent) {
-    printSummary("Applied optional skills", [
-      ["Plugin settings", pluginSkills.length ? ".claude/settings.local.json" : "none"],
-      ["Local skill path", localSkills.length ? path.relative(target, destRoot) : "none"],
-      ["Skills", selected.join(", ") || "none"]
-    ], { progress });
-  }
+  if (!silent) (output?.summary || printSummary)("Applied optional skills", [
+    ["Plugin settings", pluginSkills.length ? ".claude/settings.local.json" : "none"],
+    ["Local skill path", localSkills.length ? path.relative(target, destRoot) : "none"],
+    ["Skills", selected.join(", ") || "none"]
+  ], { progress });
 
   return { selectedSkills: selected, appliedSkills };
 }

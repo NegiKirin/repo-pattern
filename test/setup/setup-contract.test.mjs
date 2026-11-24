@@ -25,7 +25,7 @@ const data = {
   ],
   ruleModes: ["auto", "manual", "none"],
   mcpInputs: (servers) => servers.includes("context7") ? [
-    { name: "CONTEXT7_API_KEY", kind: "secret", label: "context7: CONTEXT7_API_KEY", defaultValue: "", placeholder: "ctx7sk-.....................", validate: (value) => value ? true : "Required" }
+    { name: "CONTEXT7_API_KEY", kind: "secret", label: "context7: CONTEXT7_API_KEY", defaultValue: "", placeholder: "", validate: (value) => value ? true : "Required" }
   ] : [],
   rules: ["common", "typescript"],
   optionalSkills: [
@@ -333,6 +333,7 @@ test("setup state transitions preserve retry/edit options and migration decision
       }
     }
 
+    // IR-4: protects=cancelled setup preserves legacy files and retry state remains explicit; fails_when=cancellation is treated as success or retry loses state; no_claim=real TTY behavior.
     for (const migrationChoice of ["yes", "no"]) {
       const target = path.join(root, `legacy-${migrationChoice}`);
       const legacyFile = path.join(target, ".claude", "skills", "legacy.txt");
@@ -347,14 +348,37 @@ test("setup state transitions preserve retry/edit options and migration decision
           controller: { close() {}, renderProgress() {} }
         });
       if (migrationChoice === "no") {
+        if (migrationChoice === "no") {
+          await fs.mkdir(path.join(target, ".repo-pattern"), { recursive: true });
+          await fs.writeFile(path.join(target, ".repo-pattern", ".repo-pattern.lock.json"), JSON.stringify({ setup: { status: "failed", options: { setupPipeline: "none" } } }));
+        }
         await assert.rejects(() => setupProject({ sourceRoot, target, checkClaude: async () => "1.0.0", interactionRunner: runInteraction, provision: async (options) => { provisionOptions = options; }, output }), /Setup cancelled/);
         assert.equal(await fs.readFile(legacyFile, "utf8"), before);
+        const retryState = JSON.parse(await fs.readFile(path.join(target, ".repo-pattern", ".repo-pattern.lock.json"), "utf8"));
+        assert.equal(retryState.setup.status, "failed");
       } else {
         await setupProject({ sourceRoot, target, checkClaude: async () => "1.0.0", interactionRunner: runInteraction, provision: async (options) => { provisionOptions = options; }, output });
         assert.equal(provisionOptions.migrate, true);
         assert.equal(await fs.readFile(legacyFile, "utf8"), before);
       }
     }
+
+    // IR-1: protects=one completion and one authoritative setup summary; fails_when=stale callback or duplicate submit mutates state or emits duplicate output; no_claim=renderer implementation.
+    const summaries = [];
+    let completionCount = 0;
+    const callbackTarget = path.join(root, "callback-order");
+    await provisionProject({
+      sourceRoot,
+      target: callbackTarget,
+      setupPipeline: "none",
+      mcpServers: [],
+      dryRun: true,
+      progressAdapter: { create: () => ({ complete() { completionCount++; }, fail() {}, beginOperation() { return { update() {}, complete() {} }; } }) },
+      output: { summary(title) { summaries.push(title); }, audit() {}, style, warn() {} }
+    });
+    assert.equal(completionCount, 1);
+    assert.deepEqual(summaries, ["Provisioning target", "Setup complete"]);
+    assert.equal(summaries.filter((title) => title === "Setup complete").length, 1);
   } finally {
     Object.defineProperties(process.stdin, { isTTY: { value: originalStdin, configurable: true } });
     Object.defineProperties(process.stdout, { isTTY: { value: originalStdout, configurable: true } });
@@ -552,11 +576,14 @@ test("MCP input fields deduplicate variables and validate secrets", () => {
     duplicate: { env: { CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}" } }
   });
   assert.deepEqual(fields.map(({ validate: _validate, ...field }) => field), [
-    { name: "CONTEXT7_API_KEY", defaultValue: "", kind: "secret", label: "context7: CONTEXT7_API_KEY", placeholder: "ctx7sk-....................." },
+    { name: "CONTEXT7_API_KEY", defaultValue: "", kind: "secret", label: "context7: CONTEXT7_API_KEY", placeholder: "" },
     { name: "PROJECT_DIR", defaultValue: ".", kind: "path", label: "context7: PROJECT_DIR" }
   ]);
   assert.equal(fields[0].validate(""), "Required");
   assert.equal(fields[0].validate("ctx7sk-valid"), true);
+  assert.equal(fields[1].validate("/etc"), "Use a relative path, not an absolute machine path.");
+  assert.equal(fields[1].validate("../secrets"), "Path must not contain '..'.");
+  assert.equal(fields[1].validate("project"), true);
 });
 
 test("permission decisions preserve version, retry, dry-run, and secret filtering rules", async () => {
@@ -609,6 +636,16 @@ test("permission decisions preserve version, retry, dry-run, and secret filterin
     [{ claudeCodeVersion: "2.1.257", dryRun: true, migrationChoice: "yes", legacyBypass: true }, { bypass: "preserve" }]
   ];
   for (const [input, expected] of choices) assert.deepEqual(await choosePermissionConfig(input), expected);
+  const adapterWarnings = [];
+  assert.deepEqual(await choosePermissionConfig({
+    claudeCodeVersion: "2.1.257",
+    migrationChoice: "no",
+    legacyBypass: true,
+    selectedBypass: "deny",
+    output: { warn: (message) => adapterWarnings.push(message) }
+  }), { bypass: "preserve" });
+  assert.equal(adapterWarnings.length, 1);
+  assert.match(adapterWarnings[0], /ineffective/);
   for (const bypass of ["deny", "user"]) {
     let writes = 0;
     const result = await choosePermissionConfig({ claudeCodeVersion: "2.1.257", dryRun: true, selectedBypass: bypass, setUserBypass: async () => { writes++; return { changed: true }; } });

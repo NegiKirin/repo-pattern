@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { parseGitProgress, runGitWithProgress } from "../../src/shared/git-progress.mjs";
-import { backupPaths, copyRecursiveWithProgress, scanCopyTree } from "../../src/shared/fs-utils.mjs";
+import { backupPaths, copyRecursiveWithProgress, readPrivateJson, scanCopyTree, writePrivateJson } from "../../src/shared/fs-utils.mjs";
 
 function fakeChild({ stdout = [], stderr = [], status = 0, error = null }) {
   const child = new EventEmitter();
@@ -48,6 +48,50 @@ test("Git progress parsing and subprocess capture preserve deterministic contrac
   await assert.rejects(() => runGitWithProgress(["fetch"], {
     spawnCommand: () => fakeChild({ stdout: ["out"], stderr: ["fatal: failed\n"], status: 128 })
   }), (error) => error.status === 128 && error.stdout === "out" && error.stderr === "fatal: failed\n");
+});
+
+test("private JSON helpers preserve permissions, merge state, and reject symlinks", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-private-json-"));
+  try {
+    const file = path.join(root, "nested", "settings.json");
+    assert.deepEqual(await readPrivateJson(file, { fallback: true }), { fallback: true });
+    await writePrivateJson(file, { version: 1 }, { parentLabel: "nested" });
+    assert.deepEqual(await readPrivateJson(file, null, { parentLabel: "nested" }), { version: 1 });
+    assert.equal((await fs.stat(file)).mode & 0o777, 0o600);
+    await writePrivateJson(file, (current) => ({ ...current, version: 2 }), { parentLabel: "nested" });
+    assert.deepEqual(await readPrivateJson(file, null, { parentLabel: "nested" }), { version: 2 });
+
+    const preview = path.join(root, "preview", "settings.json");
+    await writePrivateJson(preview, { dryRun: true }, { dryRun: true });
+    await assert.rejects(fs.access(preview), { code: "ENOENT" });
+
+    const outside = path.join(root, "outside.json");
+    await fs.writeFile(outside, "outside");
+    await fs.symlink(outside, path.join(root, "linked.json"));
+    await assert.rejects(
+      () => readPrivateJson(path.join(root, "linked.json"), null, { label: "linked.json" }),
+      /linked\.json must not be a symlink/
+    );
+    await assert.rejects(
+      () => writePrivateJson(path.join(root, "linked.json"), {}, { label: "linked.json" }),
+      /linked\.json must not be a symlink/
+    );
+
+    const parentTarget = path.join(root, "outside-parent");
+    await fs.mkdir(parentTarget);
+    await fs.symlink(parentTarget, path.join(root, "linked-parent"), "dir");
+    await assert.rejects(
+      () => readPrivateJson(path.join(root, "linked-parent", "settings.json"), {}, { parentLabel: "linked-parent" }),
+      /linked-parent must not be a symlink/
+    );
+    await assert.rejects(
+      () => writePrivateJson(path.join(root, "linked-parent", "settings.json"), {}, { parentLabel: "linked-parent" }),
+      /linked-parent must not be a symlink/
+    );
+    assert.deepEqual(await fs.readdir(parentTarget), []);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });
 
 test("filesystem copy and backup helpers preserve files, modes, symlink safety, and dry-run behavior", async () => {

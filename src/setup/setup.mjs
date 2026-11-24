@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
-import { auditProject, printAudit } from "../audit.mjs";
+import { auditProject } from "../audit.mjs";
+import { printAudit, printDoctor } from "../ui/reports.mjs";
 import { detectProject } from "../project-detect.mjs";
 import { provisionProject } from "./provision.mjs";
 import { choosePermissionConfig, defaultMcpServers, localSettingsPromptOptions, needsLocalSettingsPrompt, retryLocalSettingsEnv, runSetupInteraction, selectEccRuleDefaults, setupInteractionData } from "../ui/setup-interaction.mjs";
@@ -129,7 +130,7 @@ function defaultRuleConfig(setupPipeline, applyRules, detection) {
   };
 }
 
-const defaultOutput = { summary: printSummary, audit: printAudit, style, warn: console.warn };
+const defaultOutput = { summary: printSummary, audit: printAudit, doctor: printDoctor, style, warn: (...args) => console.warn(...args), log: (...args) => console.log(...args) };
 const defaultProgressAdapter = { create: createSetupProgress };
 
 export async function setupProject({ sourceRoot, target, mcpServers = [], setupPipeline = "ecc", planTuneHooks = false, dryRun = false, force = false, migrate = false, yes = false, applyRules = false, optionalSkills = [], output = defaultOutput, progressAdapter = defaultProgressAdapter, checkClaude = checkClaudeCode, interactionRunner = runSetupInteraction, provision = provisionProject }) {
@@ -137,7 +138,7 @@ export async function setupProject({ sourceRoot, target, mcpServers = [], setupP
   if (planTuneHooks && !["gstack", "both"].includes(setupPipeline)) throw new Error("--with-plan-tune-hooks requires --setup-pipeline gstack or both.");
   if (!isInteractive()) {
     if (!yes) throw new Error("setup requires an interactive terminal, or pass --yes for scriptable mode.");
-    console.warn("WARN: --yes disables bypass permissions without editing user settings. Existing project bypass settings are removed during setup; use interactive setup to review them.");
+    output.warn?.("WARN: --yes disables bypass permissions without editing user settings. Existing project bypass settings are removed during setup; use interactive setup to review them.");
     await previousSetupOptions(target);
     const detection = await detectProject(target);
     const ruleConfig = defaultRuleConfig(setupPipeline, applyRules, detection);
@@ -168,7 +169,7 @@ export async function setupProject({ sourceRoot, target, mcpServers = [], setupP
 
   const previousOptions = await previousSetupOptions(target);
   const detection = await detectProject(target);
-  const audit = await auditProject(target);
+  const audit = await auditProject(target, { output, silent: false });
   if (audit.state === "LEGACY_VENDOR" && force && !migrate) {
     throw new Error("Target has legacy/local Claude runtime surfaces. Re-run setup with --migrate, not --force.");
   }
@@ -181,7 +182,7 @@ export async function setupProject({ sourceRoot, target, mcpServers = [], setupP
     const projectSettings = await readPrivateJson(path.join(target, ".claude", "settings.json"), {}, { label: ".claude/settings.json", parentLabel: ".claude" });
     legacyBypass = projectSettings.permissions?.defaultMode === "bypassPermissions";
   } catch (error) {
-    if (error instanceof SyntaxError) console.warn(`WARN: Existing .claude/settings.json is malformed; fix it before running setup: ${error.message}`);
+    if (error instanceof SyntaxError) output.warn?.(`WARN: Existing .claude/settings.json is malformed; fix it before running setup: ${error.message}`);
     else throw error;
   }
   const currentSettingsEnv = await currentLocalSettingsEnv(target);
@@ -221,7 +222,8 @@ export async function setupProject({ sourceRoot, target, mcpServers = [], setupP
     legacyBypass,
     selectedBypass: wizardState.permissionConfig.bypass,
     retryChoice: wizardState.retryChoice,
-    dryRun
+    dryRun,
+    output
   });
   const selectedSetupPipeline = wizardState.setupPipeline;
   const selectedPlanTuneHooks = wizardState.planTuneHooks;

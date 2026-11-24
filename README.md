@@ -122,4 +122,4 @@ target-project/
 
 ## Learn more
 
-Full setup details live in [docs/repo-pattern/setup-guide.md](docs/repo-pattern/setup-guide.md). Third-party license notices are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Full setup details live in [docs/repo-pattern/setup-guide.md](docs/repo-pattern/setup-guide.md). See [CONTRIBUTING.md](CONTRIBUTING.md) for local checks and [docs/architecture.md](docs/architecture.md) for module boundaries. Third-party license notices are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

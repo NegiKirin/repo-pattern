@@ -2,11 +2,12 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import packageJson from "../package.json" with { type: "json" };
-import { auditProject, printAudit } from "./audit.mjs";
+import { auditProject } from "./audit.mjs";
+import { printAudit, printDoctor } from "./ui/reports.mjs";
 import { cleanupProject } from "./cleanup.mjs";
 import { generateMcp, listAvailableMcpServers, readGeneratedMcpValues } from "./mcp.mjs";
 import { doctorProject } from "./doctor.mjs";
-import { setupGstack, validateProjectGstack } from "./gstack/gstack.mjs";
+import { GSTACK_UPSTREAM_COMMIT, setupGstack, validateProjectGstack } from "./gstack/gstack.mjs";
 import { readJson } from "./shared/fs-utils.mjs";
 import { applyEccRules } from "./ecc/rules.mjs";
 import { printSummary } from "./ui/prompt.mjs";
@@ -176,7 +177,7 @@ async function main() {
         console.log(`repo-pattern ${packageJson.version}`);
         break;
       case "audit": {
-        const audit = await auditProject(options.target);
+        const audit = await auditProject(options.target, { silent: true });
         printAudit(audit);
         break;
       }
@@ -188,7 +189,7 @@ async function main() {
         if (!current.checkoutValid || !current.stateValid) throw new Error("A repo-pattern-managed gstack installation is required before upgrading.");
         const settings = await readJson(path.join(options.target, ".claude", "settings.json"), {});
         const planTuneHooks = Object.values(settings.hooks || {}).some((entries) => entries.some((entry) => entry._gstack_source === "repo-pattern-plan-tune"));
-        const result = await setupGstack({ target: options.target, upgrade: true, dryRun: options.dryRun, planTuneHooks });
+        const result = await setupGstack({ target: options.target, upgrade: true, dryRun: options.dryRun, planTuneHooks, expectedCommit: GSTACK_UPSTREAM_COMMIT });
         if (result.status === "failed") throw new Error([result.error, ...(result.rollbackErrors || []), ...(result.recoverySnapshot ? [`Recovery snapshot retained at: ${result.recoverySnapshot}`] : [])].join("\n"));
         break;
       }
@@ -196,13 +197,13 @@ async function main() {
         await cleanupProject({ sourceRoot, ...options });
         break;
       case "mcp":
-        await generateMcp({ sourceRoot, target: options.target, mcpServers: options.mcpServers.length > 0 ? options.mcpServers : DEFAULT_MCP_SERVERS, mcpValues: await readGeneratedMcpValues(options.target), yes: options.yes, dryRun: options.dryRun });
+        await generateMcp({ sourceRoot, target: options.target, mcpServers: options.mcpServers.length > 0 ? options.mcpServers : DEFAULT_MCP_SERVERS, mcpValues: await readGeneratedMcpValues(options.target), yes: options.yes, dryRun: options.dryRun, output: { summary: printSummary, warn: console.warn } });
         break;
       case "rules":
         await applyEccRules({ target: options.target, dryRun: options.dryRun, output: { summary: printSummary } });
         break;
       case "doctor":
-        await doctorProject(options.target, { verbose: options.verbose });
+        await doctorProject(options.target, { verbose: options.verbose, output: { doctor: printDoctor } });
         break;
       default:
         console.error(`Unknown command: ${options.command}`);

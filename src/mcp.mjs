@@ -1,18 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { appendGitignoreLine, ensureDir, ensureRepoPatternGitignore, exists, isTracked, readJson, readPrivateJson, readRepoLock, repoLockPath, writeJson, writePrivateJson } from "./shared/fs-utils.mjs";
-import { askPassword, askText, isInteractive, printSummary, style } from "./ui/prompt.mjs";
+import { collectMcpValues, mcpInputFields, mcpSecretPrompt, parseMcpPlaceholder as parsePlaceholder } from "./ui/mcp-interaction.mjs";
+import { printBox, printSummary, style } from "./ui/prompt.mjs";
+export { collectMcpValues, mcpInputFields, mcpSecretPrompt, validateRelativeMcpPath } from "./ui/mcp-interaction.mjs";
 
-const PLACEHOLDER_RE = /^\$\{([A-Z0-9_]+)(?::-(.*))?\}$/;
-const SECRET_RE = /(API_KEY|TOKEN|SECRET|PASSWORD)$/;
-const PATH_RE = /(PROJECT_DIR|_DIR|_PATH)$/;
 const SECRET_HELP_URLS = {
   CONTEXT7_API_KEY: "https://context7.com/dashboard",
   TAVILY_API_KEY: "https://app.tavily.com/home"
-};
-const SECRET_PLACEHOLDERS = {
-  CONTEXT7_API_KEY: "ctx7sk-.....................",
-  TAVILY_API_KEY: "tvly-..................."
 };
 const PERSISTED_MCP_VALUES = new Set(Object.keys(SECRET_HELP_URLS));
 
@@ -42,62 +37,6 @@ export async function listAvailableMcpServers(sourceRoot) {
   return entries.filter((name) => name.endsWith(".json")).map((name) => path.basename(name, ".json")).sort();
 }
 
-function parsePlaceholder(value) {
-  if (typeof value !== "string") return null;
-  const match = value.match(PLACEHOLDER_RE);
-  if (!match) return null;
-  return { name: match[1], defaultValue: match[2] || "" };
-}
-
-export function validateRelativeMcpPath(value) {
-  const input = String(value || "").trim();
-  if (!input) return "Required";
-  if (input.startsWith("~") || path.isAbsolute(input) || /^[A-Za-z]:[\\/]/.test(input)) return "Use a relative path, not an absolute machine path.";
-  if (input.split(/[\\/]+/).includes("..")) return "Path must not contain '..'.";
-  return true;
-}
-
-export function mcpSecretPrompt(input) {
-  const helpUrl = SECRET_HELP_URLS[input.name];
-  return helpUrl ? `MCP secret — ${input.label} (get key: ${helpUrl})` : `MCP secret — ${input.label}`;
-}
-
-export function mcpInputFields(mcpServers) {
-  const inputs = [];
-  const seen = new Set();
-
-  function add(input) {
-    if (seen.has(input.name)) return;
-    seen.add(input.name);
-    inputs.push(input);
-  }
-
-  for (const [serverName, server] of Object.entries(mcpServers)) {
-    for (const [envName, envValue] of Object.entries(server.env || {})) {
-      const placeholder = parsePlaceholder(envValue);
-      if (!placeholder) continue;
-      add({
-        ...placeholder,
-        kind: SECRET_RE.test(placeholder.name) ? "secret" : "text",
-        label: `${serverName}: ${envName}`,
-        placeholder: SECRET_PLACEHOLDERS[placeholder.name],
-        validate: (value) => String(value || "").trim() ? true : "Required"
-      });
-    }
-
-    for (const arg of server.args || []) {
-      const placeholder = parsePlaceholder(arg);
-      if (!placeholder) continue;
-      add({
-        ...placeholder,
-        kind: PATH_RE.test(placeholder.name) ? "path" : "text",
-        label: `${serverName}: ${placeholder.name}`
-      });
-    }
-  }
-
-  return inputs;
-}
 
 function missingRequiredInputs(inputs, values) {
   return inputs.filter((input) => !input.defaultValue && !values[input.name]);
@@ -135,41 +74,11 @@ export async function readMcpConfig({ sourceRoot, mcpServers: selectedServers = 
   return { enabledServers, mcpServers };
 }
 
-export async function collectMcpValues(mcpServers, { yes = false, values = {} } = {}) {
-  const inputs = mcpInputFields(mcpServers);
-  const nextValues = { ...values };
-
-  if (yes || !isInteractive()) return nextValues;
-
-  for (const input of inputs) {
-    if (nextValues[input.name]) continue;
-    const initial = process.env[input.name] || input.defaultValue;
-    if (input.kind === "path") {
-      nextValues[input.name] = await askText(`MCP path — ${input.label}`, {
-        initial: initial || ".",
-        validate: validateRelativeMcpPath
-      });
-    } else if (input.kind === "secret") {
-      nextValues[input.name] = await askPassword(mcpSecretPrompt(input), {
-        initial,
-        validate: (value) => String(value || "").trim() ? true : "Required"
-      });
-    } else {
-      nextValues[input.name] = await askText(`MCP value — ${input.label}`, {
-        initial,
-        validate: (value) => String(value || "").trim() ? true : "Required"
-      });
-    }
-  }
-
-  return nextValues;
-}
-
-function warnMissingMcpValues(mcpServers, values, { progress = null, silent = false } = {}) {
+function warnMissingMcpValues(mcpServers, values, { silent = false, output = null } = {}) {
   const missing = missingRequiredInputs(mcpInputFields(mcpServers), { ...process.env, ...values });
   if (missing.length === 0) return [];
   const names = missing.map((input) => input.name);
-  if (!silent) console.warn(style("info", `MCP values missing: ${names.join(", ")}. Export env vars or edit .mcp.json before using those servers.`));
+  if (!silent) (output?.warn || console.warn)(style("info", `MCP values missing: ${names.join(", ")}. Export env vars or edit .mcp.json before using those servers.`));
   return names;
 }
 
@@ -193,7 +102,7 @@ async function syncEnabledMcpServers(target, servers, { dryRun = false, silent =
   await writePrivateJson(settingsPath, settings, { dryRun, silent, label: ".claude/settings.json", parentLabel: ".claude" });
 }
 
-export async function generateMcp({ sourceRoot, target, mcpServers: selectedServers = [], mcpValues = {}, yes = false, dryRun = false, progress = null, silent = false }) {
+export async function generateMcp({ sourceRoot, target, mcpServers: selectedServers = [], mcpValues = {}, yes = false, dryRun = false, progress = null, silent = false, output = null }) {
   if (!dryRun) {
     try {
       if ((await fs.lstat(path.join(target, ".repo-pattern"))).isSymbolicLink()) throw new Error(".repo-pattern must not be a symlink.");
@@ -242,12 +151,10 @@ export async function generateMcp({ sourceRoot, target, mcpServers: selectedServ
     throw error;
   }
 
-  const missingValues = warnMissingMcpValues(mcpServers, values, { progress, silent });
-  if (!silent) {
-    printSummary("MCP generated", [
-      ["Enabled servers", Object.keys(mcpServers).join(", ")],
-      ["Claude enabled", enabledServers.join(", ")]
-    ], { progress });
-  }
+  const missingValues = warnMissingMcpValues(mcpServers, values, { silent, output });
+  if (!silent) (output?.summary || printSummary)("MCP generated", [
+    ["Enabled servers", Object.keys(mcpServers).join(", ")],
+    ["Claude enabled", enabledServers.join(", ")]
+  ], { progress });
   return { missingValues, ...(missingValues.length > 0 ? { warnings: [`MCP values pending: ${missingValues.join(", ")}`] } : {}) };
 }

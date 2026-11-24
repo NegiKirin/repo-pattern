@@ -10,6 +10,8 @@ src/                       runtime implementation
   ecc/                     ECC rules, source, manifests, and synchronization
   gstack/                  gstack setup, runtime, upstream, and documents
   ui/                      prompts, wizard, interaction, and progress adapters
+    mcp-interaction.mjs    interactive MCP configuration prompts and validation
+    reports.mjs            doctor/report presentation and terminal-safe formatting
   shared/                  filesystem and Git progress primitives
   vendor/                  vendored runtime assets and licenses
   audit.mjs, doctor.mjs,
@@ -17,7 +19,7 @@ src/                       runtime implementation
   skills.mjs, herdr.mjs,
   project-detect.mjs       runtime feature modules
 test/                      native node:test contract tests and fixtures
-scripts/                   coverage, module checks, characterization, and self-check tooling
+scripts/                   coverage and module-check tooling; migrated tests live under test/
 ```
 
 The npm package ships `bin/repo-pattern.mjs`, `src/`, the required `.claude.example/` templates, `mcp/servers/`, `.repo-pattern.example.json`, runtime documentation, README, and licenses. The explicit `package.json` `files` allowlist excludes tests, fixtures, development scripts, internal plans, and CI workflows. `src/vendor/` is runtime content and retains its vendored license.
@@ -51,7 +53,7 @@ npm run test:coverage
 npm run check:module-limits
 ```
 
-Coverage includes every JavaScript runtime file under `src/` and `bin/`, including unloaded files. The minimum is 80% for lines, functions, and branches. Changed-line coverage remains a separate gate. Do not use ignore pragmas or weaken validators.
+Coverage includes every JavaScript runtime file under `src/` and `bin/`, including unloaded files. The minimum is 80% for functions and branches. Changed-line coverage remains diagnostic output. Do not use ignore pragmas or weaken validators.
 
 Package verification requires a real `npm pack`, installation outside the checkout, execution from a different working directory, help/version checks, fixture-backed offline setup, runtime template/MCP/vendor resolution, and archive inspection. `npm pack --dry-run` alone is insufficient.
 
@@ -59,4 +61,4 @@ Package verification requires a real `npm pack`, installation outside the checko
 
 `.github/workflows/ci.yml` validates pull requests and pushes to `main` across `ubuntu-latest` and `macos-latest` with Node 20, 22, and 24. `.github/workflows/nodejs-package.yml` reuses that validation for release events before its release-only publish job. The validation uses `npm ci`, exercises Bun 1.4.3, runs tests and module checks, performs installed-package smoke, and runs coverage on Linux Node 24. This repository has not used local commands to claim remote CI execution.
 
-Fixture-backed tests intentionally avoid live ECC/gstack upstream downloads. They verify offline behavior only. Raw parity evidence compares stdout and stderr as separate `Buffer` values under controlled conditions. Linux help, version, invalid-command, and dry-run parity is established; cancellation/retry and rollback/recovery parity is not established because no pre-refactor raw baselines exist. macOS runtime parity is unverified without a macOS execution environment.
+Fixture-backed tests intentionally avoid live ECC/gstack upstream downloads. They verify offline behavior only. The migrated CLI tests assert command semantics, status, safety, and no-write behavior; files under `test/fixtures/cli-baseline/` remain historical evidence and are not active raw-byte gates. macOS runtime parity is unverified without a macOS execution environment.

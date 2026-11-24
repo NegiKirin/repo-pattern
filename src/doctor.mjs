@@ -5,14 +5,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { auditProject } from "./audit.mjs";
 import { ensureRepoPatternGitignore, isTracked, readJson, readRepoLock, repoLockPath, writePrivateJson } from "./shared/fs-utils.mjs";
-import React from "react";
-import { Box, Text, render } from "ink";
-import { printBox } from "./ui/prompt.mjs";
 import { applyPlanTuneHooks, validateProjectGstack } from "./gstack/gstack.mjs";
 import { isValidEccAgentProvenance, verifyAgentInventory } from "./ecc/rules.mjs";
 import { claudeVersionSupportsUserScope } from "./setup/bypass-permissions.mjs";
+import { printDoctor } from "./ui/reports.mjs";
 
-const GROUPS = ["Workspace", "Settings & MCP", "ECC", "gstack"];
 const execFileAsync = promisify(execFile);
 
 async function detectClaudeCodeVersion() {
@@ -29,22 +26,6 @@ function groupFor(label) {
   if (/ECC|ecc\.|\.claude\/rules\/ecc|\.claude\/agents/.test(label)) return "ECC";
   if (/settings|MCP|\.mcp\.json|\.repo-pattern\/.+lock/.test(label)) return "Settings & MCP";
   return "Workspace";
-}
-
-function repairFor(label, target) {
-  if (label.includes("not tracked")) return `Stop tracking this file and retain the local copy; deleting it is not required. If credentials were committed, revoke and rotate them. Never delete local config as a substitute.`;
-  if (label.includes(".repo-pattern/.repo-pattern.json")) return `Initialize repo-pattern with repo-pattern setup --target ${quoteTarget(target)} --yes, or restore valid metadata from backup.`;
-  if (label.includes("lock.json")) return `Restore the lock file from backup or rerun repo-pattern setup --target ${quoteTarget(target)} --yes after reviewing local configuration.`;
-  if (label.includes("settings.json") || label.includes(".mcp.json")) return `Review and repair this generated configuration from the project's selected setup; do not copy credentials into tracked files.`;
-  if (label.includes(".claude exists")) return `Restore the .claude workspace directory from backup, or initialize repo-pattern with repo-pattern setup --target ${quoteTarget(target)} --yes.`;
-  if (label.includes(".claude/skills") || label.includes(".claude/commands") || label.includes(".claude/hooks") || label.includes(".claude/scripts")) return `Move the unexpected runtime item only after confirming it is not project-owned; rerun repo-pattern setup --target ${quoteTarget(target)} --yes if this project should be initialized.`;
-  if (label.includes("gstack")) return `Review the local gstack installation; rerun repo-pattern setup --target ${quoteTarget(target)} --yes only if that pipeline is intended.`;
-  if (label.includes("ECC") || label.includes("ecc")) return `Restore the expected repo-pattern-managed ECC rules/agents, or rerun repo-pattern setup --target ${quoteTarget(target)} --yes if ECC is intended.`;
-  return `Repair by restoring the expected workspace path or removing only confirmed unmanaged runtime items.`;
-}
-
-function quoteTarget(target) {
-  return `'${target.replaceAll("'", "'\\''")}'`;
 }
 
 async function addEccChecks(check, audit, lock, target) {
@@ -64,51 +45,6 @@ async function addEccChecks(check, audit, lock, target) {
     check(isValidEccAgentProvenance(lock.ecc), ".repo-pattern/.repo-pattern.lock.json ECC agent provenance and manifest are valid");
     check(await verifyAgentInventory(path.join(target, ".claude", "agents"), appliedAgents), ".claude/agents exactly matches the locked ECC SHA-256 manifest");
   }
-}
-
-function renderDoctor(target, setupPipeline, checks, infoRows, verbose) {
-  const failed = checks.filter((row) => !row.ok);
-  const status = failed.length ? "FAIL" : "PASS";
-  const groups = GROUPS.map((name) => {
-    const rows = checks.filter((row) => row.group === name);
-    const groupStatus = rows.some((row) => !row.ok) ? "FAIL" : rows.length ? "PASS" : "N/A";
-    return { name, rows, status: groupStatus };
-  });
-  const warnings = infoRows.filter((row) => /browser skipped|plugin installation is required|^\/plugin |Project permissions\.defaultMode=bypassPermissions/.test(row));
-  const information = infoRows.filter((row) => !warnings.includes(row));
-  const lines = [
-    `Target  ${target}`,
-    `Pipeline  ${setupPipeline}`,
-    `Status  ${status} · ${checks.length - failed.length} passed, ${failed.length} failed, ${checks.length} total`,
-    "",
-    ...groups.map(({ name, rows, status: groupStatus }) => `${name}  ${groupStatus} · ${rows.length - rows.filter((row) => !row.ok).length} passed, ${rows.filter((row) => !row.ok).length} failed, ${rows.length} total`),
-    "",
-    ...(failed.length ? ["Issues", ...failed.map((row) => `✗ ${row.label}\n  Why: ${row.reason || "The expected workspace condition is not met."}\n  Repair: ${repairFor(row.label, target)}`)] : []),
-    ...(warnings.length ? ["Warnings", ...warnings.map((row) => `! ${row}`)] : []),
-    ...(information.length ? ["Information", ...information.map((row) => `i ${row}`)] : []),
-    ...(!verbose && !failed.length ? ["Run repo-pattern doctor --verbose to show successful checks."] : [])
-  ];
-  if (verbose) lines.push("", "Detailed checks", ...groups.filter(({ rows }) => rows.length).flatMap(({ name, rows }) => [name, ...rows.map((row) => `${row.ok ? "✓" : "✗"} ${row.label}`)]));
-  if (!process.stdin.isTTY || !process.stdout.isTTY || process.env.CI || process.env.NO_COLOR || process.env.TERM === "dumb") {
-    printBox("Doctor", lines);
-    return;
-  }
-
-  const report = React.createElement(Box, { flexDirection: "column" },
-    React.createElement(Text, { bold: true, color: "cyan" }, "Doctor"),
-    ...lines.map((line, index) => {
-      const heading = ["Issues", "Warnings", "Information", "Detailed checks", ...GROUPS].includes(line);
-      const color = /^✗|^Status  FAIL|  FAIL ·/.test(line) ? "red"
-        : /^!|^Warnings$/.test(line) ? "yellow"
-        : /^✓|^Status  PASS|  PASS ·/.test(line) ? "green" : undefined;
-      const dimColor = /^(Target|Pipeline|i |Run repo-pattern)|  N\/A ·/.test(line);
-      return React.createElement(Box, { key: index, minHeight: 1 },
-        React.createElement(Text, { bold: heading || line.startsWith("Status  "), color, dimColor, wrap: "wrap" }, line)
-      );
-    })
-  );
-  const instance = render(report, { stdin: process.stdin, stdout: process.stdout, patchConsole: false });
-  instance.unmount();
 }
 
 async function updateDoctorLock(target, lockPath, lock, dryRun) {
@@ -195,7 +131,7 @@ async function assertNoDoctorLockSymlink(target) {
   }
 }
 
-export async function doctorProject(target, { updateLock = false, dryRun = false, silent = false, verbose = false } = {}) {
+export async function doctorProject(target, { updateLock = false, dryRun = false, silent = false, verbose = false, output = null } = {}) {
   await assertNoDoctorLockSymlink(target);
   const audit = await auditProject(target);
   const checks = [];
@@ -223,7 +159,6 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   check(!audit.hasClaudeCommandsDir, ".claude/commands does not exist");
   check(!audit.hasClaudeHooksDir || audit.hasOnlyGeneratedAttributionHookFile, ".claude/hooks contains only the generated attribution hook");
   check(!audit.hasClaudeScriptsDir, ".claude/scripts does not exist");
-  const usesEcc = audit.repoPattern?.workflow === "ecc-native" || audit.repoPattern?.workflow === "ecc-gstack";
   check(!audit.hasClaudeEccRulesDir || audit.hasManagedEccRules, ".claude/rules/ecc is repo-pattern-managed when present");
   check(audit.hasClaudeDir, ".claude exists");
   const usesGstack = audit.repoPattern?.workflow === "gstack" || audit.repoPattern?.workflow === "ecc-gstack";
@@ -275,7 +210,8 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
 
   if (updateLock) await updateDoctorLock(target, lockPath, lock, dryRun);
 
-  if (!silent) renderDoctor(target, setupPipeline, checks, infoRows, verbose);
+  const report = { target, setupPipeline, checks, infoRows, verbose };
+  if (!silent) (output?.doctor || printDoctor)(report);
 
   const failures = checks.filter((row) => !row.ok);
   if (failures.length > 0) {

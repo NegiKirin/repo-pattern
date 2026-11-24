@@ -1,6 +1,6 @@
 {
   "name": "@negikirin/repo-pattern",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "Minimal ECC-first Claude Code project setup and migrator",
   "type": "module",
   "bin": {
@@ -10,13 +10,14 @@
     "audit": "node bin/repo-pattern.mjs audit --target .",
     "doctor": "node bin/repo-pattern.mjs doctor --target .",
     "mcp:core": "node bin/repo-pattern.mjs mcp --target . --mcp context7 --mcp tavily --mcp gitnexus",
-    "test": "node --test --test-concurrency=1 test/cli/cli-contract.test.mjs scripts/phase-1-characterization.test.mjs test/setup/setup-contract.test.mjs test/ecc/ecc-contract.test.mjs test/gstack/gstack-contract.test.mjs test/ui/ui-contract.test.mjs test/shared/shared-contract.test.mjs test/setup/mcp-attribution-contract.test.mjs && node scripts/self-check.mjs",
+    "test": "node --test --test-concurrency=4 test/*/*.test.mjs",
     "test:coverage": "node scripts/test-coverage.mjs",
     "check:module-limits": "node scripts/check-module-limits.mjs",
     "measure:test-duration": "node scripts/measure-test-duration.mjs",
     "pack:dry": "npm pack --dry-run",
     "prepublishOnly": "npm test && npm run pack:dry",
-    "check:diff-coverage": "node scripts/test-coverage.mjs"
+    "check:diff-coverage": "node scripts/test-coverage.mjs",
+    "eval:select": "node scripts/select-evals.mjs"
   },
   "license": "MIT",
   "author": "NegiKirin",
@@ -57,7 +58,6 @@
     ".claude.example/settings.example.json",
     ".claude.example/settings.local.example.json",
     ".claude.example/hooks/remove-generated-attribution.mjs",
-    "docs/gstack-managed-documents.md",
     "docs/repo-pattern/setup-guide.md",
     "mcp/servers/",
     ".repo-pattern.example.json",
@@ -75,6 +75,7 @@
     "react": "^19.2.0"
   },
   "devDependencies": {
+    "c8": "^12.0.0",
     "ink-testing-library": "^4.0.0"
   }
 }

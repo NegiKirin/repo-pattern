@@ -6,8 +6,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { DEFAULT_MCP_SERVERS, groupedMcpOptions } from "../../src/ui/setup-interaction.mjs";
-import { groupedOptionalSkillOptions, OPTIONAL_SKILLS } from "../../src/skills.mjs";
-import { applyMcpValues, generateMcp, listAvailableMcpServers, persistedMcpValues, readMcpConfig } from "../../src/mcp.mjs";
+import { applyOptionalSkills, groupedOptionalSkillOptions, OPTIONAL_SKILLS } from "../../src/skills.mjs";
+import { applyMcpValues, generateMcp, listAvailableMcpServers, persistedMcpValues, readGeneratedMcpValues, readMcpConfig, withoutPersistedMcpValues } from "../../src/mcp.mjs";
+import { collectMcpValues, mcpInputFields, parseMcpPlaceholder, validateRelativeMcpPath } from "../../src/ui/mcp-interaction.mjs";
 import { applyAttributionSetting, applyGeneratedAttributionHook, applyLocalSettings } from "../../src/setup/settings.mjs";
 import { setupOptionsFromLock, setupProject, setupRetryOptions } from "../../src/setup/setup.mjs";
 
@@ -28,25 +29,70 @@ test("MCP server selection and persistence preserve offline workspace contracts"
   assert.deepEqual(applyMcpValues(valueServers, { CONTEXT7_API_KEY: "redacted-key", ANTHROPIC_AUTH_TOKEN: "must-not-apply" }).context7.env, { CONTEXT7_API_KEY: "redacted-key" });
   assert.equal(applyMcpValues(valueServers, { ANTHROPIC_AUTH_TOKEN: "must-not-apply" }).unexpected.env.ANTHROPIC_AUTH_TOKEN, "${ANTHROPIC_AUTH_TOKEN}");
   assert.deepEqual(persistedMcpValues({ CONTEXT7_API_KEY: "context7-key", TAVILY_API_KEY: "tavily-key", ANTHROPIC_AUTH_TOKEN: "must-not-persist", OTHER_API_KEY: "other-key" }), { CONTEXT7_API_KEY: "context7-key", TAVILY_API_KEY: "tavily-key" });
+  assert.deepEqual(withoutPersistedMcpValues({ CONTEXT7_API_KEY: "context7-key", OTHER_API_KEY: "other-key" }), { OTHER_API_KEY: "other-key" });
+  assert.deepEqual(parseMcpPlaceholder("${TOKEN:-fallback}"), { name: "TOKEN", defaultValue: "fallback" });
+  assert.equal(parseMcpPlaceholder("plain"), null);
+  assert.equal(validateRelativeMcpPath("."), true);
+  assert.equal(validateRelativeMcpPath("~/secret"), "Use a relative path, not an absolute machine path.");
+  assert.equal(validateRelativeMcpPath("../secret"), "Path must not contain '..'.");
+  assert.equal(validateRelativeMcpPath(""), "Required");
+  const inputFields = mcpInputFields({ server: { env: { TOKEN: "${TOKEN}" }, args: ["${TOKEN}", "${PROJECT_DIR}", "${OPTIONAL:-fallback}"] } });
+  assert.deepEqual(inputFields.map(({ name, kind, defaultValue }) => ({ name, kind, defaultValue })), [
+    { name: "TOKEN", kind: "secret", defaultValue: "" },
+    { name: "PROJECT_DIR", kind: "path", defaultValue: "" },
+    { name: "OPTIONAL", kind: "text", defaultValue: "fallback" }
+  ]);
   assert.deepEqual(applyLocalSettings({ env: { EXISTING: "kept", CONTEXT7_API_KEY: "stale" } }, { ANTHROPIC_AUTH_TOKEN: "must-persist-locally", TAVILY_API_KEY: "stale", ANTHROPIC_BASE_URL: "https://example.com/v1" }), { env: { EXISTING: "kept", ANTHROPIC_AUTH_TOKEN: "must-persist-locally", ANTHROPIC_BASE_URL: "https://example.com/v1" } });
 
   const groupedSkills = groupedOptionalSkillOptions(OPTIONAL_SKILLS);
   assert.deepEqual(groupedSkills.filter((option) => option.group).map((option) => option.label), ["Design and frontend", "Project patterns", "Documentation", "Terminal workflow"]);
   assert.deepEqual(groupedSkills.filter((option) => !option.group).map((option) => option.value), ["taste", "ui-ux-pro-max", "impeccable", "huashu-design", "nextjs-pattern", "fastapi-pattern", "document-specialist", "herdr"]);
 
+  // IR-2: protects=explicit zero-item MCP selection stays unconfigured; fails_when=empty selection claims generated servers or successful configuration; no_claim=network execution.
+  const emptySelection = await readMcpConfig({ sourceRoot: repoRoot, mcpServers: [] });
+  assert.deepEqual(emptySelection.enabledServers, []);
+  assert.deepEqual(emptySelection.mcpServers, {});
   const selected = ["shadcn-studio", "context7", "shadcn-studio"];
+  // IR-3: protects=duplicate MCP selections preserve first-seen order and generate once; fails_when=duplicate server generation or selection reordering occurs; no_claim=server availability.
   const { enabledServers, mcpServers } = await readMcpConfig({ sourceRoot: repoRoot, mcpServers: selected });
   assert.deepEqual(enabledServers, ["shadcn-studio", "context7"]);
+  assert.deepEqual(Object.keys(mcpServers), ["shadcn-studio", "context7"]);
   assert.deepEqual(mcpServers["shadcn-studio"], { command: "npx", args: ["-y", "shadcn-studio-mcp"], description: "shadcn/ui Studio component design and generation" });
   await assert.rejects(() => readMcpConfig({ sourceRoot: repoRoot, mcpServers: ["nope"] }), /Unknown MCP server\(s\): nope\. Available:/);
 
+  const generatedValuesTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-generated-mcp-values-"));
+  try {
+    await fs.writeFile(path.join(generatedValuesTarget, ".mcp.json"), JSON.stringify({ mcpServers: {
+      valid: { env: { CONTEXT7_API_KEY: "real-value", TAVILY_API_KEY: "${TAVILY_API_KEY}" } }
+    } }));
+    assert.deepEqual(await readGeneratedMcpValues(generatedValuesTarget), { CONTEXT7_API_KEY: "real-value" });
+    await fs.writeFile(path.join(generatedValuesTarget, ".mcp.json"), JSON.stringify({ mcpServers: { invalid: [] } }));
+    await assert.rejects(() => readGeneratedMcpValues(generatedValuesTarget), /invalid MCP server entry/);
+  } finally {
+    await fs.rm(generatedValuesTarget, { recursive: true, force: true });
+  }
+
+  assert.deepEqual(await collectMcpValues({ server: { env: { TOKEN: "${TOKEN}" } } }, { yes: true, values: { TOKEN: "value" } }), { TOKEN: "value" });
+  await assert.rejects(() => collectMcpValues({ server: { args: ["${PROJECT_DIR}"] } }, { yes: true, values: { PROJECT_DIR: "../escape" } }), /Path must not contain/);
+
   const emptyTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-empty-mcp-native-"));
   try {
-    await generateMcp({ sourceRoot: repoRoot, target: emptyTarget, mcpServers: [], yes: true, silent: true });
+    const output = { summary: () => { throw new Error("unexpected MCP summary"); }, warn: () => { throw new Error("unexpected MCP warning"); } };
+    const result = await generateMcp({ sourceRoot: repoRoot, target: emptyTarget, mcpServers: [], yes: true, silent: true, output });
+    assert.deepEqual(result, { missingValues: [] });
     assert.deepEqual(JSON.parse(await fs.readFile(path.join(emptyTarget, ".mcp.json"), "utf8")).mcpServers, {});
     assert.deepEqual(JSON.parse(await fs.readFile(path.join(emptyTarget, ".claude", "settings.json"), "utf8")).enabledMcpjsonServers, []);
   } finally {
     await fs.rm(emptyTarget, { recursive: true, force: true });
+  }
+
+  const skillsTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-skills-output-native-"));
+  try {
+    const output = { summary: () => { throw new Error("unexpected skills summary"); }, log: () => { throw new Error("unexpected skills log"); } };
+    const result = await applyOptionalSkills({ target: skillsTarget, skills: [], reconcile: true, silent: true, output });
+    assert.deepEqual(result, { selectedSkills: [], appliedSkills: [] });
+  } finally {
+    await fs.rm(skillsTarget, { recursive: true, force: true });
   }
 
   const explicitTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-explicit-mcp-native-"));
@@ -133,6 +179,43 @@ test("MCP server selection and persistence preserve offline workspace contracts"
 
   for (const relativePath of ["mcp/profiles/backend.json", "mcp/profiles/full.json", "mcp/profiles/research.json", "mcp/profiles/web.json"]) {
     await assert.rejects(() => fs.access(path.join(repoRoot, relativePath)), { code: "ENOENT" });
+  }
+});
+
+test("MCP generation rejects tracked files, symlinked state, and reports missing values", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-mcp-guards-"));
+  try {
+    const trackedConfig = path.join(root, "tracked-config");
+    await fs.mkdir(path.join(trackedConfig, ".claude"), { recursive: true });
+    await fs.writeFile(path.join(trackedConfig, ".mcp.json"), "{}\n");
+    spawnSync("git", ["init", "-q"], { cwd: trackedConfig });
+    spawnSync("git", ["add", ".mcp.json"], { cwd: trackedConfig });
+    await assert.rejects(() => generateMcp({ sourceRoot: repoRoot, target: trackedConfig, mcpServers: ["context7"], yes: true, silent: true }), /\.mcp\.json is tracked/);
+
+    const trackedSettings = path.join(root, "tracked-settings");
+    await fs.mkdir(path.join(trackedSettings, ".claude"), { recursive: true });
+    await fs.writeFile(path.join(trackedSettings, ".claude", "settings.json"), "{}\n");
+    spawnSync("git", ["init", "-q"], { cwd: trackedSettings });
+    spawnSync("git", ["add", ".claude/settings.json"], { cwd: trackedSettings });
+    await assert.rejects(() => generateMcp({ sourceRoot: repoRoot, target: trackedSettings, mcpServers: ["context7"], yes: true, silent: true }), /settings\.json is tracked/);
+
+    const symlinked = path.join(root, "symlinked");
+    const outside = path.join(root, "outside");
+    await fs.mkdir(outside, { recursive: true });
+    await fs.symlink(outside, path.join(symlinked, ".repo-pattern"), "dir").catch(async (error) => {
+      if (error.code !== "ENOENT") throw error;
+      await fs.mkdir(symlinked, { recursive: true });
+      await fs.symlink(outside, path.join(symlinked, ".repo-pattern"), "dir");
+    });
+    await assert.rejects(() => generateMcp({ sourceRoot: repoRoot, target: symlinked, mcpServers: [], yes: true, silent: true }), /.repo-pattern must not be a symlink/);
+
+    const missing = path.join(root, "missing");
+    const warnings = [];
+    const result = await generateMcp({ sourceRoot: repoRoot, target: missing, mcpServers: ["context7"], yes: true, mcpValues: {}, output: { warn: (message) => warnings.push(message) } });
+    assert.deepEqual(result.missingValues, ["CONTEXT7_API_KEY"]);
+    assert.match(warnings.join("\n"), /CONTEXT7_API_KEY/);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
   }
 });
 
