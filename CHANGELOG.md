@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.4] - 2026-11-19
+
+### Added
+
+- Run the complete native test suite with migrated coverage, fixture-backed setup checks, and evaluation selection support.
+
+### Changed
+
+- Keep runtime modules focused by moving interactive presentation and migrated self-check behavior into dedicated test and UI modules.
+
+### Fixed
+
+- Pin gstack checkouts consistently during validation, preview, cloning, and upgrade operations, while preserving user changes on invalid replacements.
+
 ## [1.2.3] - 2026-10-07
 
 ### Added
@@ -240,7 +254,7 @@ New setup runs choose `web` for frontend, full-stack, and Node projects, while b
 
 ### The MCP numbers that matter
 
-These checks come from `npm test`, including `scripts/self-check/mcp-profiles.mjs` and `scripts/self-check/cli-contract.mjs`.
+These checks come from `npm test`, including the migrated MCP profile and CLI contract tests under `test/`.
 
 | Metric | Before | After | Δ |
 | --- | ---: | ---: | ---: |

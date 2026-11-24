@@ -30,6 +30,7 @@
     "docs/plans/**": ["test/setup/setup-characterization.test.mjs"],
     "scripts/check-coverage.mjs": ["test/tooling/coverage-cli.test.mjs"],
     "scripts/select-evals.mjs": ["test/tooling/eval-selector.test.mjs"],
+    ".github/workflows/ci.yml": ["test/cli/cli-contract.test.mjs", "test/tooling/quality-gates.test.mjs"],
     "scripts/**": [
       "test/setup/setup-characterization.test.mjs",
       "test/gstack/gstack-contract.test.mjs",

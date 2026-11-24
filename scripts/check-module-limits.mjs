@@ -19,12 +19,11 @@ function limitFor(file, projectRoot) {
   if (relative === "src/ecc/rules.mjs") return 300;
   if (relative === "src/ecc/ecc-sync-transaction.mjs") return 600;
   if (relative.startsWith("src/ecc/ecc-") && relative.endsWith(".mjs")) return 300;
-  if (relative === "scripts/self-check.mjs" || relative.startsWith("scripts/self-check/")) return 400;
   return null;
 }
 
 export async function checkModuleLimits({ projectRoot = root } = {}) {
-  const candidates = [path.join(projectRoot, "src", "ecc", "rules.mjs"), ...await listModules(path.join(projectRoot, "src", "ecc")), path.join(projectRoot, "scripts", "self-check.mjs"), ...await listModules(path.join(projectRoot, "scripts", "self-check"))];
+  const candidates = [path.join(projectRoot, "src", "ecc", "rules.mjs"), ...await listModules(path.join(projectRoot, "src", "ecc"))];
   const failures = [];
   for (const file of new Set(candidates)) {
     const relative = path.relative(projectRoot, file).split(path.sep).join("/");

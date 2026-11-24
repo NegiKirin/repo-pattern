@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { exists, isTracked, readJson, readRepoConfig, readRepoLock } from "./shared/fs-utils.mjs";
-import { printBox, style } from "./ui/prompt.mjs";
 import { validateProjectGstack } from "./gstack/gstack.mjs";
 import { expectedOptionalSkillDirs } from "./skills.mjs";
 
@@ -61,7 +60,7 @@ async function listDirNames(dir) {
   }
 }
 
-export async function auditProject(target) {
+export async function auditProject(target, { output = null, silent = false } = {}) {
   let settings;
   try {
     settings = await readJson(path.join(target, ".claude", "settings.json"), {});
@@ -169,43 +168,6 @@ export async function auditProject(target) {
     result.state = "PARTIAL";
   }
 
+  if (!silent) output?.audit?.(result);
   return result;
-}
-
-export function printAudit(audit) {
-  const warning = style("error", "⚠");
-  const rows = [
-    `Target  ${audit.target}`,
-    `State   ${audit.state}`
-  ];
-  const needsSetup = audit.state !== "EMPTY";
-  const issues = [
-    [needsSetup && !audit.hasClaudeDir, ".claude missing"],
-    [needsSetup && !audit.hasMcpJson, ".mcp.json missing"],
-    [needsSetup && !audit.hasRepoPatternJson, ".repo-pattern/.repo-pattern.json missing"],
-    [audit.hasHardcodedMcpPath, "hardcoded machine path in .mcp.json"],
-    [audit.hasSettingsLocalTracked, ".claude/settings.local.json tracked"],
-    [audit.hasSettingsHooks && audit.repoPattern?.workflow !== "gstack" && audit.repoPattern?.workflow !== "ecc-gstack", ".claude/settings.json hooks not empty"],
-    [audit.gstack && !audit.gstack.checkoutValid, "project-local gstack checkout is missing or invalid"],
-    [audit.gstack && !audit.gstack.stateValid, "project-local gstack state is missing"],
-    [audit.gstack && !audit.gstack.wrappersValid, "project-local gstack wrappers have drifted"],
-    [audit.gstack && !audit.gstack.assetsValid, "project-local gstack workflow assets have drifted"],
-    [audit.gstack && !audit.gstack.sidecarsValid, "project-local gstack review sidecars have drifted"],
-    [audit.lock?.gstack?.status === "failed", "project-local gstack bootstrap failed"],
-    [audit.repoPattern?.runtime?.localSkills === true && !audit.hasOnlyManagedSkills, ".claude/skills does not match managed optional skills"],
-    [audit.hasClaudeSkillsDir && !audit.hasOnlyManagedSkills, ".claude/skills contains unmanaged entries"],
-    [audit.hasClaudeCommandsDir, ".claude/commands present"],
-    [audit.hasClaudeHooksDir, ".claude/hooks present"],
-    [audit.hasClaudeScriptsDir, ".claude/scripts present"],
-    [audit.hasClaudeRulesDir && !audit.hasOnlyEccRulesDir, "non-ECC .claude/rules present"],
-    [audit.hasClaudeEccRulesDir && !audit.hasManagedEccRules, ".claude/rules/ecc is not repo-pattern-managed"],
-    [audit.hasManagedEccAgents && !audit.hasClaudeAgentsDir, ".claude/agents is missing for repo-pattern-managed ECC agents"],
-    [audit.hasClaudeAgentsDir && !audit.hasManagedEccAgents, ".claude/agents is not repo-pattern-managed"]
-  ].filter(([bad]) => bad);
-
-  if (issues.length > 0) {
-    rows.push("", ...issues.map(([, message]) => `${warning} ${message}`));
-  }
-
-  printBox("Audit", rows);
 }

@@ -1,0 +1,192 @@
+import assert from "node:assert/strict";
+import childProcess from "node:child_process";
+import { test } from "node:test";
+import { syncBuiltinESMExports } from "node:module";
+import "../fixtures/offline-guard.mjs";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { createHash } from "node:crypto";
+import { ensureBun, isValidGstackCheckout, resolveGstackCheckout, gstackCheckoutPath, setupGstack } from "../../src/gstack/gstack.mjs";
+
+export async function runGstackDiagnosticChecks() {
+  // Value: protects=Bun probe has a deadline and reports timeout failure; fails_when=timeout omitted or failure swallowed; why_new=version checks omit command deadline; seam=none
+  assert.throws(() => ensureBun({ run: (_command, _args, options) => {
+    assert.equal(options.timeout, 30000);
+    throw Object.assign(new Error("probe timed out"), { code: "ETIMEDOUT" });
+  } }), /Bun validation failed: probe timed out/);
+  const target = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-diagnostics-"));
+  const originalDebug = process.env.REPO_PATTERN_DEBUG_GSTACK;
+  const originalPath = process.env.PATH;
+  const originalRun = childProcess.execFileSync;
+  try {
+    await fs.writeFile(path.join(target, "setup"), "#!/bin/sh\n", { mode: 0o755 });
+    // Value: protects=checkout Git probes have deadlines and reject timeout; fails_when=deadline absent or timeout accepted; why_new=real Git checks do not simulate a hung probe; seam=none
+    const gitProbes = [];
+    assert.equal(await isValidGstackCheckout(target, { run: (_command, args, options) => {
+      assert.equal(options.timeout, 30000);
+      gitProbes.push(args.at(-1));
+      return args.at(-1) === "--is-inside-work-tree" ? "true\n" : target;
+    } }), true);
+    assert.deepEqual(gitProbes, ["--is-inside-work-tree", "--show-toplevel"]);
+    assert.equal(await isValidGstackCheckout(target, { run: () => { throw Object.assign(new Error("probe timed out"), { code: "ETIMEDOUT" }); } }), false);
+    // Value: protects=Git status has a deadline and disables optional locks for setup and upgrade; fails_when=deadline or environment omitted or timeout swallowed; why_new=rev-parse probes do not exercise dirty-check command; seam=none
+    const local = gstackCheckoutPath(target);
+    await fs.mkdir(local, { recursive: true });
+    await fs.writeFile(path.join(local, "setup"), "#!/bin/sh\n", { mode: 0o755 });
+    const originalExec = childProcess.execFileSync;
+    originalExec("git", ["init", "--quiet", local]);
+    await fs.writeFile(path.join(local, "setup.md"), "fixture\n");
+    await fs.mkdir(path.join(target, ".repo-pattern", "gstack"), { recursive: true });
+    const digest = createHash("sha256").update("fixture\n").digest("hex");
+    await fs.writeFile(path.join(target, ".repo-pattern", "gstack", "documents.json"), JSON.stringify({ version: 2, files: [{ path: "setup.md", sha256: digest }] }));
+    originalExec("git", ["-C", local, "add", "setup.md"]);
+    originalExec("git", ["-C", local, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture"]);
+    let stagedCheckout;
+    try {
+      for (const upgrade of [false, true]) {
+        let observed = false;
+        childProcess.execFileSync = (command, args, options) => {
+          assert.equal(command, "git");
+          if (args[2] === "status") {
+            assert.equal(args[0], "-C");
+            assert(args[1] === local || args[1].startsWith(`${target}${path.sep}`) || path.normalize(args[1]).endsWith(path.join(".claude", "skills", "gstack")));
+            assert.deepEqual(args.slice(2), ["status", "--porcelain", "-z", "--untracked-files=all"]);
+            assert.equal(options.timeout, 30000);
+            assert.equal(options.env.GIT_OPTIONAL_LOCKS, "0");
+            observed = true;
+            throw Object.assign(new Error("status timed out"), { code: "ETIMEDOUT" });
+          }
+          return originalExec(command, args, options);
+        };
+        syncBuiltinESMExports();
+        await assert.rejects(resolveGstackCheckout({ target, upgrade, prepare: async () => {}, run: (_command, args) => args.at(-1) === "--is-inside-work-tree" ? "true" : args.at(-1) === "--show-toplevel" ? (args[1] === local ? local : stagedCheckout) : local, copy: async (source, destination) => { await fs.cp(source, destination, { recursive: true }); stagedCheckout = destination; await originalExec("git", ["init", "--quiet", destination]); }, silent: true }), /status timed out/);
+        assert.equal(observed, true);
+        assert.equal(await fs.readFile(path.join(local, "setup"), "utf8"), "#!/bin/sh\n");
+      }
+    } finally {
+      childProcess.execFileSync = originalExec;
+      syncBuiltinESMExports();
+    }
+    // Value: protects=dry-run previews use the requested gstack commit; fails_when=preview shows the default commit for a pinned request; why_new=operators rely on previews before applying checkout; seam=none
+    const previewCommit = "fixture-expected-commit";
+    const previewTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-preview-"));
+    const previewLines = [];
+    const originalLog = console.log;
+    console.log = (line) => previewLines.push(line);
+    try {
+      await resolveGstackCheckout({ target: previewTarget, globalCheckout: path.join(previewTarget, "missing-global"), expectedCommit: previewCommit, dryRun: true, run: (_command, args) => args.at(-1) === "--is-inside-work-tree" ? "true" : args.at(-1) === "--show-toplevel" ? args[1] : previewCommit, silent: false });
+    } finally {
+      console.log = originalLog;
+      await fs.rm(previewTarget, { recursive: true, force: true });
+    }
+    assert.equal(previewLines.some((line) => line.includes(previewCommit)), true);
+
+    // Value: protects=default clone promotes valid checkout and cleans staging on failure; fails_when=clone bypasses command boundary or failed checkout promoted; why_new=upstream integration overrides clone callback; seam=none
+    const bin = path.join(target, "fixture-bin");
+    const events = path.join(target, "clone-events.json");
+    await fs.mkdir(bin);
+    const realGit = originalExec("which", ["git"], { encoding: "utf8" }).trim();
+    await fs.writeFile(path.join(bin, "git"), `#!${process.execPath}\nconst fs=require('node:fs'); const cp=require('node:child_process'); const args=process.argv.slice(2); const record=()=>{const file=process.env.CLONE_EVENTS; const entries=fs.existsSync(file)?JSON.parse(fs.readFileSync(file,'utf8')):[]; entries.push(args); fs.writeFileSync(file,JSON.stringify(entries));}; if(args[0]==='clone'){record(); if(process.env.CLONE_FAIL==='1') process.exit(7); const destination=args.at(-1); fs.mkdirSync(destination,{recursive:true}); cp.execFileSync(${JSON.stringify(realGit)},['init','--quiet',destination]); process.exit(0);} if(args[0]==='-C' && args[2]==='fetch'){record(); process.exit(0);} if(args[0]==='-C' && args[2]==='checkout'){record(); fs.writeFileSync(require('node:path').join(args[1],'setup'),'#!/bin/sh\\n',{mode:0o755}); process.exit(0);} process.exit(91);`, { mode: 0o755 });
+    const originalPath = process.env.PATH;
+    const originalEvents = process.env.CLONE_EVENTS;
+    const originalFailure = process.env.CLONE_FAIL;
+    const originalSetTimeout = globalThis.setTimeout;
+    const cloneDeadlines = [];
+    // Value: protects=default clone arms its ten-minute deadline; fails_when=clone timeout omitted or changed; why_new=clone arguments do not prove timer configuration; seam=none
+    globalThis.setTimeout = (callback, delay, ...args) => {
+      cloneDeadlines.push(delay);
+      return originalSetTimeout(callback, delay, ...args);
+    };
+    try {
+      process.env.PATH = `${bin}${path.delimiter}${originalPath}`;
+      process.env.CLONE_EVENTS = events;
+      for (const failure of [false, true]) {
+        process.env.CLONE_EVENTS = events;
+        await fs.writeFile(events, "[]");
+        process.env.CLONE_FAIL = failure ? "1" : "0";
+        const cloneTarget = path.join(target, failure ? "clone-failure" : "clone-success");
+        await fs.mkdir(cloneTarget);
+        const options = { target: cloneTarget, globalCheckout: path.join(target, "absent-global"), run: (command, args, settings) => originalExec(realGit, args, settings), silent: true };
+        if (failure) await assert.rejects(resolveGstackCheckout(options), (error) => error.gstackCloneFailure === true && /exit 7/.test(error.message));
+        else {
+          const lease = await resolveGstackCheckout(options);
+          assert.equal(lease.source, "clone");
+          assert.equal(await isValidGstackCheckout(lease.checkout, { run: (_command, args, settings) => originalExec(realGit, args, settings) }), true);
+          await lease.commit();
+        }
+        const args = JSON.parse(await fs.readFile(events, "utf8"));
+        assert.deepEqual(args[0].slice(0, -1), ["clone", "--progress", "--single-branch", "--depth", "1", "--no-checkout", "https://github.com/garrytan/gstack.git"]);
+        if (!failure) {
+          assert.deepEqual(args[1].slice(0, 3), ["-C", args[1][1], "fetch"]);
+          assert.equal(args[1].at(-1), "237371474bda407ccd2344f696b9508c55006c2d");
+          assert.equal(args[2].at(-1), "237371474bda407ccd2344f696b9508c55006c2d");
+        }
+        const entries = await fs.readdir(path.join(cloneTarget, ".claude", "skills"));
+        assert.deepEqual(entries, failure ? [] : ["gstack"]);
+      }
+      assert.deepEqual(cloneDeadlines, [600000, 600000, 30000, 600000]);
+    } finally {
+      globalThis.setTimeout = originalSetTimeout;
+      process.env.PATH = originalPath;
+      for (const [name, value] of [["CLONE_EVENTS", originalEvents], ["CLONE_FAIL", originalFailure]]) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+    // Value: protects=setup diagnostics redact output unless debug explicitly enabled; fails_when=sentinel leaks or stage untrusted; why_new=clone check omits runtime diagnostics and debug; seam=none
+    const diagnosticOutput = "synthetic-private-output" + "x".repeat(5000) + "diagnostic-tail";
+    const bunExecutable = path.join(target, "bun");
+    await fs.writeFile(bunExecutable, "#!/bin/sh\nprintf '1.4.2\\n'\n", { mode: 0o755 });
+    childProcess.execFileSync = (command, args, options) => command === "bun" ? "1.4.2\\n" : originalRun(command, args, options);
+    syncBuiltinESMExports();
+    const versionCheck = ensureBun();
+    assert.equal(versionCheck, "bun");
+    const failedSetup = (stage) => setupGstack({ target, silent: true, resolveCheckout: async () => {
+      throw Object.assign(new Error("Missing Linux system libraries"), { gstackStage: stage, gstackOutput: diagnosticOutput });
+    } });
+    for (const debug of [undefined, "0", "true"]) {
+      if (debug === undefined) delete process.env.REPO_PATTERN_DEBUG_GSTACK;
+      else process.env.REPO_PATTERN_DEBUG_GSTACK = debug;
+      const failed = await failedSetup("Chromium launch");
+      assert.equal(failed.status, "failed");
+      assert.match(failed.error, /Failed stage: Chromium launch/);
+      assert.match(failed.error, /Ask your administrator/);
+      assert.match(failed.error, /no OS packages were installed/);
+      assert.doesNotMatch(failed.error, /synthetic-private-output|diagnostic-tail|Debug output/);
+    }
+    process.env.REPO_PATTERN_DEBUG_GSTACK = "1";
+    const debug = await failedSetup("Chromium launch");
+    assert.match(debug.error, /Debug output:/);
+    assert.doesNotMatch(debug.error, /synthetic-private-output/);
+    assert(debug.error.length <= 4000);
+    delete process.env.REPO_PATTERN_DEBUG_GSTACK;
+    const untagged = await setupGstack({ target, silent: true, resolveCheckout: async () => {
+      throw new Error("Missing Linux system libraries");
+    } });
+    assert.match(untagged.error, /Failed stage: checkout resolution/);
+    assert.doesNotMatch(untagged.error, /install Bun|A required prerequisite is missing or invalid/);
+    assert.doesNotMatch((await failedSetup("untrusted-stage")).error, /untrusted-stage|Failed stage:/);
+    const cloneFailed = await setupGstack({ target, silent: true, resolveCheckout: async () => {
+      throw Object.assign(new Error("clone failed: network connection refused"), {
+        gstackCloneFailure: true,
+        stderr: "fatal: bun prerequisite required; unable to access https://github.com/garrytan/gstack.git: network connection refused"
+      });
+    } });
+    assert.match(cloneFailed.error, /gstack clone failed/);
+    assert.doesNotMatch(cloneFailed.error, /Bun prerequisite failed|gstack bootstrap failed|A required prerequisite is missing or invalid/);
+    assert.doesNotMatch(cloneFailed.error, /network connection refused|garrytan/);
+  } finally {
+    if (originalDebug === undefined) delete process.env.REPO_PATTERN_DEBUG_GSTACK;
+    else process.env.REPO_PATTERN_DEBUG_GSTACK = originalDebug;
+    childProcess.execFileSync = originalRun;
+    syncBuiltinESMExports();
+    process.env.PATH = originalPath;
+    await fs.rm(target, { recursive: true, force: true });
+  }
+}
+
+test("gstack diagnostics checks", async () => {
+  // protects=Bun, Git, clone, timeout, redaction, and diagnostic failure contracts; fails_when=probe deadlines or safe diagnostics regress; no_claim=network availability.
+  await runGstackDiagnosticChecks();
+});

@@ -1,0 +1,473 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { ECC_PLUGIN, applyEccPluginSettings, setupEcc } from "../../src/ecc/ecc.mjs";
+import { collectMcpValues } from "../../src/ui/mcp-interaction.mjs";
+import { generateMcp, mcpSecretPrompt, readGeneratedMcpValues, validateRelativeMcpPath } from "../../src/mcp.mjs";
+import { provisionProject, setupPipelineScope } from "../../src/setup/provision.mjs";
+import { applyPermissionSettings, reconcileLocalPluginSettings, updateClaudeAttribution, updateClaudePermissions, writeClaudeSettings, writeLocalSettings } from "../../src/setup/settings.mjs";
+import { writePrivateJson } from "../../src/shared/fs-utils.mjs";
+import { printSummary, promptTestComponents, renderLogo, resolveTextValue, style } from "../../src/ui/prompt.mjs";
+import { interactiveSetupPipeline, setupProject, setupRetryOptions } from "../../src/setup/setup.mjs";
+import { localSettingsPromptOptions, needsLocalSettingsPrompt } from "../../src/ui/setup-interaction.mjs";
+import { applyEccRules, buildAgentManifest, clearEccRules, formatEccCloneError, hasGitUpstream, validateAgentManifest } from "../../src/ecc/rules.mjs";
+import { test } from "node:test";
+import { applyOptionalSkills, applyPluginSkillSettings, expectedOptionalSkillDirs, invalidOptionalSkills, normalizeOptionalSkills, OPTIONAL_SKILLS } from "../../src/skills.mjs";
+const cliDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.dirname(path.dirname(cliDir));
+const cliPath = path.join(repoRoot, "bin", "repo-pattern.mjs");
+const secretSentinel = "do-not-persist-anthropic-token";
+const authTokenName = ["ANTHROPIC", "AUTH", "TOKEN"].join("_");
+
+test("settings writers reject a symlinked target without changing its destination", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-settings-target-link-"));
+  try {
+    const outside = path.join(root, "outside");
+    const target = path.join(root, "target");
+    await fs.mkdir(outside);
+    await fs.writeFile(path.join(outside, "sentinel"), "unchanged\n");
+    await fs.symlink(outside, target, "dir");
+    await assert.rejects(() => writeLocalSettings({ sourceRoot: repoRoot, target }), /target must not be a symlink/);
+    assert.deepEqual(await fs.readdir(outside), ["sentinel"]);
+    assert.equal(await fs.readFile(path.join(outside, "sentinel"), "utf8"), "unchanged\n");
+    assert.equal((await fs.lstat(target)).isSymbolicLink(), true);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("settings writers preserve malformed-file, tracked-file, and plugin reconciliation contracts", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-settings-writers-"));
+  try {
+    const target = path.join(root, "target");
+    await fs.mkdir(path.join(target, ".claude"), { recursive: true });
+    await fs.writeFile(path.join(target, ".claude", "settings.json"), "{", "utf8");
+    await assert.rejects(() => writeClaudeSettings({ sourceRoot: repoRoot, target, attributionConfig: { mode: "off" }, permissionConfig: { bypass: "deny" }, dryRun: false }), /settings.json is malformed/);
+
+    await fs.writeFile(path.join(target, ".claude", "settings.json"), JSON.stringify({ permissions: { defaultMode: "bypassPermissions" }, custom: true }), "utf8");
+    await writeClaudeSettings({ sourceRoot: repoRoot, target, attributionConfig: { mode: "custom", commit: "custom" }, permissionConfig: { bypass: "allow" }, dryRun: false });
+    const settings = JSON.parse(await fs.readFile(path.join(target, ".claude", "settings.json"), "utf8"));
+    assert.equal(settings.custom, true);
+    assert.equal(settings.attribution.commit, "custom");
+    assert.equal(settings.permissions.defaultMode, "bypassPermissions");
+    assert.equal(settings.hooks.PreToolUse.at(-1)._repo_pattern_source, "generated-attribution-removal");
+
+    await writeLocalSettings({ sourceRoot: repoRoot, target, localSettingsEnv: { ANTHROPIC_AUTH_TOKEN: secretSentinel, CONTEXT7_API_KEY: "ctx" }, effortLevel: "high", setupPipeline: "none", optionalSkills: [], dryRun: false, silent: true });
+    const local = JSON.parse(await fs.readFile(path.join(target, ".claude", "settings.local.json"), "utf8"));
+    assert.equal(local.effortLevel, "high");
+    assert.equal(local.env.ANTHROPIC_AUTH_TOKEN, secretSentinel);
+    assert.equal(local.env.CONTEXT7_API_KEY, undefined);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("settings writers cover permission modes, attribution replacement, and dry-run safety", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-settings-modes-"));
+  try {
+    await fs.mkdir(path.join(root, ".claude"), { recursive: true });
+    await fs.writeFile(path.join(root, ".claude", "settings.json"), JSON.stringify({
+      custom: true,
+      permissions: { defaultMode: "old", disableBypassPermissionsMode: "old" },
+      hooks: { PreToolUse: [{ _repo_pattern_source: "generated-attribution-removal" }, { command: "keep" }] }
+    }));
+    await updateClaudePermissions({ sourceRoot: repoRoot, target: root, permissionConfig: { bypass: "user" }, dryRun: false });
+    let settings = JSON.parse(await fs.readFile(path.join(root, ".claude", "settings.json"), "utf8"));
+    assert.deepEqual(settings.permissions, {});
+    assert.equal(settings.custom, true);
+
+    await updateClaudeAttribution({ sourceRoot: repoRoot, target: root, attributionConfig: { mode: "off" }, dryRun: false });
+    settings = JSON.parse(await fs.readFile(path.join(root, ".claude", "settings.json"), "utf8"));
+    assert.equal(settings.hooks.PreToolUse.filter((entry) => entry._repo_pattern_source === "generated-attribution-removal").length, 1);
+    assert.equal(settings.attribution.commit, "");
+
+    const before = await fs.readFile(path.join(root, ".claude", "settings.json"), "utf8");
+    await writeClaudeSettings({ sourceRoot: repoRoot, target: root, attributionConfig: { mode: "custom", commit: "dry-run" }, permissionConfig: { bypass: "deny" }, dryRun: true, silent: true });
+    assert.equal(await fs.readFile(path.join(root, ".claude", "settings.json"), "utf8"), before);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("settings writers reject tracked local settings before writing", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-settings-tracked-"));
+  try {
+    await fs.mkdir(path.join(root, ".claude"), { recursive: true });
+    await fs.writeFile(path.join(root, ".claude", "settings.local.json"), "{}\n");
+    spawnSync("git", ["init", "-q"], { cwd: root });
+    spawnSync("git", ["add", ".claude/settings.local.json"], { cwd: root });
+    await assert.rejects(() => writeLocalSettings({ sourceRoot: repoRoot, target: root, setupPipeline: "none", optionalSkills: [], dryRun: false }), /settings.local.json is tracked/);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+const sharedSettingsTemplate = JSON.parse(await fs.readFile(path.join(repoRoot, ".claude.example", "settings.example.json"), "utf8"));
+const localSettingsTemplate = JSON.parse(await fs.readFile(path.join(repoRoot, ".claude.example", `settings.${["local", "example.json"].join(".")}`), "utf8"));
+test("MCP and settings contracts preserve generated configuration semantics", async () => {
+  // protects=settings templates, MCP path validation, attribution, retry redaction, plugin reconciliation, and prompt defaults; fails_when=generated settings, validation, or secret handling changes; no_claim=live MCP servers or external plugin availability.
+  await runMcpAndSettingsChecks();
+});
+
+export async function runMcpAndSettingsChecks() {
+assert.deepEqual(sharedSettingsTemplate.attribution, { commit: "", pr: "" });
+assert.equal("enabledPlugins" in sharedSettingsTemplate, false);
+assert.equal("extraKnownMarketplaces" in sharedSettingsTemplate, false);
+assert.equal("attribution" in localSettingsTemplate, false);
+assert.deepEqual(localSettingsTemplate.enabledPlugins, {});
+assert.deepEqual(localSettingsTemplate.extraKnownMarketplaces, {});
+assert.equal(localSettingsTemplate.workflowSizeGuideline, "small");
+assert.equal(localSettingsTemplate.effortLevel, "medium");
+assert.equal("effortLevel" in localSettingsTemplate.env, false);
+assert.deepEqual(Object.fromEntries(["CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS", "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH", "CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY"].map((name) => [name, localSettingsTemplate.env[name]])), { CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS: "4", CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH: "1", CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY: "5" });
+assert.equal("workflowSizeGuideline" in localSettingsTemplate.env, false);
+assert.equal(localSettingsTemplate.env.API_TIMEOUT_MS, "60000");
+assert.equal(localSettingsTemplate.env.BASH_DEFAULT_TIMEOUT_MS, "60000");
+assert.equal(localSettingsTemplate.env.MCP_TOOL_TIMEOUT, "120000");
+assert.equal(interactiveSetupPipeline(null), "none");
+assert.equal(interactiveSetupPipeline({ setupPipeline: "gstack" }), "gstack");
+assert.deepEqual(applyPermissionSettings({ permissions: { defaultMode: "default", disableBypassPermissionsMode: "disable", deny: ["Bash(rm *)"] } }, { bypass: "user" }).permissions, { deny: ["Bash(rm *)"] });
+assert.deepEqual(applyPermissionSettings({ permissions: { defaultMode: "bypassPermissions", disableBypassPermissionsMode: "disable", deny: ["Bash(rm *)"] } }, { bypass: "preserve" }).permissions, { defaultMode: "bypassPermissions", disableBypassPermissionsMode: "disable", deny: ["Bash(rm *)"] });
+
+const mcpServers = {
+  context7: {
+    command: "npx",
+    args: ["-y", "@upstash/context7-mcp"],
+    env: { CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}" }
+  },
+  tavily: {
+    command: "npx",
+    args: ["-y", "tavily-mcp"],
+    env: { TAVILY_API_KEY: "${TAVILY_API_KEY}" }
+  }
+};
+
+assert.equal(validateRelativeMcpPath("src"), true);
+assert.equal(validateRelativeMcpPath("."), true);
+assert.equal(validateRelativeMcpPath("/home/user/project"), "Use a relative path, not an absolute machine path.");
+assert.equal(validateRelativeMcpPath("C:\\Users\\me\\project"), "Use a relative path, not an absolute machine path.");
+assert.equal(validateRelativeMcpPath("~/project"), "Use a relative path, not an absolute machine path.");
+assert.equal(validateRelativeMcpPath("../secrets"), "Path must not contain '..'.");
+assert.rejects(
+  () => collectMcpValues({ demo: { args: ["${PROJECT_DIR}"] } }, { yes: true, values: { PROJECT_DIR: "/tmp/outside" } }),
+  /Use a relative path, not an absolute machine path\./
+);
+assert.equal(
+  mcpSecretPrompt({ name: "CONTEXT7_API_KEY", label: "context7: CONTEXT7_API_KEY" }),
+  "MCP secret — context7: CONTEXT7_API_KEY (get key: https://context7.com/dashboard)"
+);
+assert.equal(
+  mcpSecretPrompt({ name: "TAVILY_API_KEY", label: "tavily: TAVILY_API_KEY" }),
+  "MCP secret — tavily: TAVILY_API_KEY (get key: https://app.tavily.com/home)"
+);
+
+assert.deepEqual(reconcileLocalPluginSettings({
+  env: { ANTHROPIC_AUTH_TOKEN: secretSentinel },
+  custom: true,
+  attribution: { commit: "legacy" },
+  enabledPlugins: { "ecc@ecc": true, "taste-skill@taste-skill": true, "unknown@plugin": true },
+  extraKnownMarketplaces: { ecc: ECC_PLUGIN.marketplace, "taste-skill": { source: { source: "git", url: "https://example.com/stale.git" } }, unknown: { source: { source: "git", url: "https://example.com/unknown.git" } } }
+}, { setupPipeline: "gstack", optionalSkills: [] }), {
+  env: { ANTHROPIC_AUTH_TOKEN: secretSentinel },
+  custom: true,
+  enabledPlugins: { "unknown@plugin": true },
+  extraKnownMarketplaces: { unknown: { source: { source: "git", url: "https://example.com/unknown.git" } } }
+});
+assert.deepEqual(reconcileLocalPluginSettings({ enabledPlugins: { "unknown@plugin": true }, extraKnownMarketplaces: {} }, { setupPipeline: "both", optionalSkills: ["impeccable"] }).enabledPlugins, {
+  "unknown@plugin": true,
+  "ecc@ecc": true,
+  "impeccable@impeccable": true
+});
+assert.deepEqual(applyPermissionSettings({ permissions: { deny: ["Read(.env)"] } }, { bypass: "allow" }), {
+  permissions: { deny: ["Read(.env)"], defaultMode: "bypassPermissions" }
+});
+assert.deepEqual(applyPermissionSettings({ permissions: { defaultMode: "bypassPermissions" } }, { bypass: "deny" }), {
+  permissions: { defaultMode: "default", disableBypassPermissionsMode: "disable" }
+});
+// protects=attribution settings merge, generated hook copy, gitignore ownership, and tracked-file rejection; fails_when=existing settings, template defaults, hooks, or safety rejection change; no_claim=live Claude execution or upstream availability.
+const attributionTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-attribution-settings-"));
+try {
+  await fs.mkdir(path.join(attributionTarget, ".claude"), { recursive: true });
+  await fs.writeFile(path.join(attributionTarget, ".claude", "settings.json"), JSON.stringify({ hooks: {}, custom: true }), "utf8");
+  await updateClaudeAttribution({ sourceRoot: repoRoot, target: attributionTarget, attributionConfig: { mode: "custom", commit: "Custom attribution" }, dryRun: false });
+  const attributionSettings = JSON.parse(await fs.readFile(path.join(attributionTarget, ".claude", "settings.json"), "utf8"));
+  assert.equal(attributionSettings.custom, true);
+  assert.deepEqual(attributionSettings.attribution, { commit: "Custom attribution", pr: "" });
+  assert.match(JSON.stringify(attributionSettings.hooks), /remove-generated-attribution/);
+  await fs.access(path.join(attributionTarget, ".claude", "hooks", "remove-generated-attribution.mjs"));
+  assert.match(await fs.readFile(path.join(attributionTarget, ".gitignore"), "utf8"), /\.claude\//);
+} finally {
+  await fs.rm(attributionTarget, { recursive: true, force: true });
+}
+const trackedAttributionTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-attribution-tracked-"));
+try {
+  await fs.mkdir(path.join(trackedAttributionTarget, ".claude"), { recursive: true });
+  await fs.writeFile(path.join(trackedAttributionTarget, ".claude", "settings.json"), "{}", "utf8");
+  await fs.writeFile(path.join(trackedAttributionTarget, ".gitignore"), "", "utf8");
+  spawnSync("git", ["init"], { cwd: trackedAttributionTarget, stdio: "ignore" });
+  spawnSync("git", ["add", ".claude/settings.json"], { cwd: trackedAttributionTarget, stdio: "ignore" });
+  await assert.rejects(() => updateClaudeAttribution({ sourceRoot: repoRoot, target: trackedAttributionTarget, attributionConfig: { mode: "off" }, dryRun: false }), /tracked/);
+} finally {
+  await fs.rm(trackedAttributionTarget, { recursive: true, force: true });
+}
+assert.deepEqual(setupRetryOptions({
+  action: "setup",
+  setupPipeline: "gstack",
+  mcpConfig: { mcpServers: ["context7"] },
+  mcpValues: {
+    CONTEXT7_API_KEY: "test-value",
+    [authTokenName]: secretSentinel
+  },
+  ruleConfig: { applyRules: false, ruleMode: "auto", rules: [] },
+  optionalSkills: ["nextjs-pattern"],
+  effortLevel: "ultracode",
+  localSettingsEnv: {
+    ANTHROPIC_BASE_URL: "https://example.com/v1",
+    [authTokenName]: secretSentinel,
+    CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: "5",
+    CONTEXT7_API_KEY: "test-key",
+    TAVILY_API_KEY: "test-key"
+  },
+  attributionConfig: { mode: "off" },
+  dryRun: false
+}), {
+  action: "setup",
+  setupPipeline: "gstack",
+  planTuneHooks: false,
+  mcpServers: ["context7"],
+  mcpValueNames: ["CONTEXT7_API_KEY"],
+  migrate: false,
+  applyRules: false,
+  ruleMode: "auto",
+  rules: [],
+  optionalSkills: ["nextjs-pattern"],
+  effortLevel: "ultracode",
+  localSettingsEnv: {
+    ANTHROPIC_BASE_URL: "https://example.com/v1",
+    CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: "5"
+  },
+  attributionConfig: { mode: "off" },
+  permissionConfig: { bypass: "deny" },
+  dryRun: false
+});
+assert.deepEqual({
+  ecc: setupPipelineScope("ecc"),
+  gstack: setupPipelineScope("gstack"),
+  both: setupPipelineScope("both"),
+  none: setupPipelineScope("none")
+}, {
+  ecc: "project-scoped ECC",
+  gstack: "project-local gstack at .claude/skills/gstack",
+  both: "project-scoped ECC + project-local gstack at .claude/skills/gstack",
+  none: "writes only base project metadata"
+});
+assert.equal(resolveTextValue("new", { initial: "current", placeholder: "default" }), "new");
+assert.equal(resolveTextValue("", { initial: "current", placeholder: "default" }), "current");
+assert.equal(resolveTextValue("", { initial: "", placeholder: "default" }), "default");
+const defaultPromptOptions = localSettingsPromptOptions({}, {});
+assert.equal(defaultPromptOptions.ANTHROPIC_BASE_URL.placeholder, "https://example.com/v1");
+assert.equal(defaultPromptOptions.ANTHROPIC_DEFAULT_OPUS_MODEL.placeholder, "claude-opus-4-8");
+assert.equal(defaultPromptOptions.ANTHROPIC_DEFAULT_SONNET_MODEL.placeholder, "claude-sonnet-4-6");
+assert.equal(defaultPromptOptions.ANTHROPIC_DEFAULT_HAIKU_MODEL.placeholder, "claude-haiku-4-5");
+assert.equal(defaultPromptOptions.ANTHROPIC_AUTH_TOKEN.placeholder, "");
+assert.deepEqual(Object.values(defaultPromptOptions).map(({ initial }) => initial), ["", "", "", "", ""]);
+assert.deepEqual(Object.values(defaultPromptOptions).map(({ placeholder }) => placeholder), ["https://example.com/v1", "", "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"]);
+const currentPromptOptions = localSettingsPromptOptions({
+  [authTokenName]: secretSentinel,
+  ANTHROPIC_BASE_URL: "https://provider.example/v1",
+  ANTHROPIC_DEFAULT_OPUS_MODEL: "custom-opus",
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "custom-sonnet",
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "custom-haiku"
+}, {});
+assert.deepEqual(Object.values(currentPromptOptions).map(({ initial }) => initial), ["https://provider.example/v1", secretSentinel, "custom-opus", "custom-sonnet", "custom-haiku"]);
+assert.deepEqual(Object.values(currentPromptOptions).map(({ placeholder }) => placeholder), ["https://example.com/v1", "", "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"]);
+const invalidPromptOptions = localSettingsPromptOptions({
+  [authTokenName]: secretSentinel,
+  ANTHROPIC_BASE_URL: "not-a-url",
+  ANTHROPIC_DEFAULT_OPUS_MODEL: " ",
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "",
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "custom-haiku"
+}, {});
+assert.deepEqual(Object.values(invalidPromptOptions).map(({ initial }) => initial), ["", secretSentinel, "", "", "custom-haiku"]);
+assert.deepEqual(localSettingsPromptOptions({}, {}), defaultPromptOptions);
+assert.equal(needsLocalSettingsPrompt({ ANTHROPIC_BASE_URL: "https://example.com/v1" }), true);
+assert.equal(needsLocalSettingsPrompt({
+  [authTokenName]: secretSentinel,
+  ANTHROPIC_BASE_URL: "",
+  ANTHROPIC_DEFAULT_OPUS_MODEL: "custom-opus",
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "custom-sonnet",
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "custom-haiku"
+}), true);
+assert.equal(needsLocalSettingsPrompt({
+  [authTokenName]: secretSentinel,
+  ANTHROPIC_BASE_URL: "https://provider.example/v1",
+  ANTHROPIC_DEFAULT_OPUS_MODEL: " ",
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "custom-sonnet",
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "custom-haiku"
+}), true);
+assert.equal(needsLocalSettingsPrompt({
+  [authTokenName]: secretSentinel,
+  ANTHROPIC_BASE_URL: "https://provider.example/v1",
+  ANTHROPIC_DEFAULT_OPUS_MODEL: "custom-opus",
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "\t",
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "custom-haiku"
+}), true);
+assert.equal(needsLocalSettingsPrompt({
+  CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: "0",
+  [authTokenName]: secretSentinel,
+  ANTHROPIC_BASE_URL: "https://example.com/v1",
+  ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-8",
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-4-6",
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-4-5"
+}), false);
+assert.equal(needsLocalSettingsPrompt({
+  [authTokenName]: " ",
+  ANTHROPIC_BASE_URL: "https://example.com/v1",
+  ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-8",
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-4-6",
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-4-5"
+}), true);
+assert.equal(needsLocalSettingsPrompt({
+  [authTokenName]: secretSentinel,
+  ANTHROPIC_BASE_URL: "not-a-url",
+  ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-8",
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-4-6",
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-4-5"
+}), true);
+assert.equal(needsLocalSettingsPrompt({
+  [authTokenName]: secretSentinel,
+  ANTHROPIC_BASE_URL: "https://example.com/v1",
+  CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION: "5",
+  ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-8",
+  ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-4-6",
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-4-5"
+}), false);
+assert.deepEqual(applyEccPluginSettings({ enabledPlugins: { other: false } }).enabledPlugins, { other: false, "ecc@ecc": true });
+assert.equal(applyEccPluginSettings().extraKnownMarketplaces.ecc.source.url, "https://github.com/affaan-m/ECC.git");
+const optionalSkillValues = OPTIONAL_SKILLS.map((skill) => skill.value);
+assert.deepEqual(normalizeOptionalSkills(["taste", ...optionalSkillValues]), optionalSkillValues);
+assert.deepEqual(invalidOptionalSkills([...optionalSkillValues, "nope"]), ["nope"]);
+assert.deepEqual(applyPluginSkillSettings({}, [{
+  source: "https://github.com/Leonxlnx/taste-skill.git",
+  plugin: { marketplace: "taste-skill", name: "taste-skill" }
+}]), {
+  enabledPlugins: { "taste-skill@taste-skill": true },
+  extraKnownMarketplaces: {
+    "taste-skill": {
+      source: {
+        source: "git",
+        url: "https://github.com/Leonxlnx/taste-skill.git"
+      }
+    }
+  }
+});
+assert.deepEqual(expectedOptionalSkillDirs([
+  {
+    name: "ui-ux-pro-max",
+    source: "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill.git",
+    revision: "4baa399d00da806f83ed93652172f66943205153"
+  },
+  {
+    name: "impeccable",
+    source: "https://github.com/pbakaus/impeccable.git",
+    revision: "88f52ac4e6a5ce99d39a0f5d89e7ac3a168910f5"
+  },
+  {
+    name: "huashu-design",
+    source: "https://github.com/alchaincyf/huashu-design.git",
+    revision: "0e7ec8aca0058184c1a9e06e57697e84f68a3f0f"
+  },
+  {
+    name: "nextjs-pattern",
+    source: "https://github.com/NegiKirin/nextjs-pattern.git",
+    revision: "d5b1ac4ea33f6054841ed9d8005ac587ab2a9a5d"
+  },
+  {
+    name: "fastapi-pattern",
+    source: "https://github.com/NegiKirin/fastapi-pattern.git",
+    revision: "3abf484af46765c01a476b2ef61bb211b2b5bab8"
+  },
+  {
+    name: "herdr",
+    source: "https://github.com/ogulcancelik/herdr.git",
+    revision: "9450b168c727e9e4cbee95e6edf4f11cfe6f2154"
+  }
+]), ["fastapi-pattern", "herdr", "huashu-design", "nextjs-pattern"]);
+
+const skillTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-skill-"));
+const originalSkillLog = console.log;
+console.log = () => {};
+try {
+  await applyOptionalSkills({ target: skillTarget, skills: ["taste"] });
+  console.log = originalSkillLog;
+  const settings = JSON.parse(await fs.readFile(path.join(skillTarget, ".claude", "settings.local.json"), "utf8"));
+  const repoConfig = JSON.parse(await fs.readFile(path.join(skillTarget, ".repo-pattern", ".repo-pattern.json"), "utf8"));
+  assert.equal(settings.enabledPlugins["taste-skill@taste-skill"], true);
+  assert.equal(settings.extraKnownMarketplaces["taste-skill"].source.url, "https://github.com/Leonxlnx/taste-skill.git");
+  assert.equal(repoConfig.runtime.localSkills, false);
+  assert.deepEqual(repoConfig.optionalSkills[0].plugin, { marketplace: "taste-skill", name: "taste-skill" });
+} finally {
+  console.log = originalSkillLog;
+  await fs.rm(skillTarget, { recursive: true, force: true });
+}
+
+const mixedSkillTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-skill-mixed-"));
+console.log = () => {};
+try {
+  await fs.mkdir(path.join(mixedSkillTarget, ".claude", "skills", "document-specialist-skill"), { recursive: true });
+  await fs.mkdir(path.join(mixedSkillTarget, ".repo-pattern"), { recursive: true });
+  await fs.writeFile(path.join(mixedSkillTarget, ".claude", "skills", "document-specialist-skill", "KEEP"), "ok", "utf8");
+  await fs.writeFile(path.join(mixedSkillTarget, ".repo-pattern", ".repo-pattern.json"), JSON.stringify({
+    runtime: { localSkills: true },
+    optionalSkills: [{
+      name: "document-specialist",
+      source: "https://github.com/SpillwaveSolutions/document-specialist-skill.git",
+      revision: "4d50d302b9f40e8eafec72d78a86676cdd9511ac",
+      license: "NOASSERTION",
+      installedDirs: ["document-specialist-skill"]
+    }]
+  }), "utf8");
+  await applyOptionalSkills({ target: mixedSkillTarget, skills: ["taste"] });
+  let repoConfig = JSON.parse(await fs.readFile(path.join(mixedSkillTarget, ".repo-pattern", ".repo-pattern.json"), "utf8"));
+  assert.equal(await fs.readFile(path.join(mixedSkillTarget, ".claude", "skills", "document-specialist-skill", "KEEP"), "utf8"), "ok");
+  assert.equal(repoConfig.runtime.localSkills, true);
+  assert.deepEqual(repoConfig.optionalSkills.map((entry) => entry.name), ["document-specialist", "taste"]);
+
+  await fs.rename(
+    path.join(mixedSkillTarget, ".repo-pattern", ".repo-pattern.json"),
+    path.join(mixedSkillTarget, ".repo-pattern.json")
+  );
+  await provisionProject({
+    sourceRoot: repoRoot,
+    target: mixedSkillTarget,
+    mcpServers: ["context7", "tavily", "gitnexus"],
+    setupPipeline: "none",
+    applyRules: false
+  });
+  console.log = originalSkillLog;
+  repoConfig = JSON.parse(await fs.readFile(path.join(mixedSkillTarget, ".repo-pattern", ".repo-pattern.json"), "utf8"));
+  await assert.rejects(() => fs.access(path.join(mixedSkillTarget, ".claude", "skills", "document-specialist-skill")), { code: "ENOENT" });
+  assert.equal(repoConfig.runtime.localSkills, false);
+  assert.deepEqual(repoConfig.optionalSkills, []);
+} finally {
+  console.log = originalSkillLog;
+  await fs.rm(mixedSkillTarget, { recursive: true, force: true });
+}
+
+const dryRunRootCopyTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-skill-dry-run-"));
+const dryRunSkillLogs = [];
+console.log = (message = "") => dryRunSkillLogs.push(String(message));
+try {
+  await applyOptionalSkills({ target: dryRunRootCopyTarget, skills: ["nextjs-pattern"], dryRun: true, output: { log: (message) => dryRunSkillLogs.push(String(message)) } });
+  assert(dryRunSkillLogs.some((line) => line.includes(".claude/skills/nextjs-pattern")));
+} finally {
+  console.log = originalSkillLog;
+  await fs.rm(dryRunRootCopyTarget, { recursive: true, force: true });
+}
+const herdrSkill = OPTIONAL_SKILLS.find((skill) => skill.value === "herdr");
+assert.deepEqual(herdrSkill.includePaths, ["SKILL.md"]);
+assert.equal(herdrSkill.destName, "herdr");
+}

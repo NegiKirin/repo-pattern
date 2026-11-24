@@ -1,3 +1,4 @@
+import "../fixtures/offline-guard.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
@@ -62,6 +63,67 @@ test("ECC rule selection and manifest validation preserve deterministic contract
   assert.equal(validateAgentManifest([{ path: "../agent.md", sha256: "a".repeat(64) }]), false);
   assert.equal(validateAgentManifest([{ path: "agent\\\\name.md", sha256: "a".repeat(64) }]), false);
   assert.equal(validateAgentManifest([{ path: "b.md", sha256: "a".repeat(64) }, { path: "a.md", sha256: "a".repeat(64) }]), false);
+});
+
+test("applyEccRules rejects unknown manual packs before mutating the workspace", async () => {
+  const target = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-ecc-invalid-"));
+  try {
+    await fs.mkdir(path.join(target, ".repo-pattern"), { recursive: true });
+    await fs.writeFile(path.join(target, ".repo-pattern", ".repo-pattern.json"), "before\n");
+    await assert.rejects(
+      () => applyEccRules({ target, ruleMode: "manual", rules: ["missing"] }),
+      /Unknown ECC rule pack\(s\): missing/
+    );
+    assert.equal(await fs.readFile(path.join(target, ".repo-pattern", ".repo-pattern.json"), "utf8"), "before\n");
+    await assert.rejects(fs.access(path.join(target, ".repo-pattern", "cache")), { code: "ENOENT" });
+  } finally {
+    await fs.rm(target, { recursive: true, force: true });
+  }
+});
+
+test("applyEccRules adds Python uv guidance once and skips it for non-Python rules", async () => {
+  const pythonTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-ecc-python-"));
+  const genericTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-ecc-generic-"));
+  try {
+    for (const target of [pythonTarget, genericTarget]) {
+      await fs.mkdir(path.join(target, ".claude"), { recursive: true });
+      await fs.writeFile(path.join(target, ".claude", "CLAUDE.md"), "project guidance\n");
+      await writeGitFixture(target, { rule: target === pythonTarget ? "python" : "common" });
+    }
+    await applyEccRules({ target: pythonTarget, ruleMode: "manual", rules: ["python"] });
+    const pythonClaudeMd = path.join(pythonTarget, ".claude", "CLAUDE.md");
+    const first = await fs.readFile(pythonClaudeMd, "utf8");
+    assert.equal(first.match(/<!-- USE UV:Start -->/g).length, 1);
+    await fs.rm(path.join(pythonTarget, ".repo-pattern", "cache", "ECC"), { recursive: true, force: true });
+    await writeGitFixture(pythonTarget, { rule: "python" });
+    await applyEccRules({ target: pythonTarget, ruleMode: "manual", rules: ["python"] });
+    const second = await fs.readFile(pythonClaudeMd, "utf8");
+    assert.equal(second, first);
+
+    await applyEccRules({ target: genericTarget, ruleMode: "manual", rules: ["common"] });
+    assert.doesNotMatch(await fs.readFile(path.join(genericTarget, ".claude", "CLAUDE.md"), "utf8"), /<!-- USE UV:Start -->/);
+  } finally {
+    await Promise.all([
+      fs.rm(pythonTarget, { recursive: true, force: true }),
+      fs.rm(genericTarget, { recursive: true, force: true })
+    ]);
+  }
+});
+
+test("applyEccRules dry-run preserves workspace files while reporting selected rules", async () => {
+  const target = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-ecc-dry-run-"));
+  try {
+    await fs.mkdir(path.join(target, ".claude"), { recursive: true });
+    await fs.writeFile(path.join(target, ".claude", "CLAUDE.md"), "project guidance\n");
+    await writeGitFixture(target, { rule: "python" });
+    const before = await fs.readFile(path.join(target, ".claude", "CLAUDE.md"), "utf8");
+    const result = await applyEccRules({ target, ruleMode: "manual", rules: ["python"], dryRun: true, silent: true });
+    assert.deepEqual(result.selectedRules, ["python"]);
+    assert.equal(await fs.readFile(path.join(target, ".claude", "CLAUDE.md"), "utf8"), before);
+    await assert.rejects(fs.access(path.join(target, ".claude", "rules", "ecc")), { code: "ENOENT" });
+  } finally {
+    await fs.rm(target, { recursive: true, force: true });
+  }
 });
 
 test("ECC cache handling preserves existing-cache and offline fixture behavior", async () => {

@@ -9,6 +9,7 @@ import { GSTACK_DOCUMENT_MANIFEST, normalizeGstackDocuments, normalizeGstackRend
 import { GSTACK_UPSTREAM_MANIFEST, GSTACK_UPSTREAM_OWNER, manifestForPaths, runUpstreamLocalSetup, snapshotUpstreamTransaction, verifyUpstreamManifest } from "./gstack-upstream.mjs";
 
 const GSTACK_REPOSITORY = "https://github.com/garrytan/gstack.git";
+export const GSTACK_UPSTREAM_COMMIT = "237371474bda407ccd2344f696b9508c55006c2d";
 const GSTACK_DIAGNOSTIC_MAX_CHARS = 4000;
 const GSTACK_HOOK_SOURCE = "repo-pattern-plan-tune";
 const UNSUPPORTED_SKILL_ROOTS = new Set(["codex", "node_modules", "openclaw"]);
@@ -105,15 +106,19 @@ async function assertNoSymlinkPath(target, relativePath) {
   }
 }
 
-export async function isValidGstackCheckout(checkout, { run: runCommand = run } = {}) {
+export async function isValidGstackCheckout(checkout, { run: runCommand = run, commit = null } = {}) {
   try {
     const stat = await fs.lstat(checkout);
     if (!stat.isDirectory() || stat.isSymbolicLink()) return false;
     await fs.access(path.join(checkout, "setup"), constants.X_OK);
     const insideWorkTree = runCommand("git", ["-C", checkout, "rev-parse", "--is-inside-work-tree"], { stdio: ["ignore", "pipe", "pipe"], timeout: 30000 });
     const workTreeRoot = runCommand("git", ["-C", checkout, "rev-parse", "--show-toplevel"], { stdio: ["ignore", "pipe", "pipe"], timeout: 30000 });
-    return String(insideWorkTree).trim() === "true" &&
-      path.resolve(String(workTreeRoot).trim()) === path.resolve(checkout);
+    if (String(insideWorkTree).trim() !== "true" || path.resolve(String(workTreeRoot).trim()) !== path.resolve(checkout)) return false;
+    if (commit) {
+      const head = runCommand("git", ["-C", checkout, "rev-parse", "HEAD"], { stdio: ["ignore", "pipe", "pipe"], timeout: 30000 });
+      if (String(head).trim() !== commit) return false;
+    }
+    return true;
   } catch {
     return false;
   }
@@ -279,11 +284,14 @@ export async function resolveGstackCheckout({
   prepare = null,
   upgrade = false,
   progress = null,
-  silent = false
+  silent = false,
+  expectedCommit = null
 }) {
   const localCheckout = gstackCheckoutPath(target);
   await assertNoSymlinkPath(target, path.relative(target, localCheckout));
-  const localValid = !upgrade && await isValidGstackCheckout(localCheckout, { run: runCommand });
+  const localCheckoutValid = await isValidGstackCheckout(localCheckout, { run: runCommand });
+  const localCheckoutPinned = expectedCommit && await isValidGstackCheckout(localCheckout, { run: runCommand, commit: expectedCommit });
+  const localValid = !upgrade && (localCheckoutPinned || !expectedCommit && localCheckoutValid);
   if (localValid && !prepare) {
     const operation = progress?.beginOperation?.({ id: "gstack-checkout", label: "Using gstack checkout", totalUnits: 1, weight: 2 });
     operation?.complete({ detail: "local checkout ready" });
@@ -295,6 +303,10 @@ export async function resolveGstackCheckout({
     };
   }
   if (await exists(localCheckout) && !await isValidGstackCheckout(localCheckout, { run: runCommand })) throw new Error("Existing gstack checkout is invalid. Preserve its contents and resolve ownership before setup.");
+  if (expectedCommit && !upgrade && localCheckoutValid && !localCheckoutPinned) {
+    const changes = childExecFileSync("git", ["-C", localCheckout, "status", "--porcelain", "-z", "--untracked-files=all"], { encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }, timeout: 30000 });
+    if (changes) throw new Error("gstack checkout has local changes; preserve and resolve them before replacing the pinned checkout.");
+  }
   let managedDocuments = null;
   if ((upgrade || prepare) && await exists(localCheckout)) {
     const manifestFile = path.join(gstackStatePath(target), GSTACK_DOCUMENT_MANIFEST);
@@ -309,10 +321,11 @@ export async function resolveGstackCheckout({
     const foreign = upgrade ? changes.split("\0").filter((entry) => entry && !(entry.startsWith(" M ") && normalizedPaths.has(entry.slice(3)))) : [];
     if (foreign.length) throw new Error(`gstack safety skill ownership conflict: .claude/skills/gstack checkout has local changes: ${foreign.map((entry) => entry.slice(3)).join(", ")}. Preserve and resolve them before setup or upgrading.`);
   }
-  const globalValid = !upgrade && await isValidGstackCheckout(globalCheckout, { run: runCommand });
+  const effectiveCommit = expectedCommit || GSTACK_UPSTREAM_COMMIT;
+  const globalValid = !upgrade && await isValidGstackCheckout(globalCheckout, { run: runCommand, commit: expectedCommit });
   if (dryRun) {
     const operation = progress?.beginOperation?.({ id: "gstack-checkout", label: globalValid ? "Copying gstack checkout" : "Downloading gstack", totalUnits: 1, weight: 3 });
-    if (!silent) console.log(`[dry-run] ${globalValid ? `copy ${globalCheckout} -> ${localCheckout}` : `git clone --single-branch --depth 1 ${GSTACK_REPOSITORY} ${localCheckout}`}`);
+    if (!silent) console.log(`[dry-run] ${globalValid ? `copy ${globalCheckout} -> ${localCheckout}` : `git clone --single-branch --depth 1 ${GSTACK_REPOSITORY} ${localCheckout} && git -C ${localCheckout} checkout --detach ${effectiveCommit}`}`);
     operation?.complete({ detail: "preview" });
     return {
       checkout: localCheckout,
@@ -353,7 +366,11 @@ export async function resolveGstackCheckout({
       const operation = progress?.beginOperation?.({ id: "gstack-checkout", label: "Downloading gstack", totalUnits: 100, weight: 3 });
       try {
         if (clone) await clone(temporary);
-        else await runRuntimeCommand("git", ["clone", "--progress", "--single-branch", "--depth", "1", GSTACK_REPOSITORY, temporary], { cwd: target, timeout: 600000, stage: "checkout clone" });
+        else {
+          await runRuntimeCommand("git", ["clone", "--progress", "--single-branch", "--depth", "1", "--no-checkout", GSTACK_REPOSITORY, temporary], { cwd: target, timeout: 600000, stage: "checkout clone" });
+          await runRuntimeCommand("git", ["-C", temporary, "fetch", "--depth", "1", "origin", effectiveCommit], { cwd: target, timeout: 600000, stage: "checkout pin" });
+          await runRuntimeCommand("git", ["-C", temporary, "checkout", "--detach", effectiveCommit], { cwd: target, timeout: 30000, stage: "checkout pin" });
+        }
         operation?.complete({ detail: "completed" });
       } catch (error) {
         operation?.fail({ detail: "failed" });
@@ -365,7 +382,7 @@ export async function resolveGstackCheckout({
         throw cloneError;
       }
     }
-    if (!await isValidGstackCheckout(temporary, { run: runCommand })) {
+    if (!await isValidGstackCheckout(temporary, { run: runCommand, commit: globalValid && !localValid ? expectedCommit : null })) {
       throw new Error("Resolved gstack checkout is invalid.");
     }
     if (prepare) await prepare(temporary);
@@ -438,7 +455,7 @@ async function listSkillRoots(target) {
   }
 }
 
-async function setupUpstreamGstack({ target, checkout, statePath, dryRun, planTuneHooks = false, upgrade, resolveCheckout, progress, silent }) {
+async function setupUpstreamGstack({ target, checkout, statePath, dryRun, planTuneHooks = false, upgrade, resolveCheckout, progress, silent, expectedCommit = GSTACK_UPSTREAM_COMMIT }) {
   await assertNoSymlinkPath(target, path.relative(target, statePath));
   for (const relative of [".repo-pattern-runtime", ".repo-pattern-runtime/home", ".repo-pattern-runtime/claude-config", ".repo-pattern-runtime/state-root", ".repo-pattern-runtime/renders", ".repo-pattern-runtime/codex", ".repo-pattern-runtime/state", ".claude/skills/gstack/.repo-pattern-runtime/tmp", ".claude/skills/gstack/.repo-pattern-runtime/chromium", ".claude/skills/gstack/.repo-pattern-runtime/bun-cache", ".claude/skills/gstack/.repo-pattern-runtime/bun"]) await assertNoSymlinkPath(target, relative);
   const publicationBefore = await listSkillRoots(target);
@@ -462,7 +479,7 @@ async function setupUpstreamGstack({ target, checkout, statePath, dryRun, planTu
   let transaction;
   if (dryRun) {
     try {
-      lease = await resolveCheckout({ target, dryRun: true, upgrade, progress, silent, prepare: async () => {} });
+      lease = await resolveCheckout({ target, dryRun: true, upgrade, progress, silent, expectedCommit, prepare: async () => {} });
     } catch (error) {
       error.gstackStage ||= "checkout resolution";
       throw error;
@@ -477,7 +494,7 @@ async function setupUpstreamGstack({ target, checkout, statePath, dryRun, planTu
     const priorDocuments = await readJson(path.join(statePath, GSTACK_DOCUMENT_MANIFEST), null);
     if (priorDocuments?.version === 1) await restoreGstackDocuments(checkout, priorDocuments);
     try {
-      lease = await resolveCheckout({ target, dryRun: false, upgrade, progress, silent, prepare: async () => {} });
+      lease = await resolveCheckout({ target, dryRun: false, upgrade, progress, silent, expectedCommit, prepare: async () => {} });
     } catch (error) {
       error.gstackStage ||= "checkout resolution";
       throw error;
@@ -544,10 +561,10 @@ async function setupUpstreamGstack({ target, checkout, statePath, dryRun, planTu
   }
 }
 
-export async function setupGstack({ target, dryRun = false, planTuneHooks = false, upgrade = false, resolveCheckout = resolveGstackCheckout, progress = null, silent = false }) {
+export async function setupGstack({ target, dryRun = false, planTuneHooks = false, upgrade = false, resolveCheckout = resolveGstackCheckout, progress = null, silent = false, expectedCommit = GSTACK_UPSTREAM_COMMIT }) {
   const checkout = gstackCheckoutPath(target);
   const statePath = gstackStatePath(target);
-  try { return await setupUpstreamGstack({ target, checkout, statePath, dryRun, planTuneHooks, upgrade, resolveCheckout, progress, silent }); }
+  try { return await setupUpstreamGstack({ target, checkout, statePath, dryRun, planTuneHooks, upgrade, resolveCheckout, progress, silent, expectedCommit }); }
   catch (error) { return { status: "failed", path: checkout, statePath, error: redactedGstackDiagnostic(error), rollbackErrors: error.rollbackErrors || [], recoverySnapshot: error.recoverySnapshot }; }
 }
 

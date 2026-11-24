@@ -131,7 +131,7 @@ async function snapshotPath(file, root) {
 export async function runUpstreamLocalSetup({ target, checkout, statePath, publicationRoots, runCommand = runRuntimeCommand, browserSkipped = process.env.GSTACK_SKIP_PLAYWRIGHT === "1" }) {
   const runtime = path.join(target, ".repo-pattern-runtime");
   const env = runtimeEnvironment(checkout, {
-    ...process.env,
+    PATH: process.env.PATH || "/usr/bin:/bin",
     HOME: path.join(runtime, "home"),
     CLAUDE_CONFIG_DIR: path.join(runtime, "claude-config"),
     GSTACK_STATE_ROOT: path.join(runtime, "state-root"),
@@ -143,7 +143,7 @@ export async function runUpstreamLocalSetup({ target, checkout, statePath, publi
     GSTACK_HARNESS_AUTO: "0",
     GSTACK_SETUP_RUNNING: "1"
   });
-  for (const key of ["GSTACK_STATE_ROOT", "GSTACK_USER_RENDER_DIR", "CLAUDE_PLUGIN_ROOT", "CLAUDE_PLUGIN_DIR"]) delete env[key];
+  for (const key of ["GSTACK_STATE_ROOT", "GSTACK_USER_RENDER_DIR", "CLAUDE_PLUGIN_ROOT", "CLAUDE_PLUGIN_DIR", "NODE_OPTIONS", "NODE_PATH", "NPM_CONFIG_USERCONFIG", "BUN_CONFIG_FILE"]) delete env[key];
   Object.assign(env, {
     HOME: path.join(runtime, "home"),
     CLAUDE_CONFIG_DIR: path.join(runtime, "claude-config"),

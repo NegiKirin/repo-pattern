@@ -1,3 +1,4 @@
+import "../fixtures/offline-guard.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
@@ -7,7 +8,7 @@ import { test } from "node:test";
 import { ensureBun, gstackCheckoutPath, gstackSummaryRows, setupGstack } from "../../src/gstack/gstack.mjs";
 import { snapshotUpstreamTransaction } from "../../src/gstack/gstack-upstream.mjs";
 import { GSTACK_RUNTIME_TIMEOUTS, prepareGstackRuntime, runtimeEnvironment, validateGstackRuntime } from "../../src/gstack/gstack-runtime.mjs";
-import { installGstackRuntimeFixture, installGstackSafetyFixture, installGstackUpstreamSetupFixture } from "../../scripts/self-check/fixtures.mjs";
+import { installGstackRuntimeFixture, installGstackSafetyFixture, installGstackUpstreamSetupFixture } from "../fixtures/fixtures.mjs";
 
 async function makeCheckout(target) {
   const checkout = gstackCheckoutPath(target);
@@ -66,7 +67,7 @@ test("gstack fixture setup preserves project files and managed status", async ()
     const packageJson = JSON.stringify({ private: true, dependencies: { "must-not-install": "file:missing" } });
     await fs.writeFile(path.join(target, "package.json"), packageJson);
     await fs.writeFile(path.join(target, "bun.lock"), "preserve\n");
-    const result = await setupGstack({ target, silent: true });
+    const result = await setupGstack({ target, silent: true, expectedCommit: null });
     assert.equal(result.status, "installed", result.error);
     assert.equal(await fs.readFile(path.join(target, "package.json"), "utf8"), packageJson);
     assert.equal(await fs.readFile(path.join(target, "bun.lock"), "utf8"), "preserve\n");
@@ -109,11 +110,11 @@ test("gstack setup failure leaves the prior managed state intact", async () => {
   const target = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-gstack-rollback-"));
   try {
     const checkout = await makeCheckout(target);
-    const first = await setupGstack({ target, silent: true });
+    const first = await setupGstack({ target, silent: true, expectedCommit: null });
     assert.equal(first.status, "installed", first.error);
     const prior = await fs.readFile(path.join(target, ".repo-pattern", "gstack", "state.json"), "utf8");
     await fs.writeFile(path.join(target, ".claude", "settings.json"), "{", "utf8");
-    const failed = await setupGstack({ target, silent: true });
+    const failed = await setupGstack({ target, silent: true, expectedCommit: null });
     assert.equal(failed.status, "failed");
     assert.equal(await fs.readFile(path.join(target, ".repo-pattern", "gstack", "state.json"), "utf8"), prior);
     assert.equal(await fs.readFile(path.join(checkout, "SKILL.md"), "utf8"), "Project-local gstack\n");

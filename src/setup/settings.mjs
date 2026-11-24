@@ -129,6 +129,11 @@ export function reconcileLocalPluginSettings(settings = {}, { setupPipeline, opt
 
 export async function rejectClaudeSymlink(target, { dryRun = false } = {}) {
   if (dryRun) return;
+  try {
+    if ((await fs.lstat(target)).isSymbolicLink()) throw new Error("target must not be a symlink.");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
   const managedPaths = [
     [".claude", ".claude"],
     [".claude/settings.json", ".claude/settings.json"],
