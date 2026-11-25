@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.5] - 2026-11-25
+
+### Changed
+
+- Streamline interactive setup by showing bypass-permission scope and overwrite behavior in the selection prompt, without asking for duplicate confirmation.
+- Keep setup audits quiet during interactive provisioning while preserving their safety decisions.
+
 ## [1.2.4] - 2026-11-19
 
 ### Added

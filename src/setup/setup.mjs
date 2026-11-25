@@ -169,7 +169,7 @@ export async function setupProject({ sourceRoot, target, mcpServers = [], setupP
 
   const previousOptions = await previousSetupOptions(target);
   const detection = await detectProject(target);
-  const audit = await auditProject(target, { output, silent: false });
+  const audit = await auditProject(target, { output, silent: true });
   if (audit.state === "LEGACY_VENDOR" && force && !migrate) {
     throw new Error("Target has legacy/local Claude runtime surfaces. Re-run setup with --migrate, not --force.");
   }

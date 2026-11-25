@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-export async function runInteractiveSetupCase({ root, name, settings, choice, expectedProjectBypass, expectedUserBypass, expectUserSettings = false, home = path.join(root, `${name}-home`), expectFailure = false, expectMigrationCancellation = false }) {
+export async function runInteractiveSetupCase({ root, name, settings, choice, expectedProjectBypass, expectedUserBypass, expectUserSettings = false, home = path.join(root, `${name}-home`), expectFailure = false, expectMigrationCancellation = false, columns = 100 }) {
   const target = path.join(root, name);
   const bin = path.join(home, "bin");
   await fs.mkdir(bin, { recursive: true });
@@ -39,7 +39,7 @@ export async function runInteractiveSetupCase({ root, name, settings, choice, ex
     input.isTTY = true; input.setRawMode = () => {}; input.ref = () => {}; input.unref = () => {};
     const output = process.stdout;
     const nativeWrite = output.write.bind(output);
-    output.isTTY = true; output.columns = 100; output.rows = 40;
+    output.isTTY = true; output.columns = ${columns}; output.rows = 40;
     Object.defineProperty(process, "stdin", { value: input });
     process.env.HOME = home; process.env.PATH = home + "/bin:" + process.env.PATH;
     delete process.env.CI; delete process.env.CONTINUOUS_INTEGRATION;
@@ -47,8 +47,7 @@ export async function runInteractiveSetupCase({ root, name, settings, choice, ex
     const { setupProject } = await import(pathToFileURL(repo + "/src/setup/setup.mjs"));
     let display = "";
     const handled = new Set();
-    const consentPrompts = ["Enable bypassPermissions in user settings?", "Enable bypass permissions in ~/.claude/settings.json?"];
-    const keys = ["Run migrate?", "Choose setup workflow", "Install project-local ECC rules & agents?", "Choose ECC rule detection mode", "Choose MCP servers", "MCP secret", "Optional external skills", "Configure third-party provider & models", "Choose effort level", "Allow bypass permissions mode?", "Commit attribution?", "Run setup now?", ...consentPrompts];
+    const keys = ["Run migrate?", "Choose setup workflow", "Install project-local ECC rules & agents?", "Choose ECC rule detection mode", "Choose MCP servers", "MCP secret", "Optional external skills", "Configure third-party provider & models", "Choose effort level", "Allow bypass permissions mode?", "Commit attribution?", "Run setup now?"];
     let pending;
     let frame = "";
     let lastFrame = "";
@@ -78,12 +77,6 @@ export async function runInteractiveSetupCase({ root, name, settings, choice, ex
         if (field === "ANTHROPIC_BASE_URL" && !frame.includes("https://provider.example/v1") && !handled.has(action + ":text")) {
           action += ":text";
           key = "https://" + "provider.example/v1";
-        }
-      } else if (consentPrompts.includes(title)) {
-        const answer = choice === "decline" ? "No" : "Yes";
-        if (!frame.includes("› " + answer)) {
-          action += ":select";
-          key = choice === "decline" ? "n" : "y";
         }
       } else if (title === "Allow bypass permissions mode?" && choice !== "deny" && !/›\\s+Yes/.test(frame)) {
         action += ":select";
@@ -151,8 +144,11 @@ export async function runInteractiveSetupCase({ root, name, settings, choice, ex
   assert.match(result.stdout, /Claude Code · 2\.1\.257/);
   const project = JSON.parse(await fs.readFile(path.join(target, ".claude", "settings.json"), "utf8"));
   assert.equal(project.permissions.defaultMode, expectedProjectBypass);
+  // protects=single-consent terminal flow and exact disclosure; fails_when=removed bypass prompts remain or required scope/no-overwrite facts disappear; no_claim=simulated TTY does not prove physical-terminal rendering or real operator HOME isolation.
   if (name === "new-install-allow-accepted") {
-    assert.match(result.stdout, /Enable bypass permissions in ~\/\.claude\/settings\.json\? This affects every project\./);
+    assert.match(result.stdout, /affects every project[\s\S]*Existing[\s\S]*settings/);
+    assert.doesNotMatch(result.stdout, /Enable bypass permissions in ~\/\.claude\/settings\.json\?|Enable bypassPermissions in user settings\?/);
+    assert.doesNotMatch(result.stdout, /== Audit ==/);
   }
   if (expectUserSettings) {
     const user = JSON.parse(await fs.readFile(path.join(home, ".claude", "settings.json"), "utf8"));
