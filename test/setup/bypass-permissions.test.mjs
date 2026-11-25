@@ -252,6 +252,7 @@ export async function runBypassPermissionChecks() {
 
     // protects=complete supported-version disclosure under constrained terminal width; fails_when=the required disclosure is truncated or hidden at 60 columns; no_claim=simulated TTY output does not prove physical-terminal rendering or screen-reader semantics.
     await runInteractiveSetupCase({ root, name: "new-install-allow-accepted", choice: "accept", expectedUserBypass: "bypassPermissions", expectUserSettings: true, columns: 60 });
+    await runInteractiveSetupCase({ root, name: "new-install-deny", choice: "deny", expectedProjectBypass: "default" });
     await runInteractiveSetupCase({ root, name: "legacy-transfer-accepted", settings: JSON.stringify({ permissions: { defaultMode: "bypassPermissions" } }), choice: "accept", expectedProjectBypass: undefined, expectedUserBypass: "bypassPermissions", expectUserSettings: true });
     const legacyMigrationSettings = JSON.stringify({
       permissions: { defaultMode: "bypassPermissions" },
