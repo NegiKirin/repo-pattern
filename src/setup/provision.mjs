@@ -11,6 +11,7 @@ import { doctorProject } from "../doctor.mjs";
 import { applyEccRules, clearEccRules } from "../ecc/rules.mjs";
 import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, ensureRepoPatternGitignore, exists, isTracked, readJson, readPrivateJson, readRepoConfig, removePath, repoConfigPath, repoLockPath, writeIfMissing, writePrivateJson } from "../shared/fs-utils.mjs";
 import { copyGeneratedAttributionHook, rejectClaudeSymlink, writeClaudeSettings, writeLocalSettings } from "./settings.mjs";
+import { installCommitMsgHook } from "./commit-msg-hook.mjs";
 import { applyOptionalSkills, OPTIONAL_SKILLS } from "../skills.mjs";
 import { installHerdrIntegration } from "../herdr.mjs";
 
@@ -437,6 +438,15 @@ export async function provisionProject({ sourceRoot, target, setupPipeline = "ec
   await ensureRepoPatternGitignore(target, { dryRun, silent: interactiveSetup });
 
   if (!dryRun) await doctorProject(target, { updateLock: true, dryRun, silent: interactiveSetup, output: presentation });
+
+  let commitMsgHook;
+  try {
+    commitMsgHook = await installCommitMsgHook({ target, sourceRoot, dryRun });
+  } catch (error) {
+    commitMsgHook = { status: "error", reason: error.message };
+  }
+  if (!dryRun && ["skipped", "error"].includes(commitMsgHook.status)) setupWarnings.push(`Commit-msg attribution protection unavailable: ${commitMsgHook.reason}.`);
+  if (!dryRun && commitMsgHook.status === "conflict") setupWarnings.push(`Commit-msg attribution protection skipped: ${commitMsgHook.reason}. Recovery: inspect the effective Git hooks path and rerun setup.`);
 
   const warnings = [
     ...(eccStatus === "manual-plugin-install-required" ? ["ECC plugin pending: run /plugin install ecc@ecc in Claude Code"] : []),

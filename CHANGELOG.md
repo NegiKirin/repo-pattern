@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.6] - 2026-11-26
+
+### Added
+
+- Protect commit messages from unwanted Claude co-author attribution during setup while preserving existing commit hooks and linked-worktree behavior.
+
+### Removed
+
+- Remove obsolete interactive-setup planning documents.
+
 ## [1.2.5] - 2026-11-25
 
 ### Changed

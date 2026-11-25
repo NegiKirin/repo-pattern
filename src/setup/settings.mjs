@@ -4,6 +4,7 @@ import { withoutPersistedMcpValues } from "../mcp.mjs";
 import { ECC_PLUGIN, applyEccPluginSettings } from "../ecc/ecc.mjs";
 import { appendGitignoreLine, copyRecursive, isTracked, readJson, readPrivateJson, writePrivateJson } from "../shared/fs-utils.mjs";
 import { reconcilePluginSkillSettings } from "../skills.mjs";
+import { installCommitMsgHook } from "./commit-msg-hook.mjs";
 
 const GENERATED_ATTRIBUTION_HOOK_SOURCE = "generated-attribution-removal";
 
@@ -91,6 +92,7 @@ export async function updateClaudeAttribution({ sourceRoot, target, attributionC
   });
   await copyGeneratedAttributionHook(sourceRoot, target, { dryRun });
   await appendGitignoreLine(target, ".claude/", { dryRun });
+  return installCommitMsgHook({ target, sourceRoot, dryRun });
 }
 
 export async function updateClaudePermissions({ sourceRoot, target, permissionConfig, dryRun }) {

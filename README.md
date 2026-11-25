@@ -119,6 +119,7 @@ target-project/
 - ECC rule application atomically replaces only repo-pattern-managed `.claude/rules/ecc/` and `.claude/agents/`.
 - Optional external skills are opt-in through `--with-skill`, `--with-skills`, or interactive setup.
 - gstack requires Git and Bun v1.4.2+ on `PATH`; repo-pattern never downloads Bun. Its gstack pipeline runs upstream `setup --local` with project-local state and an isolated installer home; it does not enable team mode or install OS packages.
+- When the target is a Git worktree, setup installs a local, bypassable `commit-msg` hook that removes exact Claude co-author trailers only when attribution mode is `off`; existing hooks are composed safely or left untouched on conflicts.
 
 ## Learn more
 
