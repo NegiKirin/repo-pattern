@@ -45,7 +45,6 @@ export async function runBypassPermissionChecks() {
   const warn = console.warn;
   const warnings = [];
   console.warn = (message) => warnings.push(String(message));
-  const confirm = async () => true;
   try {
     let declinedMigrationConfirmations = 0;
     let declinedMigrationWrites = 0;
@@ -57,30 +56,29 @@ export async function runBypassPermissionChecks() {
     assert.deepEqual(declinedMigration, { bypass: "preserve" });
     assert.equal(declinedMigrationConfirmations, 0);
     assert.equal(declinedMigrationWrites, 0);
-    const consent = async () => true;
-    const writeSuccess = async () => ({ changed: true, message: "enabled" });
+      const writeSuccess = async () => ({ changed: true, message: "enabled" });
     const writeExisting = async () => ({ changed: false, alreadyEnabled: true, message: "already enabled" });
     const writeFailure = async () => ({ changed: false, message: "not written" });
     const choices = [
       [{ claudeCodeVersion: "2.1.256", legacyBypass: true, selectedBypass: "deny" }, { bypass: "deny" }],
       [{ claudeCodeVersion: "2.1.257", migrationChoice: "yes", legacyBypass: true, selectedBypass: "deny" }, { bypass: "preserve" }],
-      [{ claudeCodeVersion: "2.1.257", selectedBypass: "allow", confirm: async () => true, setUserBypass: writeFailure }, { bypass: "deny" }],
-      [{ claudeCodeVersion: "2.1.257", migrationChoice: "yes", legacyBypass: true, selectedBypass: "allow", confirm: async () => false }, { bypass: "preserve" }],
-      [{ claudeCodeVersion: "2.1.257", migrationChoice: "yes", legacyBypass: true, selectedBypass: "allow", confirm, setUserBypass: writeFailure }, { bypass: "preserve" }],
-      [{ claudeCodeVersion: "2.1.257", migrationChoice: "yes", legacyBypass: true, selectedBypass: "allow", confirm, setUserBypass: writeExisting }, { bypass: "user" }],
+      [{ claudeCodeVersion: "2.1.257", selectedBypass: "allow", setUserBypass: writeFailure }, { bypass: "deny" }],
+      [{ claudeCodeVersion: "2.1.257", migrationChoice: "yes", legacyBypass: true, selectedBypass: "allow", setUserBypass: writeFailure }, { bypass: "preserve" }],
+      [{ claudeCodeVersion: "2.1.257", migrationChoice: "yes", legacyBypass: true, selectedBypass: "allow", setUserBypass: writeFailure }, { bypass: "preserve" }],
+      [{ claudeCodeVersion: "2.1.257", migrationChoice: "yes", legacyBypass: true, selectedBypass: "allow", setUserBypass: writeExisting }, { bypass: "user" }],
       [{ claudeCodeVersion: "2.1.257", migrationChoice: "yes", legacyBypass: true, selectedBypass: "preserve" }, { bypass: "preserve" }],
       [{ claudeCodeVersion: "2.1.257", legacyBypass: true, selectedBypass: "deny" }, { bypass: "deny" }],
-      [{ claudeCodeVersion: "2.1.257", legacyBypass: true, selectedBypass: "allow", confirm: async () => true, setUserBypass: writeSuccess }, { bypass: "user" }],
+      [{ claudeCodeVersion: "2.1.257", legacyBypass: true, selectedBypass: "allow", setUserBypass: writeSuccess }, { bypass: "user" }],
       [{ claudeCodeVersion: "2.1.256", selectedBypass: "allow" }, { bypass: "allow" }],
       [{ claudeCodeVersion: "2.1.257", selectedBypass: "preserve" }, { bypass: "preserve" }],
-      [{ claudeCodeVersion: "2.1.257", selectedBypass: "allow", confirm: async () => false }, { bypass: "deny" }],
-      [{ claudeCodeVersion: "2.1.257", legacyBypass: true, selectedBypass: "allow", confirm: async () => false }, { bypass: "preserve" }],
-      [{ claudeCodeVersion: "2.1.257", selectedBypass: "allow", confirm: consent, setUserBypass: writeSuccess }, { bypass: "user" }],
-      [{ claudeCodeVersion: "2.1.257", selectedBypass: "allow", confirm: consent, setUserBypass: writeExisting }, { bypass: "user" }],
-      [{ claudeCodeVersion: "2.1.257", selectedBypass: "allow", confirm: consent, setUserBypass: writeFailure }, { bypass: "deny" }],
-      [{ claudeCodeVersion: "2.1.257", legacyBypass: true, selectedBypass: "allow", confirm: consent, setUserBypass: writeFailure }, { bypass: "preserve" }],
-      [{ claudeCodeVersion: "2.1.257", retryChoice: "retry", selectedBypass: "allow", confirm: async () => false }, { bypass: "deny" }],
-      [{ claudeCodeVersion: "2.1.257", retryChoice: "retry", selectedBypass: "allow", confirm: async () => true, setUserBypass: writeSuccess }, { bypass: "user" }],
+      [{ claudeCodeVersion: "2.1.257", selectedBypass: "allow", setUserBypass: writeFailure }, { bypass: "deny" }],
+      [{ claudeCodeVersion: "2.1.257", legacyBypass: true, selectedBypass: "allow", setUserBypass: writeFailure }, { bypass: "preserve" }],
+      [{ claudeCodeVersion: "2.1.257", selectedBypass: "allow", setUserBypass: writeSuccess }, { bypass: "user" }],
+      [{ claudeCodeVersion: "2.1.257", selectedBypass: "allow", setUserBypass: writeExisting }, { bypass: "user" }],
+      [{ claudeCodeVersion: "2.1.257", selectedBypass: "allow", setUserBypass: writeFailure }, { bypass: "deny" }],
+      [{ claudeCodeVersion: "2.1.257", legacyBypass: true, selectedBypass: "allow", setUserBypass: writeFailure }, { bypass: "preserve" }],
+      [{ claudeCodeVersion: "2.1.257", retryChoice: "retry", selectedBypass: "allow", setUserBypass: writeSuccess }, { bypass: "user" }],
+      [{ claudeCodeVersion: "2.1.257", retryChoice: "retry", selectedBypass: "allow", dryRun: true, setUserBypass: async () => { throw new Error("retry dry-run must not write user settings"); } }, { bypass: "deny" }],
       [{ claudeCodeVersion: "2.1.257", retryChoice: "retry", selectedBypass: "user" }, { bypass: "user" }],
       [{ claudeCodeVersion: "2.1.257", retryChoice: "retry", selectedBypass: "preserve" }, { bypass: "preserve" }],
       [{ claudeCodeVersion: "2.1.257", retryChoice: "retry", selectedBypass: "deny" }, { bypass: "deny" }],
@@ -124,7 +122,7 @@ export async function runBypassPermissionChecks() {
       process.exit(0);
     `], { encoding: "utf8", timeout: 10000 });
     assert.equal(promptCheck.status, 0, `${promptCheck.error || ""}\n${promptCheck.stderr}`);
-    assert.match(promptCheck.stdout, version === "2.1.257" ? /User scope affects every project/ : /Step 5\/6/);
+    assert.match(promptCheck.stdout, version === "2.1.257" ? /affects every project[\s\S]*Existing[\s\S]*settings/ : /Step 5\/6/);
   }
 
   for (const legacyBypass of [false, true]) {
@@ -213,7 +211,7 @@ export async function runBypassPermissionChecks() {
         confirm: async () => { confirmCalls++; return true; },
         setUserBypass: async () => { writeCalls++; return { changed: true }; }
       }), { bypass: "user" });
-      assert.equal(confirmCalls, 1);
+      assert.equal(confirmCalls, 0, "wizard selection is the only bypass consent");
       assert.equal(writeCalls, 1);
       assert.equal(promptSeen, true, "live selection must reach the prompt");
       assert.equal(selected, true, "live selection must send the selected input");
@@ -252,7 +250,9 @@ export async function runBypassPermissionChecks() {
     }
     await fs.writeFile(settingsPath, "{");
 
-    await runInteractiveSetupCase({ root, name: "new-install-allow-accepted", choice: "accept", expectedUserBypass: "bypassPermissions", expectUserSettings: true });
+    // protects=complete supported-version disclosure under constrained terminal width; fails_when=the required disclosure is truncated or hidden at 60 columns; no_claim=simulated TTY output does not prove physical-terminal rendering or screen-reader semantics.
+    await runInteractiveSetupCase({ root, name: "new-install-allow-accepted", choice: "accept", expectedUserBypass: "bypassPermissions", expectUserSettings: true, columns: 60 });
+    await runInteractiveSetupCase({ root, name: "new-install-deny", choice: "deny", expectedProjectBypass: "default" });
     await runInteractiveSetupCase({ root, name: "legacy-transfer-accepted", settings: JSON.stringify({ permissions: { defaultMode: "bypassPermissions" } }), choice: "accept", expectedProjectBypass: undefined, expectedUserBypass: "bypassPermissions", expectUserSettings: true });
     const legacyMigrationSettings = JSON.stringify({
       permissions: { defaultMode: "bypassPermissions" },

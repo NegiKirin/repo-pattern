@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 const BYPASS_USER_SCOPE_VERSION = [2, 1, 257];
+export const BYPASS_USER_SCOPE_DISCLOSURE = "Enabling bypass permissions in ~/.claude/settings.json affects every project. Existing settings will not be overwritten.";
 
 export function claudeVersionSupportsUserScope(version) {
   const match = String(version || "").match(/(?:^|\s)v?(\d+)\.(\d+)\.(\d+)(?:\b|$)/);
