@@ -68,7 +68,7 @@ jobs:
           bin="$root/install/node_modules/.bin/repo-pattern"
           (cd "$RUNNER_TEMP" && "$bin" --help >/dev/null)
           version=$(cd "$RUNNER_TEMP" && "$bin" --version)
-          test "$version" = "repo-pattern 1.2.5"
+          test "$version" = "repo-pattern 1.2.6"
           (cd "$RUNNER_TEMP" && "$bin" setup --target "$root/target" --setup-pipeline none --yes >/dev/null)
           test -f "$root/target/.claude/settings.json"
           test -f "$root/target/.mcp.json"
