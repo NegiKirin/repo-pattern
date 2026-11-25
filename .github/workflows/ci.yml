@@ -59,17 +59,29 @@ jobs:
           root=$(mktemp -d)
           trap 'rm -rf "$root"' EXIT
           mkdir "$root/pack" "$root/install" "$root/target"
+          git -C "$root/target" init -q
+          git -C "$root/target" config user.email test@example.com
+          git -C "$root/target" config user.name 'Repo Pattern Test'
           npm pack --pack-destination "$root/pack" >/dev/null
           archive=$(find "$root/pack" -name '*.tgz' -print -quit)
           npm install --prefix "$root/install" --no-save "$archive" >/dev/null
           bin="$root/install/node_modules/.bin/repo-pattern"
           (cd "$RUNNER_TEMP" && "$bin" --help >/dev/null)
           version=$(cd "$RUNNER_TEMP" && "$bin" --version)
-          test "$version" = "repo-pattern 1.2.5"
+          test "$version" = "repo-pattern 1.2.6"
           (cd "$RUNNER_TEMP" && "$bin" setup --target "$root/target" --setup-pipeline none --yes >/dev/null)
           test -f "$root/target/.claude/settings.json"
           test -f "$root/target/.mcp.json"
           test -f "$root/target/.repo-pattern/.repo-pattern.lock.json"
+          test -x "$root/target/.git/hooks/commit-msg"
+          printf 'tracked\n' > "$root/target/tracked"
+          git -C "$root/target" add tracked
+          git -C "$root/target" commit -qm $'Subject\nCo-Authored-By: Claude <noreply@anthropic.com>'
+          git -C "$root/target" cat-file -p HEAD | grep -Fq 'Subject'
+          if git -C "$root/target" cat-file -p HEAD | grep -Fq 'Co-Authored-By: Claude'; then
+            echo 'Claude co-author trailer was not removed' >&2
+            exit 1
+          fi
           if tar -tzf "$archive" | grep -E '/(test|fixtures|plans|self-check|phase-1-baseline|\.github/workflows)/|(^|/)scripts/(test|self-check)' ; then
             echo 'development files found in package archive' >&2
             exit 1

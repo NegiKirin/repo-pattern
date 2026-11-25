@@ -77,6 +77,18 @@ Interactive setup prompts only for placeholders in the selected MCP definitions.
 6. Applies the selected ECC/gstack pipeline, rules, and optional skills.
 7. Runs `doctor` after successful setup.
 
+### Commit-message attribution protection
+
+Setup installs a local, bypassable `commit-msg` hook when the target is a Git worktree. It requires Node.js 20 or newer on `PATH` and reads the managed mode from `.claude/settings.json`:
+
+- `off` removes exact Claude co-author trailers from the message before commit.
+- `on` preserves trailers.
+- `custom` preserves trailers and keeps the configured custom attribution behavior.
+
+An existing executable `commit-msg` hook runs once before cleanup. Its arguments, environment, working directory, output, and rejection status are preserved. Unknown, modified, non-regular, symlinked, or unavailable effective hook paths are refused rather than overwritten; setup reports a warning with recovery guidance. Linked worktrees use the committing worktree's settings while sharing the effective hook when Git does so.
+
+The hook is local-only. Git does not enforce it on a server, and `git commit --no-verify` bypasses it. To recover a refused installation, inspect the effective path from `git rev-parse --git-path hooks`, restore or remove the conflicting hook through its owner, then rerun setup. Do not delete an unknown backup or wrapper as part of recovery.
+
 Generated local files are gitignored:
 
 ```text
