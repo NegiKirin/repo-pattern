@@ -157,7 +157,7 @@ export async function doctorProject(target, { updateLock = false, dryRun = false
   const managedSkills = audit.repoPattern?.runtime?.localSkills === true && Array.isArray(audit.repoPattern?.optionalSkills) && audit.hasOnlyManagedSkills;
   check(!audit.hasClaudeSkillsDir || allowSourceSkills || audit.hasRepoPatternJson, ".claude/skills is preserved for initialized repo-pattern projects");
   check(!audit.hasClaudeCommandsDir, ".claude/commands does not exist");
-  check(!audit.hasClaudeHooksDir || audit.hasOnlyGeneratedAttributionHookFile, ".claude/hooks contains only the generated attribution hook");
+  check(!audit.hasClaudeHooksDir || audit.hasOnlyGeneratedAttributionHookFile, ".claude/hooks contains only repo-pattern-managed hooks");
   check(!audit.hasClaudeScriptsDir, ".claude/scripts does not exist");
   check(!audit.hasClaudeEccRulesDir || audit.hasManagedEccRules, ".claude/rules/ecc is repo-pattern-managed when present");
   check(audit.hasClaudeDir, ".claude exists");

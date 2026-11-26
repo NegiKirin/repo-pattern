@@ -13,7 +13,7 @@ function run(command, args, environment) {
 
 const coverageDirectory = await mkdtemp(path.join(os.tmpdir(), "repo-pattern-v8-"));
 try {
-  const testArgs = ["--test", "--test-concurrency=4", process.env.RUNNER_TEST_PATH || "test/*/*.test.mjs"];
+  const testArgs = ["--test", "--test-concurrency=1", process.env.RUNNER_TEST_PATH || "test/*/*.test.mjs"];
   await run(process.execPath, testArgs, { ...process.env, NODE_V8_COVERAGE: coverageDirectory });
   await run(process.execPath, ["scripts/check-coverage.mjs"], { ...process.env, NODE_V8_COVERAGE: coverageDirectory, RUNNER_LANE: "check-coverage.mjs" });
   await run(process.execPath, ["scripts/check-diff-coverage.mjs", process.argv[2] || "HEAD"], { ...process.env, NODE_V8_COVERAGE: coverageDirectory, RUNNER_LANE: "check-diff-coverage.mjs" });

@@ -140,6 +140,12 @@ export async function copyRecursive(src, dest, { dryRun = false, silent = false 
     if (!silent) console.log(`[dry-run] copy ${src} -> ${dest}`);
     return;
   }
+  await assertCopyDestinationIsNotSymlink(path.dirname(dest));
+  try {
+    if ((await fs.lstat(dest)).isSymbolicLink()) throw new Error(`copy destination must not be a symlink: ${dest}`);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
   await ensureDir(path.dirname(dest), { silent });
   await fs.cp(src, dest, { recursive: true, force: true });
 }
@@ -167,12 +173,18 @@ export async function scanCopyTree(source) {
 }
 
 async function assertCopyDestinationIsNotSymlink(target) {
-  try {
-    if ((await fs.lstat(target)).isSymbolicLink()) {
-      throw new Error(`copy destination must not be a symlink: ${target}`);
+  const parsed = path.parse(target);
+  let current = parsed.root;
+  for (const part of target.slice(parsed.root.length).split(path.sep).filter(Boolean)) {
+    current = path.join(current, part);
+    try {
+      if ((await fs.lstat(current)).isSymbolicLink()) {
+        throw new Error(`copy destination must not be a symlink: ${current}`);
+      }
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      break;
     }
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
   }
 }
 

@@ -65,6 +65,14 @@ Interactive setup prompts only for placeholders in the selected MCP definitions.
 
 `ANTHROPIC_AUTH_TOKEN` stays in gitignored `.claude/settings.local.json`. It is never substituted into `.mcp.json`, setup retry state, or repo-pattern locks.
 
+## Agent input sanitization
+
+Full `setup` installs a project-local Node.js `PreToolUse` hook for the `Agent` tool in every setup pipeline. The `^Agent$` matcher limits it to Agent calls. Before execution, it removes only the Agent input's own top-level `effort` and `isolation` fields; all other values, including nested fields, remain unchanged. This means per-Agent effort and isolation selection is unavailable after setup for all providers.
+
+Node.js 20 or newer is already required by repo-pattern and is the only runtime prerequisite for this hook; `jq` is not required. Rerun `setup` to install or repair the hook in an existing project. Setup removes only the exact legacy jq hook and entries marked `_repo_pattern_source: "agent-input-sanitization"` when reconciling the managed entry.
+
+This hook applies only to the `Agent` tool input. It is not a general worktree-prevention mechanism and does not block worktree creation through Bash, Git, another tool, or provider-specific behavior. The hook does not guarantee that every Claude Code version or provider applies updated input identically.
+
 ## Generated workspace
 
 `setup`:

@@ -61,6 +61,14 @@ try {
   );
   assert.equal(await fs.readFile(outside, "utf8"), "unchanged");
 
+  const fileSymlinkDestination = path.join(copyProgressRoot, "file-symlink-destination");
+  await fs.symlink(outside, fileSymlinkDestination);
+  await assert.rejects(
+    () => copyRecursiveWithProgress(source, fileSymlinkDestination),
+    /copy destination must not be a symlink/
+  );
+  assert.equal(await fs.readFile(outside, "utf8"), "unchanged");
+
   const backupEvents = [];
   const progress = { beginOperation(spec) {
     backupEvents.push({ type: "begin", ...spec });

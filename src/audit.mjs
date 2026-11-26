@@ -22,7 +22,7 @@ async function hasOnlyGeneratedAttributionHookFile(target) {
     const entries = await fs.readdir(hooksDir, { withFileTypes: true });
     const config = await readRepoConfig(target, {});
     const hasHerdr = expectedOptionalSkillDirs(config.optionalSkills || []).includes("herdr");
-    const allowed = ["remove-generated-attribution.mjs", ...(hasHerdr ? ["herdr-agent-state.sh"] : [])];
+    const allowed = ["remove-generated-attribution.mjs", "sanitize-agent-input.mjs", ...(hasHerdr ? ["herdr-agent-state.sh"] : [])];
     return entries.length > 0 && entries.every((entry) => entry.isFile() && allowed.includes(entry.name));
   } catch {
     return false;
