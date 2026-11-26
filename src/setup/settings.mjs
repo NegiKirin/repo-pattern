@@ -7,6 +7,35 @@ import { reconcilePluginSkillSettings } from "../skills.mjs";
 import { installCommitMsgHook } from "./commit-msg-hook.mjs";
 
 const GENERATED_ATTRIBUTION_HOOK_SOURCE = "generated-attribution-removal";
+const AGENT_INPUT_HOOK_SOURCE = "agent-input-sanitization";
+const LEGACY_AGENT_INPUT_COMMAND = "jq -c 'if (.tool_input | has(\"effort\") or has(\"isolation\")) then {hookSpecificOutput: {hookEventName: \"PreToolUse\", updatedInput: (.tool_input | del(.effort, .isolation)), additionalContext: \"Agent effort and isolation were removed by the user hook. Do not assume worktree or remote isolation; verify the actual working directory and checkout.\"}} else {} end'";
+
+export function validateAgentHookSettingsShape(settings = {}) {
+  if (settings.hooks?.PreToolUse !== undefined && !Array.isArray(settings.hooks.PreToolUse)) {
+    throw new Error(".claude/settings.json has an invalid hooks.PreToolUse shape. Repair it to an array, then rerun setup.");
+  }
+  return settings;
+}
+
+function agentInputHook() {
+  return {
+    _repo_pattern_source: AGENT_INPUT_HOOK_SOURCE,
+    matcher: "^Agent$",
+    hooks: [{ type: "command", command: "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/sanitize-agent-input.mjs\"", timeout: 5 }]
+  };
+}
+
+function isLegacyAgentInputHook(entry) {
+  return entry && Object.keys(entry).length === 2 && entry.matcher === "^Agent$" && Array.isArray(entry.hooks) && entry.hooks.length === 1
+    && Object.keys(entry.hooks[0]).length === 3 && entry.hooks[0].type === "command" && entry.hooks[0].command === LEGACY_AGENT_INPUT_COMMAND && entry.hooks[0].timeout === 5;
+}
+
+function applyAgentInputHook(settings) {
+  const hooks = { ...(settings.hooks || {}) };
+  const entries = Array.isArray(hooks.PreToolUse) ? hooks.PreToolUse : [];
+  hooks.PreToolUse = [...entries.filter((entry) => entry?._repo_pattern_source !== AGENT_INPUT_HOOK_SOURCE && !isLegacyAgentInputHook(entry)), agentInputHook()];
+  return { ...settings, hooks };
+}
 
 function generatedAttributionHook(attributionConfig = { mode: "off" }) {
   return {
@@ -18,11 +47,13 @@ function generatedAttributionHook(attributionConfig = { mode: "off" }) {
 }
 
 export function applyGeneratedAttributionHook(settings = {}, attributionConfig = { mode: "off" }) {
-  const hooks = Object.fromEntries(Object.entries(settings.hooks || {}).map(([event, entries]) => [
-    event,
-    (entries || []).filter((entry) => entry?._repo_pattern_source !== GENERATED_ATTRIBUTION_HOOK_SOURCE)
-  ]).filter(([, entries]) => entries.length > 0));
-  hooks.PreToolUse = [...(hooks.PreToolUse || []), generatedAttributionHook(attributionConfig)];
+  const hooks = { ...(settings.hooks || {}) };
+  if (Array.isArray(hooks.PreToolUse)) {
+    hooks.PreToolUse = hooks.PreToolUse.filter((entry) => entry?._repo_pattern_source !== GENERATED_ATTRIBUTION_HOOK_SOURCE);
+  } else {
+    hooks.PreToolUse = [];
+  }
+  hooks.PreToolUse.push(generatedAttributionHook(attributionConfig));
   return { ...settings, hooks };
 }
 
@@ -32,6 +63,15 @@ export async function copyGeneratedAttributionHook(sourceRoot, target, { dryRun,
     path.join(target, ".claude", "hooks", "remove-generated-attribution.mjs"),
     { dryRun, silent }
   );
+}
+
+export async function copyAgentInputHook(sourceRoot, target, { dryRun, silent = false, testHook }) {
+  await copyRecursive(
+    path.join(sourceRoot, ".claude.example", "hooks", "sanitize-agent-input.mjs"),
+    path.join(target, ".claude", "hooks", "sanitize-agent-input.mjs"),
+    { dryRun, silent }
+  );
+  if (testHook) await testHook();
 }
 
 export function applyAttributionSetting(settings, attributionConfig = { mode: "off" }) {
@@ -62,7 +102,7 @@ export function applyPermissionSettings(settings, permissionConfig = { bypass: "
   return { ...settings, permissions };
 }
 
-export async function writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun, silent = false }) {
+export async function writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun, silent = false, testHook }) {
   const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.example.json"), {});
   let current;
   try {
@@ -71,7 +111,9 @@ export async function writeClaudeSettings({ sourceRoot, target, attributionConfi
     if (!(error instanceof SyntaxError)) throw error;
     throw new Error(".claude/settings.json is malformed. Fix it before running setup.");
   }
-  const settings = applyGeneratedAttributionHook(applyPermissionSettings(applyAttributionSetting({ ...template, ...current, hooks: current.hooks || template.hooks }, attributionConfig), permissionConfig), attributionConfig);
+  const merged = validateAgentHookSettingsShape({ ...template, ...current, hooks: current.hooks || template.hooks });
+  const settings = applyGeneratedAttributionHook(applyAgentInputHook(applyPermissionSettings(applyAttributionSetting(merged, attributionConfig), permissionConfig)), attributionConfig);
+  if (testHook) await testHook();
   await writePrivateJson(path.join(target, ".claude", "settings.json"), settings, {
     dryRun,
     label: ".claude/settings.json",
@@ -85,6 +127,7 @@ export async function updateClaudeAttribution({ sourceRoot, target, attributionC
   const file = path.join(target, ".claude", "settings.json");
   const current = await readPrivateJson(file, null, { label: ".claude/settings.json", parentLabel: ".claude" });
   const template = await readJson(path.join(sourceRoot, ".claude.example", "settings.example.json"), {});
+  validateAgentHookSettingsShape(current || template);
   await writePrivateJson(file, applyGeneratedAttributionHook(applyAttributionSetting(current || template, attributionConfig), attributionConfig), {
     dryRun,
     label: ".claude/settings.json",

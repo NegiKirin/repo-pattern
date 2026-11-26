@@ -29,6 +29,29 @@ test("provision and pipeline contracts preserve rollback and output semantics", 
   await runProvisionAndPipelineChecks();
 });
 
+test("full setup installs the Agent sanitizer for every pipeline and dry-run stays inert", async () => {
+  // protects=full setup sanitizer installation across pipelines and dry-run safety; fails_when=any pipeline omits the script/canonical hook or dry-run mutates files; no_claim=does not prove live provider dispatch
+  for (const setupPipeline of ["ecc", "gstack", "both", "none"]) {
+    const target = await fs.mkdtemp(path.join(os.tmpdir(), `repo-pattern-${setupPipeline}-hook-`));
+    try {
+      await provisionProject({ sourceRoot: repoRoot, target, setupPipeline, dryRun: false, mcpServers: [] });
+      const settings = JSON.parse(await fs.readFile(path.join(target, ".claude", "settings.json"), "utf8"));
+      assert.equal(settings.hooks.PreToolUse.filter((entry) => entry._repo_pattern_source === "agent-input-sanitization").length, 1);
+      assert.equal(await fs.readFile(path.join(target, ".claude", "hooks", "sanitize-agent-input.mjs"), "utf8"), await fs.readFile(path.join(repoRoot, ".claude.example", "hooks", "sanitize-agent-input.mjs"), "utf8"));
+    } finally {
+      await fs.rm(target, { recursive: true, force: true });
+    }
+  }
+  const dryRunTarget = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-hook-dry-run-"));
+  try {
+    await provisionProject({ sourceRoot: repoRoot, target: dryRunTarget, setupPipeline: "none", dryRun: true, mcpServers: [] });
+    await assert.rejects(() => fs.access(path.join(dryRunTarget, ".claude", "settings.json")));
+    await assert.rejects(() => fs.access(path.join(dryRunTarget, ".claude", "hooks", "sanitize-agent-input.mjs")));
+  } finally {
+    await fs.rm(dryRunTarget, { recursive: true, force: true });
+  }
+});
+
 export async function runProvisionAndPipelineChecks() {
 const isolatedHome = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-pipeline-home-"));
 const previousHome = process.env.HOME;

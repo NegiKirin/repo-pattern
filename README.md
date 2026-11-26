@@ -101,6 +101,7 @@ target-project/
 │   ├── settings.json             # generated, gitignored
 │   ├── settings.local.json       # local provider settings, gitignored
 │   ├── hooks/remove-generated-attribution.mjs
+│   ├── hooks/sanitize-agent-input.mjs # installed by setup
 │   ├── rules/ecc/                # when ECC rules are applied
 │   ├── agents/                   # when ECC rules are applied
 │   └── skills/                   # selected local skills and gstack

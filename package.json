@@ -1,6 +1,6 @@
 {
   "name": "@negikirin/repo-pattern",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "description": "Minimal ECC-first Claude Code project setup and migrator",
   "type": "module",
   "bin": {
@@ -58,6 +58,7 @@
     ".claude.example/settings.example.json",
     ".claude.example/settings.local.example.json",
     ".claude.example/hooks/remove-generated-attribution.mjs",
+    ".claude.example/hooks/sanitize-agent-input.mjs",
     ".claude.example/hooks/clean-commit-attribution.cjs",
     "docs/repo-pattern/setup-guide.md",
     "mcp/servers/",

@@ -10,7 +10,7 @@ import { GSTACK_UPSTREAM_COMMIT, gstackCheckoutPath, gstackStatePath, setupGstac
 import { doctorProject } from "../doctor.mjs";
 import { applyEccRules, clearEccRules } from "../ecc/rules.mjs";
 import { appendGitignoreLine, backupPaths, copyRecursive, ensureDir, ensureRepoPatternGitignore, exists, isTracked, readJson, readPrivateJson, readRepoConfig, removePath, repoConfigPath, repoLockPath, writeIfMissing, writePrivateJson } from "../shared/fs-utils.mjs";
-import { copyGeneratedAttributionHook, rejectClaudeSymlink, writeClaudeSettings, writeLocalSettings } from "./settings.mjs";
+import { copyAgentInputHook, copyGeneratedAttributionHook, rejectClaudeSymlink, writeClaudeSettings, writeLocalSettings } from "./settings.mjs";
 import { installCommitMsgHook } from "./commit-msg-hook.mjs";
 import { applyOptionalSkills, OPTIONAL_SKILLS } from "../skills.mjs";
 import { installHerdrIntegration } from "../herdr.mjs";
@@ -236,7 +236,7 @@ async function removeProvisionSnapshot(snapshot) {
   if (snapshot) await fs.rm(snapshot.snapshotRoot, { recursive: true, force: true });
 }
 
-export async function provisionProject({ sourceRoot, target, setupPipeline = "ecc", planTuneHooks = false, mcpServers = [], mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, effortLevel = "medium", attributionConfig = { mode: "off" }, permissionConfig = { bypass: "deny" }, ruleMode = "auto", rules = null, applyRules = null, optionalSkills = [], interactiveSetup = false, output = null, progressAdapter = null, renderProgress = null, onBeforeSuccessSummary = null, resolveGstackCheckout }) {
+export async function provisionProject({ sourceRoot, target, setupPipeline = "ecc", planTuneHooks = false, mcpServers = [], mcpValues = {}, dryRun = false, force = false, migrate = false, localSettingsEnv = null, effortLevel = "medium", attributionConfig = { mode: "off" }, permissionConfig = { bypass: "deny" }, ruleMode = "auto", rules = null, applyRules = null, optionalSkills = [], interactiveSetup = false, output = null, progressAdapter = null, renderProgress = null, onBeforeSuccessSummary = null, resolveGstackCheckout, testHooks = {} }) {
   const presentation = output || {};
   const createProgress = progressAdapter?.create || (() => null);
   if (!SETUP_PIPELINES.includes(setupPipeline)) throw new Error(`Unknown setup pipeline: ${setupPipeline}. Available: ${SETUP_PIPELINES.join(", ")}`);
@@ -324,8 +324,9 @@ export async function provisionProject({ sourceRoot, target, setupPipeline = "ec
     );
     advanceWorkspace("Copying workspace template");
 
-    await writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun, silent: interactiveSetup });
+    await writeClaudeSettings({ sourceRoot, target, attributionConfig, permissionConfig, dryRun, silent: interactiveSetup, testHook: testHooks.writeClaudeSettings });
     await copyGeneratedAttributionHook(sourceRoot, target, { dryRun, silent: interactiveSetup });
+    await copyAgentInputHook(sourceRoot, target, { dryRun, silent: interactiveSetup, testHook: testHooks.copyAgentInputHook });
     advanceWorkspace("Writing Claude settings");
     await appendGitignoreLine(target, ".claude/", { dryRun, silent: interactiveSetup });
     await writeLocalSettings({ sourceRoot, target, localSettingsEnv, effortLevel, setupPipeline, optionalSkills, dryRun, silent: interactiveSetup });

@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.7] - 2026-11-26
+
+### Added
+
+- Strip unsupported Agent isolation and effort settings during project setup while preserving unrelated inputs, hooks, and workspace state.
+
+### Changed
+
+- Reconcile the managed Agent hook across every setup pipeline, migrate only the exact legacy jq hook, and keep setup rollback and symlink protections intact.
+
 ## [1.2.6] - 2026-11-26
 
 ### Added

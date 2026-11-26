@@ -8,7 +8,7 @@ import { ECC_PLUGIN, applyEccPluginSettings, setupEcc } from "../../src/ecc/ecc.
 import { collectMcpValues } from "../../src/ui/mcp-interaction.mjs";
 import { generateMcp, mcpSecretPrompt, readGeneratedMcpValues, validateRelativeMcpPath } from "../../src/mcp.mjs";
 import { provisionProject, setupPipelineScope } from "../../src/setup/provision.mjs";
-import { applyPermissionSettings, reconcileLocalPluginSettings, updateClaudeAttribution, updateClaudePermissions, writeClaudeSettings, writeLocalSettings } from "../../src/setup/settings.mjs";
+import { applyPermissionSettings, reconcileLocalPluginSettings, updateClaudeAttribution, updateClaudePermissions, validateAgentHookSettingsShape, writeClaudeSettings, writeLocalSettings } from "../../src/setup/settings.mjs";
 import { writePrivateJson } from "../../src/shared/fs-utils.mjs";
 import { printSummary, promptTestComponents, renderLogo, resolveTextValue, style } from "../../src/ui/prompt.mjs";
 import { interactiveSetupPipeline, setupProject, setupRetryOptions } from "../../src/setup/setup.mjs";
@@ -21,6 +21,117 @@ const repoRoot = path.dirname(path.dirname(cliDir));
 const cliPath = path.join(repoRoot, "bin", "repo-pattern.mjs");
 const secretSentinel = "do-not-persist-anthropic-token";
 const authTokenName = ["ANTHROPIC", "AUTH", "TOKEN"].join("_");
+
+test("settings writers reconcile the managed Agent hook and preserve unrelated events", async () => {
+  // protects=managed Agent hook reconciliation; fails_when=unrelated hooks/settings are removed or managed entries duplicate; no_claim=does not prove live provider behavior
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-agent-settings-"));
+  try {
+    await fs.mkdir(path.join(root, ".claude"), { recursive: true });
+    const settingsFile = path.join(root, ".claude", "settings.json");
+    await fs.writeFile(settingsFile, JSON.stringify({ custom: true, hooks: {
+      PreToolUse: [{ matcher: "^Other$", hooks: [{ type: "command", command: "keep" }] }, { _repo_pattern_source: "agent-input-sanitization", stale: true }],
+      PostToolUse: "preserve-this"
+    }}));
+    await writeClaudeSettings({ sourceRoot: repoRoot, target: root, attributionConfig: { mode: "off" }, permissionConfig: { bypass: "deny" }, dryRun: false });
+    const settings = JSON.parse(await fs.readFile(settingsFile, "utf8"));
+    assert.equal(settings.custom, true);
+    assert.equal(settings.hooks.PostToolUse, "preserve-this");
+    assert.equal(settings.hooks.PreToolUse.filter((entry) => entry._repo_pattern_source === "agent-input-sanitization").length, 1);
+    assert.equal(settings.hooks.PreToolUse[0].matcher, "^Other$");
+    await writeClaudeSettings({ sourceRoot: repoRoot, target: root, attributionConfig: { mode: "off" }, permissionConfig: { bypass: "deny" }, dryRun: false });
+    const rerun = JSON.parse(await fs.readFile(settingsFile, "utf8"));
+    assert.equal(rerun.hooks.PreToolUse.filter((entry) => entry._repo_pattern_source === "agent-input-sanitization").length, 1);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("settings writers reject malformed Agent hooks before writing", async () => {
+  // protects=D2 preflight state preservation; fails_when=non-array PreToolUse is written over or sanitizer state changes; no_claim=does not cover provisioning rollback injection
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-agent-preflight-"));
+  try {
+    await fs.mkdir(path.join(root, ".claude", "hooks"), { recursive: true });
+    const settingsFile = path.join(root, ".claude", "settings.json");
+    const original = JSON.stringify({ hooks: { PreToolUse: { invalid: true } }, keep: "yes" });
+    await fs.writeFile(settingsFile, original);
+    const script = path.join(root, ".claude", "hooks", "sanitize-agent-input.mjs");
+    await fs.writeFile(script, "existing");
+    await assert.rejects(() => writeClaudeSettings({ sourceRoot: repoRoot, target: root, attributionConfig: { mode: "off" }, permissionConfig: { bypass: "deny" }, dryRun: false }), /invalid hooks\.PreToolUse.*array.*rerun setup/);
+    assert.equal(await fs.readFile(settingsFile, "utf8"), original);
+    assert.equal(await fs.readFile(script, "utf8"), "existing");
+    assert.throws(() => validateAgentHookSettingsShape({ hooks: { PreToolUse: {} } }), /invalid hooks\.PreToolUse/);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("settings writers preserve exact legacy near-misses and migrate the exact entry", async () => {
+  // protects=exact legacy migration; fails_when=near-miss entries are removed or exact jq entry remains; no_claim=does not prove compatibility with non-specified legacy commands
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-agent-legacy-"));
+  try {
+    await fs.mkdir(path.join(root, ".claude"), { recursive: true });
+    const legacy = "jq -c 'if (.tool_input | has(\"effort\") or has(\"isolation\")) then {hookSpecificOutput: {hookEventName: \"PreToolUse\", updatedInput: (.tool_input | del(.effort, .isolation)), additionalContext: \"Agent effort and isolation were removed by the user hook. Do not assume worktree or remote isolation; verify the actual working directory and checkout.\"}} else {} end'";
+    const exact = { matcher: "^Agent$", hooks: [{ type: "command", command: legacy, timeout: 5 }] };
+    const near = { ...exact, extra: true };
+    await fs.writeFile(path.join(root, ".claude", "settings.json"), JSON.stringify({ hooks: { PreToolUse: [exact, near] } }));
+    await writeClaudeSettings({ sourceRoot: repoRoot, target: root, attributionConfig: { mode: "off" }, permissionConfig: { bypass: "deny" }, dryRun: false });
+    const entries = JSON.parse(await fs.readFile(path.join(root, ".claude", "settings.json"), "utf8")).hooks.PreToolUse;
+    assert.equal(entries.some((entry) => entry.hooks?.[0]?.command === legacy && !entry.extra), false);
+    assert.equal(entries.some((entry) => entry.extra === true), true);
+    assert.equal(entries.filter((entry) => entry._repo_pattern_source === "agent-input-sanitization").length, 1);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("update helpers preserve missing and installed Agent sanitizer state", async () => {
+  // protects=update-helper Agent hook boundary; fails_when=helpers install or remove the Agent sanitizer; no_claim=does not prove full setup provisioning
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-update-agent-"));
+  try {
+    await fs.mkdir(path.join(root, ".claude", "hooks"), { recursive: true });
+    const settingsFile = path.join(root, ".claude", "settings.json");
+    const scriptFile = path.join(root, ".claude", "hooks", "sanitize-agent-input.mjs");
+    await fs.writeFile(settingsFile, JSON.stringify({ hooks: { PreToolUse: [] } }));
+    await updateClaudePermissions({ sourceRoot: repoRoot, target: root, permissionConfig: { bypass: "allow" }, dryRun: false });
+    await updateClaudeAttribution({ sourceRoot: repoRoot, target: root, attributionConfig: { mode: "off" }, dryRun: false });
+    let settings = JSON.parse(await fs.readFile(settingsFile, "utf8"));
+    assert.equal(settings.hooks.PreToolUse.some((entry) => entry._repo_pattern_source === "agent-input-sanitization"), false);
+    await fs.writeFile(settingsFile, JSON.stringify({ hooks: { PreToolUse: { invalid: true } }, keep: "yes" }));
+    await assert.rejects(() => updateClaudeAttribution({ sourceRoot: repoRoot, target: root, attributionConfig: { mode: "off" }, dryRun: false }), /invalid hooks\.PreToolUse/);
+    assert.deepEqual(JSON.parse(await fs.readFile(settingsFile, "utf8")), { hooks: { PreToolUse: { invalid: true } }, keep: "yes" });
+    assert.equal(await fs.access(scriptFile).then(() => true, () => false), false);
+    const installed = { hooks: { PreToolUse: [{ _repo_pattern_source: "agent-input-sanitization" }] } };
+    await fs.writeFile(settingsFile, JSON.stringify(installed));
+    await fs.writeFile(scriptFile, "managed");
+    await updateClaudePermissions({ sourceRoot: repoRoot, target: root, permissionConfig: { bypass: "deny" }, dryRun: false });
+    await updateClaudeAttribution({ sourceRoot: repoRoot, target: root, attributionConfig: { mode: "off" }, dryRun: false });
+    settings = JSON.parse(await fs.readFile(settingsFile, "utf8"));
+    assert.equal(settings.hooks.PreToolUse.some((entry) => entry._repo_pattern_source === "agent-input-sanitization"), true);
+    assert.equal(await fs.readFile(scriptFile, "utf8"), "managed");
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("settings and sanitizer copy failures restore provision state", async () => {
+  // protects=rollback of pre-existing settings and hooks; fails_when=injected failure leaves partial managed files; no_claim=does not prove failures from external providers
+  const target = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-injected-rollback-"));
+  try {
+    await fs.mkdir(path.join(target, ".claude", "hooks"), { recursive: true });
+    const settingsFile = path.join(target, ".claude", "settings.json");
+    const hookFile = path.join(target, ".claude", "hooks", "existing-hook");
+    await fs.writeFile(settingsFile, "original-settings\n");
+    await fs.writeFile(hookFile, "original-hook\n");
+    await assert.rejects(() => provisionProject({ sourceRoot: repoRoot, target, setupPipeline: "none", mcpServers: [], migrate: true, testHooks: { writeClaudeSettings: async () => { throw new Error("injected settings write"); } } }), /injected settings write/);
+    assert.equal(await fs.readFile(settingsFile, "utf8"), "original-settings\n");
+    assert.equal(await fs.readFile(hookFile, "utf8"), "original-hook\n");
+    await assert.rejects(() => provisionProject({ sourceRoot: repoRoot, target, setupPipeline: "none", mcpServers: [], migrate: true, testHooks: { copyAgentInputHook: async () => { throw new Error("injected sanitizer copy"); } } }), /injected sanitizer copy/);
+    assert.equal(await fs.readFile(settingsFile, "utf8"), "original-settings\n");
+    assert.equal(await fs.readFile(hookFile, "utf8"), "original-hook\n");
+  } finally {
+    await fs.rm(target, { recursive: true, force: true });
+  }
+});
 
 test("settings writers reject a symlinked target without changing its destination", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "repo-pattern-settings-target-link-"));

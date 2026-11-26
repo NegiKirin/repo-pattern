@@ -74,7 +74,7 @@ async function runCoverageCliChecks() {
   try {
     await fs.mkdir(path.join(runnerRoot, "scripts"));
     await fs.copyFile(runnerSource, path.join(runnerRoot, "scripts", "test-coverage.mjs"));
-    assert.match(await fs.readFile(path.join(runnerRoot, "scripts", "test-coverage.mjs"), "utf8"), /"--test", "--test-concurrency=4"/);
+    assert.match(await fs.readFile(path.join(runnerRoot, "scripts", "test-coverage.mjs"), "utf8"), /"--test", "--test-concurrency=1"/);
     const events = path.join(runnerRoot, "events.jsonl");
     await fs.writeFile(path.join(runnerRoot, "scripts", "lane.mjs"), `import fs from 'node:fs/promises'; import path from 'node:path'; const event={lane:process.env.RUNNER_LANE || path.basename(process.argv[1]), coverage:process.env.NODE_V8_COVERAGE, args:process.argv.slice(2)}; await fs.appendFile(process.env.RUNNER_EVENTS, JSON.stringify(event)+'\\n'); if(event.lane===process.env.RUNNER_FAIL_ON) process.exit(7);`);
     const laneNames = ["check-coverage.mjs", "check-diff-coverage.mjs"];
